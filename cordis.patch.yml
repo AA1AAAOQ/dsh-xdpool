@@ -4,3 +4,46 @@
 - insert:
     - id: llm-workbuddy-xdpool
       name: dsh-workbuddy-xdpool
+# Bring up billion-context alongside us, so the card's billion page has a live
+# compressor to read instead of asking the user to install a second plugin.
+#
+# WHY THIS ROW LIVES HERE
+#
+# billion-context is a full plugin in its own right: it owns a loopback proxy, a
+# compaction lane and its own CLI. Nothing about it is a feature of this pool, and
+# this layer must never configure it — the row below only asks the host to mount
+# the package, and every other decision stays billion-context's.
+#
+# WHY IT IS NOT A DEPENDENCY OF OURS IN THE USUAL SENSE
+#
+# `dependencies` would make this a transitive requirement of the pool: upgrading
+# the pool would silently move the compressor's version under a user who only
+# ever installed the pool, and uninstalling the pool would take a feature the user
+# may still be using. Declaring it optional keeps both directions under the
+# user's control while still letting the host install it.
+#
+# THE DUPLICATE-MOUNT HAZARD, AND WHY IT IS SAFE HERE
+#
+# Mounting billion-context twice throws. The proxy provides a cordis service
+# under its own name, and the host refuses a second registration
+# (`service "…" has been registered at <…>`) rather than handing back the first
+# one, so the loser dies inside its own `apply`. That is exactly the failure this
+# pool already hit once with the shared sign-in channel pack, and it is why
+# `src/index.ts` checks the loader for a live entry before mounting anything.
+#
+# This row does not need that guard of its own: the host's own loader disables a
+# row whose module is already mounted elsewhere rather than letting it collide,
+# and the row id is unique to this layer. If a user has already added
+# billion-context to their profile themselves, this row is simply a second copy
+# of an existing layer and the host resolves that, not us.
+#
+# THE ID IS OURS AND MUST STAY OURS
+#
+# `bili-native` is declared by billion-context's own patch. A non-insert patch
+# replaces a row's whole config with no deep merge, so we must not restate its
+# config here — we only ever insert a row, which is additive and safe. Naming
+# this row `billion-context-xdpool` rather than `bili-native` keeps the two layers
+# from ever addressing the same entry.
+- insert:
+    - id: billion-context-xdpool
+      name: billion-context

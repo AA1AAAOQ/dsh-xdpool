@@ -1029,7 +1029,18 @@ export class WorkBuddyUpstreamClient {
     if (typeof body !== 'object' || body === null || Array.isArray(body)) return raw
     const obj = body as Record<string, unknown>
     obj['stream'] = true
-    delete obj['stream_options']
+    // Ask for usage, and let the shim take it back out before DSH sees it: the
+    // gateway's trailer frame is one extra SSE event the host never requested,
+    // so `serveSuccessfulStream` strips it and the forwarded stream stays
+    // byte-identical. Dropping the request field instead (as this used to)
+    // threw the numbers away, and the usage panel is built from them.
+    const requested = typeof obj['stream_options'] === 'object'
+      && obj['stream_options'] !== null
+      && !Array.isArray(obj['stream_options'])
+      ? obj['stream_options'] as Record<string, unknown>
+      : {}
+    requested['include_usage'] = true
+    obj['stream_options'] = requested
     if (Array.isArray(obj['messages'])) {
       for (const value of obj['messages']) {
         if (typeof value !== 'object' || value === null || Array.isArray(value)) continue

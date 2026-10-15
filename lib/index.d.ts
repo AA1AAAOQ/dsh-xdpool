@@ -925,7 +925,16 @@ export declare class WorkBuddyAccountPool {
    */
   private readonly affinity;
   private lastScanAtMs;
-  private preferredId;
+  /**
+   * The account id the user pinned, or undefined for none.
+   *
+   * Field rather than a public property so that the only way in is
+   * {@link WorkBuddyPool.prefer} and the only way out is {@link WorkBuddyPool.preferredId}:
+   * a mutable public field would let a caller pin an account without the pool
+   * knowing, and a getter alone would let a caller read a pin the pool has
+   * already forgotten.
+   */
+  private preferredAccountId;
   /**
    * Account ids the user switched off on the card.
    *
@@ -1138,10 +1147,33 @@ export declare class WorkBuddyAccountPool {
    * `conversationKey` is only consulted under `sticky`; other modes ignore it.
    */
   acquire(modelId?: string, region?: WorkBuddyRegion, conversationKey?: string): Promise<WorkBuddyAccount | undefined>;
-  /** Pin the account the plugin card should prefer; tokens stay out of settings. */
   /** How the pool currently spreads requests. Shown on the card. */
   currentDistribution(): AccountDistribution;
+  /**
+   * The account the user asked to be tried first, whatever the distribution says.
+   *
+   * Pins identity, not the credential: the account still has to pass every gate
+   * the strategy applies (fresh token, out of cooldown, above its credit reserve,
+   * not switched off), and when it fails one of them the pool falls back to the
+   * strategy untouched. That is the whole promise — "try this first", never "only
+   * ever use this one" — and it is why a stale pin is harmless.
+   *
+   * Returns undefined when nothing is pinned, which is also how the user undoes a
+   * pin. The value survives {@link WorkBuddyPool.scan}, because a rescan discovers
+   * accounts and must not quietly revise a choice the user made about one of them.
+   */
   prefer(accountId: string | undefined): void;
+  /**
+   * Which account is pinned, for the card and the status document.
+   *
+   * A reader is required rather than optional politeness: without one the status
+   * document would have to report a preference it cannot see, and the only
+   * truthful way to render "you asked for this one" on a row is to ask the pool.
+   * Callers that need to know whether the pin is still *live* (pinned AND present
+   * in the pool) must do that presence check themselves — this answers "what did
+   * the user choose", not "is it usable right now".
+   */
+  preferredId(): string | undefined;
   /** Whether the user switched this account off on the card. */
   isDisabled(accountId: string): boolean;
   /** Every account id the user switched off, in discovery order. */
@@ -1300,6 +1332,281 @@ export declare const POOL_ACCOUNT_IGNORE_PATH = "/plugins/dsh-workbuddy-xdpool/a
 export declare const POOL_AUTOMATION_RUN_PATH = "/plugins/dsh-workbuddy-xdpool/automation/run";
 /** Set or clear one account's reserved-credit floor. */
 export declare const POOL_CREDIT_RESERVE_PATH = "/plugins/dsh-workbuddy-xdpool/accounts/credit-reserve";
+/**
+ * One model's facts, exactly as the host's catalogue spells them.
+ *
+ * Every optional field is absent when the host does not know it, which is the
+ * common case: modalities are only reported by adapters that publish them, and a
+ * missing window is missing rather than a default.
+ */
+interface PoolWebChannelModel {
+  id: string;
+  name: string;
+  contextWindow?: number;
+  maxTokens?: number;
+  inputModalities?: readonly string[];
+  description?: string;
+}
+/**
+ * One billion-context session, reduced to what a dashboard may show.
+ *
+ * Counts, sizes and timestamps only. The proxy's own rows carry titles and
+ * first-block hints, which are the user's words; those stay on the machine that
+ * produced them and are not relayed.
+ */
+interface PoolWebBillionSession {
+  /** The proxy's session id. Safe to show: it is a generated handle. */
+  id: string;
+  /** Which wire the session speaks; `openai` is what DSH's shim uses. */
+  protocol: string;
+  /** Whether a request hit this session in the last few seconds. */
+  live: boolean;
+  requests: number;
+  /** The compacted context size the proxy is holding, 0 when unknown. */
+  contextTokens: number;
+  /** Which measurement the context size came from; `usage` is the honest one. */
+  contextTokensSource: string;
+  /** Net tokens the proxy says compression saved. */
+  tokensSaved: number;
+  inputTokens: number;
+  cachedTokens: number;
+  outputTokens: number;
+  /** Cache hit rate 0-100, or -1 when no input tokens were ever counted. */
+  cacheHitPct: number;
+  /** How many compressed blocks this session holds. */
+  blocks: number;
+  /** The window the proxy believes the model has, 0 when unknown. */
+  contextWindow: number;
+  /** ISO timestamp of the last request, or '' when the session never had one. */
+  lastSeen: string;
+  /** The last model the session saw, or '' before the first request. */
+  lastModel: string;
+}
+/** The document {@link POOL_BILLION_PATH} answers with. */
+interface PoolWebBillionStatus {
+  /**
+   * Whether a proxy was found and answered.
+   *
+   * `missing` is a normal, expected state, not an error: billion-context is a
+   * separate plugin, and a machine without it must get a page that explains
+   * that rather than a 503 or a blank panel.
+   */
+  state: 'ready' | 'missing' | 'unreachable';
+  /** Human text for a non-ready state; absent when ready. */
+  reason?: string;
+  /**
+   * The proxy's own loopback origin, absent only when none was recorded.
+   *
+   * The card needs this to hand the user a browser link: billion-context ships
+   * its own dashboard, including a per-session detail view, and duplicating
+   * those screens here would be a second and divergent copy of another
+   * plugin's interface. Linking out keeps one answer.
+   *
+   * This is a service address, not conversation material, and it is safe to
+   * publish for the same reason the route that carries it is loopback-only: a
+   * caller who can read this document can already reach that listener directly.
+   * It is present on `unreachable` too — a proxy that recorded its port and
+   * then went quiet is exactly the case where the URL is the only handle.
+   */
+  origin?: string;
+  /** The proxy's version, from its own manifest. */
+  version?: string;
+  /** When the proxy process started (epoch ms), 0 when unknown. */
+  startedAt?: number;
+  /** Sessions newest-first, capped by the route. */
+  sessions: readonly PoolWebBillionSession[];
+  /** How many sessions the proxy holds in total, including capped-out ones. */
+  totalSessions: number;
+}
+/**
+ * Where a registry provider's key goes: `apiKey`, `baseUrl`, or `enabled`.
+ */
+type PoolWebAggregatePatch = {
+  kind: 'provider';
+  providerId: string;
+  enabled?: boolean;
+  apiKey?: string;
+  baseUrl?: string;
+} |
+/** Flip the lane's own master switch; `false` contributes no models at all. */
+{
+  kind: 'lane';
+  enabled: boolean;
+} |
+/** Forget one provider's stored setting entirely, key included. */
+{
+  kind: 'clear';
+  providerId: string;
+};
+/** One provider as the card renders it. Never carries the key itself. */
+interface PoolWebAggregateProvider {
+  id: string;
+  name: string;
+  category: string;
+  authKind: string;
+  format: string;
+  /** Where the user obtains a key, for the "get one" link. */
+  authUrl?: string;
+  website?: string;
+  /** True when this lane can serve the provider with a pasted key. */
+  supported: boolean;
+  /** True when a key is present (or none is needed). */
+  configured: boolean;
+  /**
+   * True when this vendor contributes models right now.
+   *
+   * Not simply "the user did not switch it off": with no explicit flag the
+   * answer follows the credential, so an unconfigured vendor reads as off. The
+   * roster is a directory to choose from, and a page that drew every one of the
+   * seventy-six with its switch already on could not show what was configured.
+   */
+  enabled: boolean;
+  /**
+   * The vendor's own one-line description, from the registry.
+   *
+   * This is the row's small print. The registry carries no per-model blurb —
+   * `models[]` entries are id/name/contextWindow/vision/reasoning only — so the
+   * description belongs to the vendor, and the card must not imply otherwise.
+   */
+  notes?: string;
+  /** A base-URL override the user typed, if any. */
+  baseUrl?: string;
+  /** True when the provider declares a model listing this lane can read. */
+  hasListing: boolean;
+  /** Model ids currently exposed: the chosen set, or the registry's own. */
+  models: readonly string[];
+  /** True when the exposed set came from a live listing rather than the registry. */
+  discovered: boolean;
+  /** When the provider was first configured. */
+  addedAt?: string;
+}
+/** The document {@link POOL_AGGREGATE_PATH} answers with. */
+interface PoolWebAggregateStatus {
+  /** The lane's own master switch. */
+  enabled: boolean;
+  /** How many providers hold a setting at all. */
+  configured: number;
+  /** How many model rows the lane currently offers. */
+  modelCount: number;
+  /** The rows, in provider-then-model order. */
+  models: readonly {
+    id: string;
+    name: string;
+    providerId: string;
+    modelId: string;
+    contextWindow: number;
+    maxOutputTokens: number;
+    supportsImages: boolean;
+    source: 'static' | 'discovered';
+  }[];
+  /** The whole registry, in registry order. */
+  providers: readonly PoolWebAggregateProvider[];
+}
+/**
+ * One login channel as the card renders it.
+ *
+ * `loginKind` is presentation only: `browser` means "open a link and sign in
+ * there". The card never learns which protocol a channel speaks — that stays
+ * inside the pack, which hands back a `loginUrl` per sign-in attempt.
+ */
+interface PoolWebChannel {
+  id: string;
+  name: string;
+  /** Who runs it. */
+  org: string;
+  /**
+   * The vendor's published API host, when it publishes one.
+   *
+   * Absent for eleven of the thirteen: the pack names `apiDomain` only for the
+   * two WorkBuddy lanes, and everything else would be a host we guessed. The
+   * card falls back to `org` when this is missing, so the subtitle is never
+   * blank and never invented.
+   */
+  domain?: string;
+  /** Accent colour, for the channel's chip. */
+  accent: string;
+  /** One Chinese line on what the free allowance actually is. */
+  note: string;
+  loginKind: 'browser';
+  /** True when this plugin's own account pool already serves this channel. */
+  ownedByPool: boolean;
+}
+/** The document {@link POOL_CHANNELS_PATH} answers with. */
+interface PoolWebChannelsStatus {
+  /** Whether the vendored pack mounted, and if not, why. */
+  state: 'pending' | 'ready' | 'unavailable';
+  /** Human text for a non-ready state; absent when ready. */
+  reason?: string;
+  channels: readonly PoolWebChannel[];
+}
+/** One model a chain member may name, from either lane. */
+interface PoolWebComboCandidate {
+  id: string;
+  name: string;
+  /** `workbuddy` for a pool model, the provider id for a third-party one. */
+  owner: string;
+  /** True when a third-party model already has a usable key. */
+  usable: boolean;
+  contextWindow: number;
+  supportsImages: boolean;
+}
+/** One chain, resolved against the live roster. */
+interface PoolWebCombo {
+  /** `combo:<slug>`, always. */
+  id: string;
+  name: string;
+  /** Members that exist right now, in order. Empty means the chain is dead. */
+  models: readonly string[];
+  /** Members the user configured but which the roster no longer serves. */
+  missing: readonly string[];
+  strategy: 'fallback' | 'round-robin';
+  stickyLimit: number;
+  enabled: boolean;
+  contextWindow: number;
+  supportsImages: boolean;
+}
+/**
+ * The document {@link POOL_COMBOS_PATH} answers with.
+ *
+ * `candidates` is the whole roster rather than only what is chainable, because
+ * a chain that cannot add a new model is not an editor.
+ */
+interface PoolWebCombosStatus {
+  combos: readonly PoolWebCombo[];
+  candidates: readonly PoolWebComboCandidate[];
+}
+/**
+ * What a relay patch can change.
+ *
+ * `key: ''` rotates rather than clears: the card sends an empty string when the
+ * user asks for a new key, and "no key" is not a state the relay can serve — a
+ * keyless relay would have to accept everyone.
+ */
+interface PoolWebRelayPatch {
+  enabled?: boolean;
+  host?: string;
+  port?: number;
+  key?: string;
+}
+/**
+ * What a key probe answered.
+ *
+ * `modelIds` is present only when the provider's listing was readable, and the
+ * "discover models" action turns it into a save. `committed` reports how many
+ * ids that action actually wrote — a listing that came back empty is a real
+ * answer (the provider serves nothing) and must not be reported as a failure.
+ */
+interface PoolWebAggregateProbe {
+  ok: boolean;
+  /** The provider's HTTP status, or 0 when it was never reached. */
+  status: number;
+  message: string;
+  modelCount?: number;
+  /** Ids the provider listed, when it declared a listing and answered. */
+  modelIds?: readonly string[];
+  /** How many ids the discover action wrote back. Absent on a plain probe. */
+  committed?: number;
+}
 /** One account's row, token-free. */
 interface PoolWebAccount {
   id: string;
@@ -1336,6 +1643,15 @@ interface PoolWebAccount {
    * serves a request, but it stays listed so the card can switch it back on.
    */
   disabled: boolean;
+  /**
+   * Whether the user pinned this account to be tried first.
+   *
+   * Distinct from `disabled`, and the card has to tell them apart: a disabled
+   * account is skipped entirely, a preferred one is merely first in line. It
+   * stays `false` when nothing is pinned, so the row never borrows a mark that
+   * describes a global choice rather than this account.
+   */
+  preferred: boolean;
   rateLimitHits: number;
   /**
    * Credits the user asked to keep for this account. The pool stops picking the
@@ -1440,6 +1756,34 @@ interface PoolWebModel {
   enabled: boolean;
 }
 /**
+ * What one connectivity probe measured.
+ *
+ * Deliberately three numbers and nothing else. The card asks "can this model
+ * answer at all", so a probe that reported token counts or a verdict about
+ * quality would be answering a question nobody asked, and one that reported
+ * "0 output tokens" for a refusal would be reporting a bug as a fact.
+ *
+ * `outputChars` is a character count, not a token count: this plugin cannot
+ * tokenize for a model it does not own, and a character count answers "did it
+ * say anything" without pretending to know more.
+ */
+interface PoolWebModelProbeResult {
+  /** True when the model produced at least one character of output. */
+  ok: boolean;
+  /** Milliseconds until the first output character arrived. Absent when none did. */
+  firstFrameMs?: number;
+  /** Characters of output produced before the probe stopped reading. */
+  outputChars: number;
+  /**
+   * Why the probe failed, when it did.
+   *
+   * Rendered verbatim, and it is a failure to SHOW rather than to hide: a
+   * connectivity test that swallows its error teaches the user the button is
+   * broken.
+   */
+  error?: string;
+}
+/**
  * Body of the account ignore/unignore route: exactly one account per request.
  *
  * `ignored: true` throws the account out of the pool for good (its credential is
@@ -1481,6 +1825,15 @@ interface PoolWebStatus {
   accounts: readonly PoolWebAccount[];
   /** The next account the pool would use (rotation cursor). */
   activeAccountId?: string;
+  /**
+   * The account the user pinned to be tried first, when one is pinned and it is
+   * still in the pool.
+   *
+   * Reported at document level rather than as a per-row flag because it is a
+   * single global choice, and omitting it when the pinned account has been
+   * scanned away keeps the card from drawing a "preferred" badge on nothing.
+   */
+  preferredAccountId?: string;
   cooling: number;
   models: readonly PoolWebModel[];
   /** The saved selection the card diffs its draft against. */
@@ -1801,6 +2154,371 @@ interface ModelSelection {
   contextBudgets?: Readonly<Record<string, number | undefined>>;
 }
 //#endregion
+//#region src/providers.d.ts
+/** One provider's saved settings: on/off, its key, and any discovered models. */
+interface ProviderSetting {
+  /**
+   * The explicit switch. Absent means "follow the credential": a provider the
+   * user has actually configured is on, and the seventy-five they have never
+   * touched are off.
+   *
+   * The card used to draw every one of the seventy-six vendors with its switch
+   * already on, which read as "everything is already in the pool" and made the
+   * one vendor that WAS configured indistinguishable from the rest.
+   */
+  enabled?: boolean;
+  apiKey?: string;
+  /** User override for the base URL, for providers whose host is per-deployment. */
+  baseUrl?: string;
+  /** Model ids the user chose to expose, when narrower than the registry's. */
+  models?: readonly string[];
+  /** Model ids a listing round discovered, kept so a later save is not a guess. */
+  discovered?: readonly string[];
+  addedAt?: string;
+}
+/** The whole aggregate section of the plugin settings. */
+interface AggregateSettings {
+  /** Master switch: off contributes no model rows at all. */
+  enabled?: boolean;
+  providers?: Readonly<Record<string, ProviderSetting>>;
+}
+//#endregion
+//#region src/combos.d.ts
+/** Chain strategies. Anything else on disk falls back to `fallback`. */
+declare const COMBO_STRATEGIES: readonly ['fallback', 'round-robin'];
+type ComboStrategy = (typeof COMBO_STRATEGIES)[number];
+/** A chain as the user configured it, before the catalogs are consulted. */
+interface ComboSetting {
+  /** `combo:<slug>`; derived from the name when absent or malformed. */
+  id?: string;
+  name: string;
+  /** Member model ids, in the order the user put them. */
+  models: readonly string[];
+  /** How the chain advances; `fallback` restarts from the top each turn. */
+  strategy?: ComboStrategy;
+  /** Consecutive turns one member serves before `round-robin` advances. */
+  stickyLimit?: number;
+  /** Absent is treated as on; an explicit false hides the row. */
+  enabled?: boolean;
+}
+/** One picker row standing for a chain. */
+interface ComboModelRow {
+  /** Always `combo:<slug>`. */
+  id: string;
+  name: string;
+  /** Members that exist RIGHT NOW, in order. Never empty — see below. */
+  models: readonly string[];
+  strategy: ComboStrategy;
+  stickyLimit: number;
+  /** Smallest window across members; 0 when no member declares one. */
+  contextWindow: number;
+  maxOutputTokens: number;
+  supportsImages: boolean;
+  /**
+   * Discriminator. Aggregate rows carry `providerId`, pool rows carry neither,
+   * and only this shape is `true`.
+   */
+  combo: true;
+}
+//#endregion
+//#region src/store.d.ts
+/**
+ * The aggregate section as it lives on disk.
+ *
+ * Combos live in the same file rather than a second one: they only mean
+ * anything in terms of the models the providers beside them serve, so a user who
+ * clears a key and leaves a chain behind would be editing a dangling reference
+ * in a file that no longer explains it. One document, one delete to undo.
+ *
+ * The LAN relay's settings live here too, for the same "one file to delete"
+ * reason and because they hold a shared secret.
+ */
+type AggregateStore = AggregateSettings & {
+  combos?: readonly ComboSetting[];
+  relay?: RelaySetting;
+};
+/**
+ * The LAN relay's own settings.
+ *
+ * Stored beside the aggregate keys rather than in the settings document for the
+ * same reason the keys are: this holds a credential. The relay key is shown to
+ * the user once so it can be pasted into another device, and the settings
+ * document is echoed to the browser by the host's own form renderer — we would
+ * rather that path never carried a shared secret.
+ */
+interface RelaySetting {
+  enabled?: boolean;
+  /** Bind address; only `127.0.0.1` and `0.0.0.0` are honoured. */
+  host?: string;
+  port?: number;
+  /** URL-safe shared secret LAN clients authenticate with. */
+  key?: string;
+}
+//#endregion
+//#region src/aggregate.d.ts
+/** Registry `format` → the wire vocabulary this module speaks. */
+type AggregateWire = 'chat' | 'responses' | 'messages';
+/** One model the aggregate lane offers. */
+interface AggregateModelRow {
+  /** Composite id: `providerId/modelId`, which is also the picker id. */
+  id: string;
+  /** Display name: the provider's own name plus the row's label. */
+  name: string;
+  providerId: string;
+  modelId: string;
+  contextWindow: number;
+  maxOutputTokens: number;
+  supportsImages: boolean;
+  wire: AggregateWire;
+  /** `static` from the registry, `discovered` from a live listing. */
+  source: 'static' | 'discovered';
+}
+/** One stored aggregate row set, refreshed on change, for the shim and adapter. */
+declare class AggregateCatalog {
+  private readonly read;
+  private readonly poolRows;
+  private rows;
+  private chainRows;
+  /**
+   * @param read    The settings document.
+   * @param poolRows The pool's own rows, needed only to resolve a chain member
+   *   that names a WorkBuddy model. A chain may mix pool models with aggregate
+   *   ones, so without this a perfectly valid chain would lose its pool half.
+   */
+  constructor(read: () => AggregateStore | Promise<AggregateStore>, poolRows?: () => readonly WorkBuddyModelInfo[]);
+  /**
+   * Every row this catalog offers: third-party rows first, then chain rows.
+   *
+   * Chains come last so a picker listing stays readable — a chain is a
+   * convenience over models the user already has listed, not a new vendor.
+   */
+  current(): readonly (AggregateModelRow | ComboModelRow)[];
+  /** Only the third-party rows, which is what the aggregate resolver needs. */
+  providerRows(): readonly AggregateModelRow[];
+  /** Only the chain rows. */
+  comboRows(): readonly ComboModelRow[];
+  /** Re-read the store and notify listeners when the roster actually changed. */
+  refresh(): Promise<readonly (AggregateModelRow | ComboModelRow)[]>;
+  private listeners;
+  onChange(listener: () => void): () => void;
+  /** One third-party row by composite id, or undefined. */
+  find(id: string): AggregateModelRow | undefined;
+  /** One chain row by combo id, or undefined. */
+  findCombo(id: string): ComboModelRow | undefined;
+  /** Whether any provider or chain is serving anything right now. */
+  hasRows(): boolean;
+}
+//#endregion
+//#region src/stats.d.ts
+/**
+ * Per-call usage accounting for the chat path.
+ *
+ * The gateway can answer `usage` when the request asks for it
+ * (`stream_options.include_usage`), but the shim forwards the response body
+ * verbatim and threw every number away. This module is where those numbers
+ * stop being thrown away: a bounded ring of samples in, one aggregate
+ * document out. Nothing here touches Node or HTTP, so the same code is
+ * exercised by unit tests and by the browser half.
+ *
+ * Two counts are kept apart on purpose:
+ *
+ *   - a LOGICAL TURN is one user request, however many accounts it visited;
+ *   - a PHYSICAL CALL is one upstream HTTP round trip.
+ *
+ * They answer different questions. "How many turns failed" must not inflate
+ * because the pool rotated three accounts before succeeding, and "how much
+ * did this model cost" must not be diluted by recording the turn once.
+ * Collapsing them into a single `calls` number is exactly what makes a panel
+ * disagree with the person reading it.
+ *
+ * Usage is a BONUS, never a guarantee: a gateway may ignore
+ * `stream_options` entirely. A window with no reported usage reports zeroes
+ * AND says so, so the panel can print "not reported" instead of a confident
+ * "0 tokens".
+ *
+ * @module dsh-workbuddy-xdpool/stats
+ */
+/** Tokens one upstream call reported. Every field is a non-negative count. */
+interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  /** A subset of `outputTokens` the model spent thinking. */
+  reasoningTokens: number;
+  /** A subset of `inputTokens` served from the prompt cache. */
+  cachedTokens: number;
+}
+/** One upstream HTTP round trip, successful or not. */
+interface UsageCall {
+  /** Which gateway served it: `cn` or `global`. */
+  region: string;
+  /** The model id the request asked for. */
+  model: string;
+  /**
+   * The pool account that served this physical call, as its display label.
+   *
+   * Carried because "which account earned this turn" is a question the ledger
+   * has to answer from the samples themselves: the call is filed from inside
+   * the stream forwarder, long after the choice of account has scrolled out of
+   * whatever picked it. Without it the per-account view could only be a guess
+   * reconstructed from turn ordering, which is exactly the kind of plausible
+   * fiction this module refuses to publish.
+   */
+  account?: string;
+  /**
+   * Identifies one user request.
+   *
+   * Calls sharing a `turnId` are retries of the SAME logical turn - the pool
+   * cooling an account and taking the next one. That is what lets the panel
+   * separate "3 calls" from "1 turn that rotated".
+   */
+  turnId: string;
+  /** When the call finished, in epoch milliseconds. */
+  at: number;
+  ok: boolean;
+  /** Request sent to first byte. Absent when the call failed before any byte. */
+  ttftMs?: number;
+  /** First byte to `[DONE]`. Absent when the stream never completed. */
+  decodeMs?: number;
+  usage?: TokenUsage;
+}
+/** One row of the per-model aggregate. */
+interface UsageRow {
+  region: string;
+  model: string;
+  /** Physical upstream calls. */
+  calls: number;
+  /** Logical turns that reached this model. */
+  turns: number;
+  /** Calls that failed. */
+  failed: number;
+  /** Turns where a failure was followed by a success on another account. */
+  recovered: number;
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  cachedTokens: number;
+  /** Output tokens per second while decoding, or `null` when unsound. */
+  tps: number | null;
+  /** Mean time to first byte, or `null` when no call reported one. */
+  avgTtftMs: number | null;
+  /** Most recent completion, for "last used". */
+  lastUsedAt: number;
+}
+/** One row of the per-account aggregate. */
+interface UsageAccountRow {
+  /** Display label of the account, as the pool prints it. */
+  account: string;
+  /** Region the account belongs to; an account serves one gateway. */
+  region: string;
+  /** Physical calls this account served. */
+  calls: number;
+  /** Logical turns this account saw through. */
+  turns: number;
+  /** Calls this account refused. */
+  failed: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedTokens: number;
+  /** Most recent completion, for "last used". */
+  lastUsedAt: number;
+  /** The two most-used models here, for a compact "what it usually runs" column. */
+  topModels: readonly string[];
+}
+/** One calendar day, local time. */
+interface UsageDay {
+  day: string;
+  calls: number;
+  failedTurns: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+/** The document the usage panel renders. */
+interface UsageSummary {
+  /** Samples still retained, so the panel can say "last N". */
+  samples: number;
+  /** Logical turns in the retained window. */
+  turns: number;
+  /** Turns where every call failed. */
+  failedTurns: number;
+  /** Turns that failed and then succeeded on another account. */
+  recoveredTurns: number;
+  /** Physical upstream calls; above `turns` when the pool rotated. */
+  calls: number;
+  /**
+   * False when no retained sample carried usage.
+   *
+   * The panel must distinguish "used no tokens" from "the gateway told us
+   * nothing", and only this flag tells them apart.
+   */
+  usageReported: boolean;
+  /**
+   * Retained calls, newest first.
+   *
+   * Published so the ledger's "recent detail" table can be rendered from the
+   * same numbers the aggregates above are computed from. Two derivations of
+   * one fact set are two chances to disagree; handing the panel the raw
+   * samples removes the second derivation entirely.
+   *
+   * Newest first because that is the order a reader wants, and `record` only
+   * ever appends - so reversing here costs one copy rather than a second
+   * insertion order to keep in sync.
+   */
+  entries: readonly UsageCall[];
+  rows: UsageRow[];
+  accounts: UsageAccountRow[];
+  days: UsageDay[];
+}
+/**
+ * A bounded window of recent calls, summarised on demand.
+ *
+ * In-memory by design: this is a live panel, and persisting every prompt's
+ * token counts would turn a convenience into a record of what the user asked.
+ * A restart therefore starts the chart again, which the panel states rather
+ * than hides.
+ */
+declare class UsageRecorder {
+  private samples;
+  private readonly limit;
+  constructor(limit?: number);
+  /** Retain one call, dropping the oldest once the window is full. */
+  record(call: UsageCall): void;
+  /** Samples currently retained. */
+  size(): number;
+  /** Forget every retained call. */
+  reset(): void;
+  /** Aggregate the retained window. */
+  summary(): UsageSummary;
+  /**
+   * One row per account, busiest first.
+   *
+   * Samples that never named an account are grouped under an empty label
+   * rather than dropped: `account` is optional on `UsageCall`, so a caller that
+   * files a sample without one - a failure raised before any account was ever
+   * picked, say - would otherwise vanish from this view, and the account table
+   * would add up to less than the call total with nothing on screen to explain
+   * the gap. Every shim record site names its account; this branch exists so
+   * that a future one cannot quietly break the totals.
+   *
+   * `topModels` keeps the two most-used ids rather than every one: this column
+   * answers "what does this account usually run", and a list of nine ids is not
+   * an answer to that question, it is just the other table again.
+   */
+  private accountRows;
+  /**
+   * The daily series, oldest first, limited to the most recent days.
+   *
+   * Sorted by key rather than insertion order because a retained window can
+   * straddle a month boundary, and a chart whose axis jumps backwards reads as
+   * corrupted data rather than as history.
+   *
+   * `failedTurns` is counted by DISTINCT turn id, not by summing per-call
+   * failures: a turn that rotated three accounts and failed on all three is
+   * still one failed turn, and the whole reason this module keeps turns and
+   * calls apart is so that number stays honest in every place it appears.
+   */
+  private days;
+}
+//#endregion
 //#region src/shim.d.ts
 interface ShimLogger {
   info?(...args: unknown[]): void;
@@ -1812,6 +2530,47 @@ interface WorkBuddyShim {
   baseUrl(): string;
   token(): string;
   close(): Promise<void>;
+}
+/**
+ * Everything the aggregate lane needs to answer one request.
+ *
+ * Optional on {@link WorkBuddyShimOptions} because most shims are pool-only: the
+ * CLI and the tests never build an aggregate catalog, and making them supply one
+ * would mean threading an argument nobody reads.
+ */
+interface AggregateLaneOptions {
+  /** The rows currently offered, keyed by composite `providerId/modelId`. */
+  catalog: AggregateCatalog;
+  /** Where the stored settings come from, re-read per request. */
+  readStore: () => AggregateStore;
+}
+interface ExtraLaneOptions {
+  /**
+   * The免密 free lane: which rows exist right now, and where to send a turn.
+   *
+   * The row reader is consulted per request, exactly like the pool's catalog —
+   * a roster that refreshed after startup must be servable without a restart.
+   */
+  free: ExtraLaneSource;
+}
+interface ExtraLaneSource {
+  current: () => readonly {
+    modelId: string;
+    id: string;
+  }[];
+  /**
+   * Run one turn, handing back the frames to write.
+   *
+   * The source owns the whole upstream conversation — the session identity, the
+   * wire conversion, the tool bookkeeping — and returns chat-wire SSE payloads,
+   * because that is the only wire this shim's caller speaks.
+   */
+  run: (options: {
+    modelId: string;
+    body: string;
+    signal: AbortSignal;
+    onFrame: (payload: string) => void;
+  }) => Promise<unknown>;
 }
 interface WorkBuddyShimOptions {
   pool: WorkBuddyAccountPool;
@@ -1826,8 +2585,86 @@ interface WorkBuddyShimOptions {
   region?: WorkBuddyRegion;
   /** Max accounts to try per request before giving up. */
   maxAttempts?: number;
+  /**
+   * Where per-call usage goes.
+   *
+   * Optional so the CLI and the tests can run a shim with no dashboard: they
+   * assemble a pool without a panel, and forcing a recorder on them would mean
+   * threading an argument nobody reads.
+   */
+  usageRecorder?: UsageRecorder;
+  /**
+   * The second lane: providers the user holds a key for.
+   *
+   * Attached to the CN shim only. The aggregate lane is gateway-independent — it
+   * has no region to filter by — so running it on both shims would expose the
+   * same models twice under two provider ids, and a user who picked one would
+   * have no way to tell which they were using.
+   */
+  aggregate?: AggregateLaneOptions;
+  /**
+   * The third and fourth lanes: the pooled免密 gateway and the sealed co-paid
+   * relay.
+   *
+   * Also CN-shim-only, for the aggregate lane's reason plus one of their own: a
+   * second copy under the global provider id would list every model twice and
+   * give the user two names for one lane.
+   */
+  extra?: ExtraLaneOptions;
 }
 export declare function createWorkBuddyShim(options: WorkBuddyShimOptions): WorkBuddyShim;
+//#endregion
+//#region src/free-messages.d.ts
+/**
+ * Message and frame translation between the OpenAI chat wire the plugin speaks
+ * downstream and the three wires the免密 free gateway serves upstream.
+ *
+ * Downstream there is ONE wire. The pool, the third-party aggregate and the
+ * co-paid lane all answer OpenAI chat completions, so the harness adapter is
+ * configured once with `openAICompletionsApi()` and this file never has to be
+ * reached from there. Upstream there are THREE: `/chat/completions`,
+ * `/responses` and `/messages`, chosen per model. Everything about that
+ * asymmetry lives here — request bodies go chat to responses/messages, and
+ * answers come back responses/messages to chat.
+ *
+ * WHAT IS NOT IN HERE
+ *
+ * Images. A harness image arrives as an attachment descriptor, and turning one
+ * into bytes the gateway can read is the adapter's job (it owns the attachment
+ * plane). When no resolver is supplied an image block is dropped and a warning
+ * is recorded, because silently forwarding a placeholder URL would make the
+ * model answer about a picture it never saw. Everything else — text, tool
+ * calls, tool results, reasoning — round-trips.
+ *
+ * The tool-call index mapping is the subtle part. Anthropic addresses blocks by
+ * position in one flat array and Responses by output item, while OpenAI clients
+ * expect a per-request sequential index, and a block may stream its argument
+ * fragments BEFORE it names itself. So a block is classified the moment it names
+ * itself, its argument fragments are held until then, and a held block whose
+ * verdict turns out to be "not executable" is dropped instead of handed to a
+ * client that cannot run it.
+ *
+ * @module src/free-messages
+ */
+/** The wire shapes this file translates between. */
+type FreeWire = 'chat' | 'responses' | 'messages';
+//#endregion
+//#region src/free-catalog.d.ts
+/** One free-lane row, as the adapter and the shim both read it. */
+interface FreeModelRow {
+  /** Published id, WITHOUT the `free:` prefix. */
+  id: string;
+  /** The id the picker and the wire both carry. */
+  modelId: string;
+  name: string;
+  wire: FreeWire;
+  vision: boolean;
+  reasoning: boolean;
+  contextWindow: number;
+  maxOutput: number;
+  canDisableThinking: boolean;
+  regionSensitive: boolean;
+}
 //#endregion
 //#region src/adapter.d.ts
 /** Provider route this bundle owns. */
@@ -1835,11 +2672,21 @@ export declare function createWorkBuddyShim(options: WorkBuddyShimOptions): Work
 export declare const WORKBUDDY_POOL_PROVIDER = "workbuddy-xdpool";
 interface WorkBuddyAdapterOptions {
   shim: WorkBuddyShim;
-  catalog: WorkBuddyCatalog;
+  catalog: WorkBuddyCatalog | AggregateCatalog;
   /** Plugin context; the pi-ai adapter reads `attachments`/`fs` from it. */
   ctx: Context$1;
   providerId?: string;
   displayName?: string;
+  /**
+   * The rows this provider serves, when it is a LATER lane rather than a pool.
+   *
+   * A fourth route registers its own provider id, so it owns its whole roster
+   * and `catalog` is never consulted for it — passing a pool catalog there is not
+   * a silent default, it is ignored on purpose. The roster is read per call,
+   * exactly like the pool's, so a refresh that lands after startup is visible
+   * without a restart.
+   */
+  extraRows?: (() => readonly FreeModelRow[]) | undefined;
 }
 /** What {@link createWorkBuddyAdapter} hands back. */
 interface WorkBuddyAdapter {
@@ -1855,6 +2702,10 @@ interface WorkBuddyAdapter {
  * Assemble the adapter. `getModels` re-reads the live catalog, and every
  * model's `baseUrl` is re-resolved per read so the shim's ephemeral port
  * applies from the first snapshot after startup. Call only after `shim.ready`.
+ *
+ * `catalog` accepts the aggregate catalog too; {@link isAggregateCatalog} tells
+ * the two apart by shape rather than by a flag, because the aggregate rows are a
+ * different kind of record, not a differently-populated pool row.
  */
 export declare function createWorkBuddyAdapter(options: WorkBuddyAdapterOptions): WorkBuddyAdapter;
 //#endregion
@@ -2507,6 +3358,63 @@ export declare function ignoreAccount(account: {
 /** Drop one account from the ignore list. Returns the resulting list. */
 export declare function unignoreAccount(accountId: string, path?: string): Promise<IgnoredAccount[]>;
 //#endregion
+//#region src/preferred.d.ts
+/** Absolute path of the preferred-account file. */
+export declare function preferredIdPath(env?: NodeJS.ProcessEnv): string;
+/**
+ * Read the pinned id, tolerating every "no pin yet" shape.
+ *
+ * A missing file is the normal state on a fresh install, so it is not an error.
+ */
+export declare function readPreferredId(path?: string): Promise<string | undefined>;
+/**
+ * Synchronous read, for startup.
+ *
+ * The host pins the account from inside `apply()`, which is synchronous, and
+ * doing it there removes a startup race: an async load could resolve AFTER the
+ * first account scan, so the first request of the process would be served by
+ * whichever account the strategy picked rather than the one the user asked for.
+ * The file is tens of bytes, so a blocking read at startup costs nothing
+ * measurable.
+ */
+export declare function readPreferredIdSync(path?: string): string | undefined;
+/**
+ * Write (or clear) the pinned id, atomically.
+ *
+ * Written to a sibling temp file and renamed over the target so a crash or a
+ * concurrent reader can never observe a half-written document. A truncated file
+ * reads as "nothing is pinned", which is survivable — the strategy takes over —
+ * but a half-written file that happens to parse could pin an account nobody
+ * chose, and that is the failure worth designing out.
+ *
+ * `accountId: undefined` DELETES the file rather than writing `{"accountId":
+ * null}`. Deleting makes "no pin" the same state as "never pinned", so there is
+ * exactly one way for the next read to come back empty, and the directory stays
+ * free of documents that describe the absence of a decision.
+ */
+export declare function writePreferredId(accountId: string | undefined, path?: string): Promise<void>;
+//#endregion
+//#region src/relay.d.ts
+interface PoolRelayStatus {
+  enabled: boolean;
+  /** Whether a listener is actually bound right now. */
+  listening: boolean;
+  host: string;
+  port: number;
+  /** Where a client should point; '' until something is listening. */
+  endpoint: string;
+  /**
+   * The relay key in full.
+   *
+   * Returned on purpose: the card has to show it once so the user can copy it
+   * into the other device. This is the key WE minted for LAN clients, not the
+   * shim secret, and it grants nothing beyond reaching the pool.
+   */
+  key: string;
+  /** Why nothing is bound; '' when there is nothing to explain. */
+  error: string;
+}
+//#endregion
 //#region src/web-status.d.ts
 /** Constructor dependencies — a narrow slice of the pool runtime. */
 interface PoolStatusRouteOptions {
@@ -2528,13 +3436,12 @@ interface PoolStatusRouteOptions {
    */
   scheduler?: () => AutomationStatus;
   /**
-    /**
-     * Start a manual pass, for the card's "run now" button.
-     *
-     * Returns whether a run STARTED, not its result: a pass takes tens of
-     * seconds, so it runs in the background and the card polls the scheduler
-     * status for progress and earnings.
-     */
+   * Start a manual pass, for the card's "run now" button.
+   *
+   * Returns whether a run STARTED, not its result: a pass takes tens of
+   * seconds, so it runs in the background and the card polls the scheduler
+   * status for progress and earnings.
+   */
   runAutomation?: (job: string, force: boolean) => boolean;
   /**
    * Persist one account's reserved-credit floor. Same settings document as every
@@ -2568,6 +3475,21 @@ interface PoolStatusRouteOptions {
    */
   setAccountIgnored?: (accountId: string, ignored: boolean) => Promise<void> | void;
   /**
+   * Name the account to try first, or clear the pin with a null id.
+   *
+   * Backed by the plugin's own preferred-account file rather than the settings
+   * document, for the same reason as {@link setAccountIgnored}: the CLI's
+   * `prefer` command writes the same file and has no settings service, so a
+   * settings-backed pin would only ever be writable from the card.
+   *
+   * Called by the handler and required to have taken effect in the pool before
+   * it resolves: the card re-polls straight after, and a pin that is persisted
+   * but not yet visible in the pool would make the next request ignore the
+   * choice the user just made. Absent when the host did not wire it: the route
+   * then answers 503.
+   */
+  setPreferredAccount?: (accountId: string | null) => Promise<void> | void;
+  /**
    * The accounts currently ignored, for the card's "ignored" list.
    *
    * A thunk rather than a snapshot so the document always reflects the file on
@@ -2587,6 +3509,112 @@ interface PoolStatusRouteOptions {
       error?: string;
     }>>;
   }>;
+  /**
+   * The usage panel's aggregate, produced by whatever served the calls.
+   *
+   * A thunk rather than a snapshot so the panel always sees the newest calls,
+   * and optional because a profile assembled without a recorder still serves
+   * chat normally - it simply has no usage to show, and the route reports that
+   * instead of pretending the panel is broken.
+   */
+  usage?: () => UsageSummary;
+  /**
+   * The aggregate lane's stored settings, for the read route.
+   *
+   * A thunk rather than a snapshot so the document always reflects the file on
+   * disk, including a CLI edit made while the card is open — the same contract
+   * `ignoredAccounts` documents for the ignore list.
+   */
+  aggregateStore?: () => AggregateStore;
+  /**
+   * The whole aggregate document, built host-side.
+   *
+   * One dep instead of `aggregateStore` plus a model count because the two must
+   * be read together: the store says which providers are configured, and the
+   * running catalog says which rows that actually produces. Two separate reads
+   * could straddle a save and show a provider as configured with no rows.
+   */
+  aggregateDocument?: () => Promise<PoolWebAggregateStatus> | PoolWebAggregateStatus;
+  /**
+   * Save one aggregate patch and return the document the card should re-read.
+   *
+   * The HOST half owns the write because it is the only side that also knows how
+   * to refresh the running catalog: a key saved on the card has to change the
+   * model picker without a DSH restart, which is the whole point of the card.
+   */
+  saveAggregate?: (patch: PoolWebAggregatePatch) => Promise<PoolWebAggregateStatus>;
+  /**
+   * Verify one provider's key. Never throws: the answer is what the card shows.
+   */
+  probeAggregate?: (providerId: string) => Promise<PoolWebAggregateProbe>;
+  /**
+   * Send one real streaming call and report whether the model answered.
+   *
+   * Never throws: the measurement is the answer, and a probe that rejected
+   * would leave the button spinning forever instead of telling the user what
+   * went wrong.
+   *
+   * The HOST half owns this because only the host can reach `ctx.llm.stream`,
+   * which is the one surface that resolves a provider/model pair through the
+   * real adapter registry — the plugin's own lanes do not know which credential
+   * a given provider id ends up using.
+   */
+  probeModel?: (provider: string, model: string, signal?: AbortSignal) => Promise<PoolWebModelProbeResult>;
+  /**
+   * What models each login channel contributes, as the host's catalogue spells it.
+   *
+   * Optional because a build without a login-channel pack genuinely cannot answer
+   * — the route reports that rather than pretending every channel is empty.
+   * Providers the host cannot answer for are omitted from the returned record;
+   * see {@link PoolWebChannelModels} for why that distinction is load-bearing.
+   */
+  channelModels?: (providers: readonly string[]) => Promise<Readonly<Record<string, readonly PoolWebChannelModel[]>>>;
+  /**
+   * Fetch one provider's live model list, write it back as its discovered set,
+   * and refresh the catalog.
+   */
+  discoverAggregate?: (providerId: string) => Promise<PoolWebAggregateProbe>;
+  /**
+   * The login-channel list, built host-side.
+   *
+   * `state` is the load-bearing part: a card that silently rendered an empty
+   * channel list would look exactly like "this host has no channels", which is
+   * the one conclusion the user cannot verify for themselves.
+   */
+  channelsDocument?: () => PoolWebChannelsStatus;
+  /**
+   * The chains plus the roster their members are drawn from, built host-side.
+   *
+   * One dep because the two halves are the same question asked twice — "what can
+   * a chain name, and does what it names still exist" — and answering them from
+   * two snapshots could show a member that the chains no longer resolve.
+   */
+  combosDocument?: () => PoolWebCombosStatus;
+  /**
+   * Replace the chain table and refresh the running catalog, then re-answer the
+   * document. The catalog refresh is what makes a new chain pickable at once.
+   */
+  saveCombos?: (raw: unknown) => Promise<PoolWebCombosStatus>;
+  /**
+   * What the locally running billion-context proxy is doing, read-only.
+   *
+   * Absent when the module could not be wired: the route then answers 503
+   * rather than pretending a third-party proxy reported nothing. It never
+   * rejects — a missing proxy is a normal state with its own `reason`, because
+   * billion-context is a separate optional plugin.
+   */
+  billionDocument?: () => Promise<PoolWebBillionStatus>;
+  /**
+   * The relay's current state, or undefined when this build has no relay.
+   *
+   * Reading the key back out of here is deliberate — the card has to show it so
+   * the user can paste it into another device — but it is the RELAY key, which
+   * the plugin minted for LAN clients. The shim's own per-process secret is never
+   * exposed by any route.
+   */
+  relayDocument?: () => Promise<PoolRelayStatus>;
+  /** Apply a relay patch, re-evaluate the listener, and answer with the new state. */
+  saveRelay?: (patch: PoolWebRelayPatch) => Promise<PoolRelayStatus>;
 }
 /**
  * Assemble the card's status document. Per-account credits and check-in state

@@ -1,0 +1,275 @@
+/**
+ * The card shell: brand bar, page tabs, per-page hero.
+ *
+ * Everything here is chrome. The pages themselves own their data and their
+ * actions, so this module never fetches anything — it is handed the tab list,
+ * the current tab and a setter, and it draws.
+ *
+ * Three decisions worth stating, because they are the ones a rewrite usually
+ * gets wrong:
+ *
+ * 1. **The active page is remembered in `localStorage`.** This card lives
+ *    inside the host's Settings dialog, which the user opens to go look at one
+ *    specific thing. Forgetting the page on every reopen turns "open Settings"
+ *    into "re-orient", and a settings panel you always land at the top of is a
+ *    settings panel people stop opening. A missing key (first run, private
+ *    window with storage blocked, a quota error) falls back to the first tab
+ *    rather than throwing: the shell must render even when storage does not.
+ *
+ * 2. **The glider tracks the button's real box, on both axes.** It is measured
+ *    with `offsetLeft/offsetTop/offsetWidth/offsetHeight` and absolutely
+ *    positioned, because the tab strip wraps to a second row in a narrow
+ *    settings panel. A `translate` only — the usual choice — lands the
+ *    highlight on the correct button at the correct x, in the wrong row.
+ *
+ * 3. **Nothing here is a gate.** The star button opens the repository in a new
+ *    tab and nothing else. A settings card that can refuse to render is a card
+ *    that, on a machine without outbound network, looks exactly like a broken
+ *    plugin.
+ *
+ * @module dsh-workbuddy-xdpool/client/shell
+ */
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
+import type { WorkBuddyPoolSettingsKey } from './locales.ts'
+import { SHARED_CARD_CSS, SHELL_CSS } from './styles.ts'
+/** The translator the settings section injects. */
+type Translate = (key: WorkBuddyPoolSettingsKey, params?: Record<string, unknown>) => string
+/** One page in the tab strip. `num` renders the OFM-style corner count. */
+export interface ShellTab {
+  id: string
+  label: string
+  num?: number | undefined
+}
+export interface PoolShellProps {
+  t?: Translate | undefined
+  /** Plugin version, shown next to the product name. Never a "latest" claim. */
+  version?: string | undefined
+  /** The user's avatar, as a data URI. */
+  avatar: string
+  tabs: readonly ShellTab[]
+  /** Id of the page on screen. */
+  active: string
+  onSelect: (id: string) => void
+  /**
+   * Page header. Every page gets one: the tab label alone does not say what
+   * the page is for, and the card's copy is the only place that does.
+   */
+  hero?: ReactNode | undefined
+  children: ReactNode
+}
+/** localStorage key for the remembered page. */
+const SHELL_TAB_KEY = 'xdpool.tab'
+/**
+ * Read the remembered page, tolerating every way storage can refuse.
+ *
+ * `getItem` throws in a partitioned third-party context and when cookies are
+ * blocked; JSON.parse throws on anything a previous version (or another plugin)
+ * wrote under this key. Both mean "start at the beginning", not "fail".
+ */
+function readRememberedTab(): string | undefined {
+  try {
+    const raw = window.localStorage.getItem(SHELL_TAB_KEY)
+    return raw === null || raw === '' ? undefined : raw
+  } catch {
+    return undefined
+  }
+}
+function rememberTab(id: string): void {
+  try {
+    window.localStorage.setItem(SHELL_TAB_KEY, id)
+  } catch {
+    // A failed write costs the user their place on the next reopen. Nothing
+    // else, so it is not worth a console warning on every click.
+  }
+}
+/** A single statistic above the usage tables. */
+export function KpiCard({
+  label,
+  value,
+  sub,
+}: {
+  label: string
+  /** Pre-formatted. The caller owns the formatting so a missing measurement can say so. */
+  value: string
+  sub?: string | undefined
+}) {
+  return (
+    <div className="dsm-workbuddy-xdpool-kpi dsm-workbuddy-xdpool-glass">
+      <span className="dsm-workbuddy-xdpool-kpi-label">{label}</span>
+      <span className="dsm-workbuddy-xdpool-kpi-value">{value}</span>
+      <span className="dsm-workbuddy-xdpool-kpi-sub">{sub ?? ''}</span>
+    </div>
+  )
+}
+/**
+ * A page's own header: title, one line of "what is this for", and whatever
+ * pills or actions the page needs on the right.
+ *
+ * The actions slot is page-owned. The pool page re-detects accounts, the
+ * channels page opens a login window, and neither belongs in the brand bar
+ * above the tabs, where they would apply to whichever page you are not on.
+ */
+export function PageHero({
+  title,
+  sub,
+  actions,
+  pills,
+}: {
+  title: string
+  sub?: string | undefined
+  actions?: ReactNode | undefined
+  pills?: ReactNode | undefined
+}) {
+  return (
+    <div className="dsm-workbuddy-xdpool-hero dsm-workbuddy-xdpool-glass">
+      <div className="dsm-workbuddy-xdpool-pagehead">
+        <span className="dsm-workbuddy-xdpool-pagecopy">
+          <h2 className="dsm-workbuddy-xdpool-pagetitle">{title}</h2>
+          {sub === undefined || sub === '' ? null : <p className="dsm-workbuddy-xdpool-pagesub">{sub}</p>}
+        </span>
+        {pills === undefined ? null : <div className="dsm-workbuddy-xdpool-pills">{pills}</div>}
+        {actions === undefined ? null : <div className="dsm-workbuddy-xdpool-pageactions">{actions}</div>}
+      </div>
+    </div>
+  )
+}
+/**
+ * Brand bar + tab strip + page body.
+ *
+ * The remembered tab is resolved once on mount and then owned by the caller:
+ * after that the parent is the only thing allowed to move the selection, so a
+ * `storage` event from another window cannot fight a click in this one.
+ */
+export function PoolShell({
+  t,
+  version,
+  avatar,
+  tabs,
+  active,
+  onSelect,
+  hero,
+  children,
+}: PoolShellProps) {
+  /** Measured box of the active tab's button, in tab-strip coordinates. */
+  const [glider, setGlider] = useState<{ left: number; top: number; width: number; height: number } | undefined>(undefined)
+  const tabRefs = useRef(new Map<string, HTMLButtonElement | null>())
+  const tabsRef = useRef<HTMLDivElement | null>(null)
+  const measure = useCallback((): void => {
+    const strip = tabsRef.current
+    const button = tabRefs.current.get(active)
+    // A tab that has never been rendered (the caller switched to an id the
+    // list does not carry) has no box to copy; leaving the previous glider
+    // would highlight a page that is no longer on screen.
+    if (strip === null || button === null || button === undefined) {
+      setGlider(undefined)
+      return
+    }
+    setGlider({
+      left: button.offsetLeft,
+      top: button.offsetTop,
+      width: button.offsetWidth,
+      height: button.offsetHeight,
+    })
+  }, [active])
+  // Layout effect, not effect: the glider must not be painted at its default
+  // position for one frame on every tab change.
+  useLayoutEffect(measure, [measure, tabs])
+  useEffect(() => {
+    window.addEventListener('resize', measure)
+    return () => { window.removeEventListener('resize', measure) }
+  }, [measure])
+  const select = useCallback((id: string): void => {
+    rememberTab(id)
+    onSelect(id)
+  }, [onSelect])
+  return (
+    <div className="dsm-workbuddy-xdpool-shell">
+      {/*
+        Two sheets, in this order. Every page injects its own stylesheet from
+        inside this shell, so the shared primitives have to be declared here —
+        and first — or the page's own block would lose to them on equal
+        specificity. The shell is the only component every page renders inside,
+        which is what makes it the one place a shared rule can live.
+      */}
+      <style>{SHARED_CARD_CSS}</style>
+      <style>{SHELL_CSS}</style>
+      <div className="dsm-workbuddy-xdpool-aurora" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </div>
+      <nav className="dsm-workbuddy-xdpool-nav">
+        <div className="dsm-workbuddy-xdpool-brand">
+          <img className="dsm-workbuddy-xdpool-avatar" src={avatar} alt="" />
+          <span className="dsm-workbuddy-xdpool-brand-copy">
+            <span className="dsm-workbuddy-xdpool-brand-title">
+              {t?.('shell.brand') ?? 'XD Pool'}
+              {version === undefined || version === ''
+                ? null
+                : <span className="dsm-workbuddy-xdpool-version">v{version}</span>}
+            </span>
+          </span>
+        </div>
+        <a
+          className="dsm-workbuddy-xdpool-star"
+          href="https://github.com/XDTrees/dsh-workbuddy-xdpool"
+          target="_blank"
+          rel="noreferrer"
+          title={t?.('shell.starHint') ?? 'Open this plugin on GitHub'}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path
+              fill="currentColor"
+              d="M12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5-5.8-3-5.8 3 1.1-6.5L2.6 9.4l6.5-.9z"
+            />
+          </svg>
+          <span>{t?.('shell.star') ?? 'Star on GitHub'}</span>
+        </a>
+        <div className="dsm-workbuddy-xdpool-navtabs" role="tablist" ref={tabsRef}>
+          {glider === undefined ? null
+            : <span
+                className="dsm-workbuddy-xdpool-navglider"
+                style={{
+                  transform: `translate(${String(glider.left)}px, ${String(glider.top)}px)`,
+                  width: `${String(glider.width)}px`,
+                  height: `${String(glider.height)}px`,
+                }}
+              />}
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={tab.id === active}
+              ref={(element) => { tabRefs.current.set(tab.id, element) }}
+              className={`dsm-workbuddy-xdpool-navtab${tab.id === active ? ' dsm-workbuddy-xdpool-navtab-on' : ''}`}
+              onClick={() => { select(tab.id) }}
+            >
+              {tab.label}
+              {tab.num === undefined ? null : <span className="dsm-workbuddy-xdpool-navtabnum">{tab.num}</span>}
+            </button>
+          ))}
+        </div>
+      </nav>
+      {hero === undefined ? null : hero}
+      <div className="dsm-workbuddy-xdpool-body">{children}</div>
+    </div>
+  )
+}
+/**
+ * Pick the initial page from a remembered id, the tab list and a fallback.
+ *
+ * Exported so the parent can run exactly the same check while hydrating: a
+ * remembered id that this build no longer carries must land on the first tab
+ * instead of rendering a page whose component does not exist.
+ */
+export function initialShellTab(remembered: string | undefined, tabs: readonly ShellTab[]): string {
+  const first = tabs[0]?.id
+  if (first === undefined) return ''
+  return remembered !== undefined && tabs.some(tab => tab.id === remembered) ? remembered : first
+}
+/** Read the remembered page id, tolerating storage being unavailable. */
+export function rememberedShellTab(): string | undefined {
+  return typeof window === 'undefined' ? undefined : readRememberedTab()
+}

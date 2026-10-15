@@ -15,7 +15,6 @@
  *
  * @module dsh-workbuddy-xdpool/web-status
  */
-
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { basename } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -24,21 +23,39 @@ import type { WorkBuddyAccount, WorkBuddyAccountPool } from './accounts.ts'
 import type { WorkBuddyCatalog } from './catalog.ts'
 import { isGatewayRejectionError, regionOf, type WorkBuddyUpstreamClient } from './upstream.ts'
 import type { WorkBuddyShim } from './shim.ts'
+import type { UsageSummary } from './stats.ts'
 import { isAutomationJobKind, type AutomationRunSummary, type AutomationStatus } from './scheduler.ts'
+import { hasModelsListing, isProviderId } from './providers.ts'
+import { PROVIDER_NOTES_ZH } from './provider-notes-zh.ts'
+import { listProviderStates, providerEnabled, type AggregateStore } from './store.ts'
 import {
   POOL_ACCOUNT_DISABLE_PATH,
   POOL_ACCOUNT_IGNORE_PATH,
+  POOL_ACCOUNT_PREFER_PATH,
+  POOL_AGGREGATE_DISCOVER_PATH,
+  POOL_AGGREGATE_PATH,
+  POOL_AGGREGATE_SAVE_PATH,
+  POOL_AGGREGATE_TEST_PATH,
   POOL_AUTOMATION_RUN_PATH,
+  POOL_BILLION_PATH,
   POOL_CATALOG_REFRESH_PATH,
   POOL_CREDIT_RESERVE_PATH,
+  POOL_CHANNELS_PATH,
+  POOL_CHANNEL_MODELS_PATH,
   POOL_CHECKIN_PATH,
+  POOL_COMBOS_PATH,
+  POOL_COMBOS_SAVE_PATH,
+  POOL_RELAY_PATH,
   POOL_MODELS_SAVE_PATH,
+  POOL_MODEL_PROBE_PATH,
   POOL_RESET_COOLDOWN_PATH,
   POOL_RESCAN_PATH,
   POOL_STATUS_PATH,
+  POOL_USAGE_PATH,
   type PoolWebAccount,
   type PoolWebAccountToggle,
   type PoolWebAccountIgnore,
+  type PoolWebAccountPrefer,
   type PoolWebAutomationJob,
   type PoolWebCreditReserve,
   type PoolWebAutomationRun,
@@ -49,11 +66,31 @@ import {
   type PoolWebIgnoredAccount,
   type PoolWebCatalogSource,
   type PoolRegion,
+  type PoolWebAggregatePatch,
+  type PoolWebAggregateProbe,
+  type PoolWebAggregateProvider,
+  type PoolWebAggregateStatus,
+  type PoolWebChannelModel,
+  type PoolWebChannelsStatus,
+  type PoolWebCombo,
+  type PoolWebComboCandidate,
+  type PoolWebCombosStatus,
+  type PoolWebBillionStatus,
+  type PoolWebModelProbe,
+  type PoolWebModelProbeResult,
+  type PoolWebRelayPatch,
 } from './status-paths.ts'
-
+import type { PoolRelayStatus as PoolWebRelayStatus } from './relay.ts'
+/**
+ * One aggregate model row as the card renders it.
+ *
+ * A local alias rather than an inline type so `aggregateStatusOf` and the host
+ * half that builds the same document cannot drift: both spell the row once, and
+ * a new field added to the aggregate row has to appear in one place.
+ */
+type PoolWebAggregateModelRow = PoolWebAggregateStatus['models'][number]
 export { POOL_ACCOUNT_DISABLE_PATH, POOL_CHECKIN_PATH, POOL_MODELS_SAVE_PATH, POOL_RESET_COOLDOWN_PATH, POOL_RESCAN_PATH, POOL_STATUS_PATH }
 export type { PoolWebStatus }
-
 /** Constructor dependencies — a narrow slice of the pool runtime. */
 export interface PoolStatusRouteOptions {
   pool: WorkBuddyAccountPool
@@ -70,7 +107,6 @@ export interface PoolStatusRouteOptions {
    * reports the automation as off instead of showing a broken panel.
    */
   scheduler?: () => AutomationStatus
-  /**
   /**
    * Start a manual pass, for the card's "run now" button.
    *
@@ -111,6 +147,21 @@ export interface PoolStatusRouteOptions {
    */
   setAccountIgnored?: (accountId: string, ignored: boolean) => Promise<void> | void
   /**
+   * Name the account to try first, or clear the pin with a null id.
+   *
+   * Backed by the plugin's own preferred-account file rather than the settings
+   * document, for the same reason as {@link setAccountIgnored}: the CLI's
+   * `prefer` command writes the same file and has no settings service, so a
+   * settings-backed pin would only ever be writable from the card.
+   *
+   * Called by the handler and required to have taken effect in the pool before
+   * it resolves: the card re-polls straight after, and a pin that is persisted
+   * but not yet visible in the pool would make the next request ignore the
+   * choice the user just made. Absent when the host did not wire it: the route
+   * then answers 503.
+   */
+  setPreferredAccount?: (accountId: string | null) => Promise<void> | void
+  /**
    * The accounts currently ignored, for the card's "ignored" list.
    *
    * A thunk rather than a snapshot so the document always reflects the file on
@@ -126,8 +177,115 @@ export interface PoolStatusRouteOptions {
   refreshCatalog?: () => Promise<{
     regions: Readonly<Record<PoolRegion, { source: PoolWebCatalogSource; models: number; error?: string }>>
   }>
+  /**
+   * The usage panel's aggregate, produced by whatever served the calls.
+   *
+   * A thunk rather than a snapshot so the panel always sees the newest calls,
+   * and optional because a profile assembled without a recorder still serves
+   * chat normally - it simply has no usage to show, and the route reports that
+   * instead of pretending the panel is broken.
+   */
+  usage?: () => UsageSummary
+  /**
+   * The aggregate lane's stored settings, for the read route.
+   *
+   * A thunk rather than a snapshot so the document always reflects the file on
+   * disk, including a CLI edit made while the card is open — the same contract
+   * `ignoredAccounts` documents for the ignore list.
+   */
+  aggregateStore?: () => AggregateStore
+  /**
+   * The whole aggregate document, built host-side.
+   *
+   * One dep instead of `aggregateStore` plus a model count because the two must
+   * be read together: the store says which providers are configured, and the
+   * running catalog says which rows that actually produces. Two separate reads
+   * could straddle a save and show a provider as configured with no rows.
+   */
+  aggregateDocument?: () => Promise<PoolWebAggregateStatus> | PoolWebAggregateStatus
+  /**
+   * Save one aggregate patch and return the document the card should re-read.
+   *
+   * The HOST half owns the write because it is the only side that also knows how
+   * to refresh the running catalog: a key saved on the card has to change the
+   * model picker without a DSH restart, which is the whole point of the card.
+   */
+  saveAggregate?: (patch: PoolWebAggregatePatch) => Promise<PoolWebAggregateStatus>
+  /**
+   * Verify one provider's key. Never throws: the answer is what the card shows.
+   */
+  probeAggregate?: (providerId: string) => Promise<PoolWebAggregateProbe>
+  /**
+   * Send one real streaming call and report whether the model answered.
+   *
+   * Never throws: the measurement is the answer, and a probe that rejected
+   * would leave the button spinning forever instead of telling the user what
+   * went wrong.
+   *
+   * The HOST half owns this because only the host can reach `ctx.llm.stream`,
+   * which is the one surface that resolves a provider/model pair through the
+   * real adapter registry — the plugin's own lanes do not know which credential
+   * a given provider id ends up using.
+   */
+  probeModel?: (provider: string, model: string, signal?: AbortSignal) => Promise<PoolWebModelProbeResult>
+  /**
+   * What models each login channel contributes, as the host's catalogue spells it.
+   *
+   * Optional because a build without a login-channel pack genuinely cannot answer
+   * — the route reports that rather than pretending every channel is empty.
+   * Providers the host cannot answer for are omitted from the returned record;
+   * see {@link PoolWebChannelModels} for why that distinction is load-bearing.
+   */
+  channelModels?: (
+    providers: readonly string[],
+  ) => Promise<Readonly<Record<string, readonly PoolWebChannelModel[]>>>
+  /**
+   * Fetch one provider's live model list, write it back as its discovered set,
+   * and refresh the catalog.
+   */
+  discoverAggregate?: (providerId: string) => Promise<PoolWebAggregateProbe>
+  /**
+   * The login-channel list, built host-side.
+   *
+   * `state` is the load-bearing part: a card that silently rendered an empty
+   * channel list would look exactly like "this host has no channels", which is
+   * the one conclusion the user cannot verify for themselves.
+   */
+  channelsDocument?: () => PoolWebChannelsStatus
+  /**
+   * The chains plus the roster their members are drawn from, built host-side.
+   *
+   * One dep because the two halves are the same question asked twice — "what can
+   * a chain name, and does what it names still exist" — and answering them from
+   * two snapshots could show a member that the chains no longer resolve.
+   */
+  combosDocument?: () => PoolWebCombosStatus
+  /**
+   * Replace the chain table and refresh the running catalog, then re-answer the
+   * document. The catalog refresh is what makes a new chain pickable at once.
+   */
+  saveCombos?: (raw: unknown) => Promise<PoolWebCombosStatus>
+  /**
+   * What the locally running billion-context proxy is doing, read-only.
+   *
+   * Absent when the module could not be wired: the route then answers 503
+   * rather than pretending a third-party proxy reported nothing. It never
+   * rejects — a missing proxy is a normal state with its own `reason`, because
+   * billion-context is a separate optional plugin.
+   */
+  billionDocument?: () => Promise<PoolWebBillionStatus>
+  /**
+   * The relay's current state, or undefined when this build has no relay.
+   *
+   * Reading the key back out of here is deliberate — the card has to show it so
+   * the user can paste it into another device — but it is the RELAY key, which
+   * the plugin minted for LAN clients. The shim's own per-process secret is never
+   * exposed by any route.
+   */
+  relayDocument?: () => Promise<PoolWebRelayStatus>
+  /** Apply a relay patch, re-evaluate the listener, and answer with the new state. */
+  saveRelay?: (patch: PoolWebRelayPatch) => Promise<PoolWebRelayStatus>
 }
-
 /** Redact token-like content before it crosses to the browser. */
 /**
  * A zeroed-out automation job record.
@@ -138,20 +296,17 @@ export interface PoolStatusRouteOptions {
 function emptyAutomationJob(): PoolWebAutomationJob {
   return { ok: 0, failed: 0, credit: 0, energy: 0, claimed: 0 }
 }
-
 function safeMessage(error: unknown): string {
   return (error instanceof Error ? error.message : String(error))
     .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/gu, '[redacted token]')
     .replace(/(\b(?:code|token|refresh_token|access_token)=)[^&\s]+/giu, '$1[redacted]')
     .slice(0, 500)
 }
-
 function json(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body)
   res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) })
   res.end(payload)
 }
-
 /** Loopback browser origins only; other devices are refused. */
 function loopbackOrigin(req: IncomingMessage): boolean {
   const origin = req.headers.origin
@@ -163,7 +318,6 @@ function loopbackOrigin(req: IncomingMessage): boolean {
     return false
   }
 }
-
 /** Smallest possible POST body reader, capped so a hung or oversized body
  *  cannot pin memory on the Host. Returns `{}` for an empty body. */
 function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
@@ -198,7 +352,6 @@ function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
     req.on('error', reject)
   })
 }
-
 /**
  * Validate an untrusted selection payload.
  *
@@ -233,7 +386,6 @@ function parseSelection(body: Record<string, unknown>): PoolWebModelSelection | 
   }
   return out
 }
-
 /**
  * Validate the account-toggle body. Returns undefined for anything malformed so
  * the route answers 400 instead of writing a half-applied switch.
@@ -252,7 +404,6 @@ function parseAccountToggle(
   if (!known(accountId)) return undefined
   return { accountId, disabled }
 }
-
 /**
  * Validate an ignore/unignore request.
  *
@@ -275,7 +426,86 @@ function parseAccountIgnore(
   if (ignored ? !knownInPool(accountId) : !knownIgnored(accountId)) return undefined
   return { accountId, ignored }
 }
-
+/**
+ * Validate a pin/clear request.
+ *
+ * Pinning requires the account to be in the pool, for the same reason the
+ * disable route checks: an id nothing can show must not end up in the file,
+ * where it would silently outlive the account it named and quietly override
+ * nothing. Clearing is deliberately NOT checked against anything — there is no
+ * state that could make "stop preferring" wrong, and requiring one would leave a
+ * user with a stale pin (an account they ignored) unable to clear it from the
+ * card, which is the one failure mode a pin must never have.
+ *
+ * `accountId: null` is the clear request; an empty or whitespace-only string is
+ * rejected rather than normalised, because a client that sends `""` almost
+ * certainly built the id wrong, and quietly reading it as "clear" would hide
+ * that bug behind a button that appears to work.
+ */
+function parseAccountPrefer(
+  body: Record<string, unknown>,
+  knownInPool: (id: string) => boolean,
+): PoolWebAccountPrefer | undefined {
+  const raw = body['accountId']
+  if (raw === null) return { accountId: null }
+  if (typeof raw !== 'string') return undefined
+  const accountId = raw.trim()
+  if (accountId === '' || !knownInPool(accountId)) return undefined
+  return { accountId }
+}
+/**
+ * Validate a model-probe request.
+ *
+ * Both ids are checked for emptiness and trimmed, but NOT against a roster.
+ * That is a deliberate difference from the account routes above: a probe's
+ * whole job is to answer "does this exact pair work", and the pair may well be
+ * one the picker has not published yet — a model the user is about to enable,
+ * or one a lane fetched after this page loaded. Refusing to test ids we have
+ * never heard of would make the button useless exactly when it is most needed,
+ * and there is nothing to protect here that a bad id could damage: the call
+ * either answers or fails, and it costs what the user chose to spend by
+ * clicking.
+ */
+function parseModelProbe(body: Record<string, unknown>): PoolWebModelProbe | undefined {
+  const provider = typeof body['provider'] === 'string' ? body['provider'].trim() : ''
+  const model = typeof body['model'] === 'string' ? body['model'].trim() : ''
+  if (provider === '' || model === '') return undefined
+  return { provider, model }
+}
+/**
+ * Read the provider list out of a channel-models request.
+ *
+ * Capped at a length a login page can plausibly ask for — thirteen rows — so a
+ * loopback caller cannot turn a status read into a thousand-iteration walk of
+ * the host's adapter registry. Empty is valid: a page with nothing signed in has
+ * no rows to ask about.
+ */
+/**
+ * How many providers one channel-models request may ask about.
+ *
+ * The roster is thirteen rows; a page that wants more than a dozen is not this
+ * page, and the route walks the host's adapter registry once per id.
+ */
+const MAX_CHANNEL_MODEL_PROVIDERS = 32
+function parseProviderList(body: Record<string, unknown>): readonly string[] | undefined {
+  const raw = body['providers']
+  if (!Array.isArray(raw)) return undefined
+  if (raw.length > MAX_CHANNEL_MODEL_PROVIDERS) return undefined
+  const out: string[] = []
+  for (const entry of raw) {
+    // A non-string entry rejects the whole request rather than being skipped.
+    // Silently dropping it would answer "these channels have no models" for a
+    // body that was never a valid roster, and the page would draw that as
+    // "nothing is signed in" -- a state the user cannot get out of.
+    if (typeof entry !== 'string') return undefined
+    const trimmed = entry.trim()
+    // Duplicates are dropped rather than rejected: asking twice about the same
+    // provider is harmless, and refusing it would make a caller that merges two
+    // lists fail for a reason the user cannot see.
+    if (trimmed !== '' && !out.includes(trimmed)) out.push(trimmed)
+  }
+  return out
+}
 /**
  * Parse a manual-run request.
  *
@@ -301,7 +531,6 @@ function parseCreditReserve(
   if (!known(accountId)) return undefined
   return { accountId, reserve: Math.floor(raw) }
 }
-
 function parseAutomationRun(body: Record<string, unknown>): PoolWebAutomationRun | undefined {
   const job = typeof body['job'] === 'string' ? body['job'].trim() : ''
   // 'all' runs the whole ordered pass, which is what the single button means.
@@ -310,8 +539,110 @@ function parseAutomationRun(body: Record<string, unknown>): PoolWebAutomationRun
   if (force !== undefined && typeof force !== 'boolean') return undefined
   return { job, ...force === undefined ? {} : { force } }
 }
-
-function toWebAccount(account: WorkBuddyAccount, disabled: boolean, reserve: number, reserved: boolean): PoolWebAccount {
+/**
+ * One aggregate save payload, or null when the body says nothing this lane
+ * understands.
+ *
+ * Deliberately narrow: an id the registry does not know, a patch carrying no
+ * field at all, and a lane switch without a boolean are all rejected rather than
+ * coerced. A card that cannot name a provider must not be able to create one.
+ */
+function parseAggregatePatch(body: Record<string, unknown>): PoolWebAggregatePatch | undefined {
+  const kind = trimmed(body['kind'])
+  if (kind === 'lane') {
+    if (typeof body['enabled'] !== 'boolean') return undefined
+    return { kind: 'lane', enabled: body['enabled'] }
+  }
+  if (kind === 'clear') {
+    const providerId = trimmed(body['providerId'])
+    return isProviderId(providerId) ? { kind: 'clear', providerId } : undefined
+  }
+  if (kind !== 'provider') return undefined
+  const providerId = trimmed(body['providerId'])
+  if (!isProviderId(providerId)) return undefined
+  const patch: { kind: 'provider'; providerId: string; enabled?: boolean; apiKey?: string; baseUrl?: string } = {
+    kind: 'provider',
+    providerId,
+  }
+  if (typeof body['enabled'] === 'boolean') patch.enabled = body['enabled']
+  // An empty key is a CLEARING action, not an empty value — see
+  // `updateProviderSetting`, which drops the field rather than storing `''`.
+  if (typeof body['apiKey'] === 'string') patch.apiKey = body['apiKey']
+  if (typeof body['baseUrl'] === 'string') patch.baseUrl = body['baseUrl']
+  // A patch that changes nothing would still write a timestamp, which is how a
+  // provider ends up listed as "configured" with no key. Require one real field.
+  if (patch.enabled === undefined && patch.apiKey === undefined && patch.baseUrl === undefined) return undefined
+  return patch
+}
+/** A trimmed non-empty string, or ''. */
+function trimmed(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+/** One provider id from a probe or discover body, or undefined. */
+function parseProviderId(body: Record<string, unknown>): string | undefined {
+  const providerId = trimmed(body['providerId'])
+  return isProviderId(providerId) ? providerId : undefined
+}
+/**
+ * Build the document the aggregate card renders from one store read.
+ *
+ * The provider rows NEVER carry the key — only whether one is present. That is
+ * what lets the whole registry travel to the browser without turning the status
+ * route into a credential endpoint, and it is why this function reads the store
+ * rather than serialising it.
+ *
+ * Host-side rather than shared with the card, because building it needs the
+ * running catalog's rows, which the browser half has no way to see.
+ */
+export function aggregateStatusOf(
+  store: AggregateStore,
+  models: readonly PoolWebAggregateModelRow[],
+): PoolWebAggregateStatus {
+  const providers: PoolWebAggregateProvider[] = []
+  let configured = 0
+  for (const { provider, setting, usable } of listProviderStates(store)) {
+    const models = setting.models ?? setting.discovered ?? provider.models.map(model => model.id)
+    if (Object.keys(setting).length > 0) configured += 1
+    providers.push({
+      id: provider.id,
+      name: provider.name,
+      category: provider.category,
+      authKind: provider.auth.kind,
+      format: provider.format,
+      ...provider.auth.url === null ? {} : { authUrl: provider.auth.url },
+      ...provider.website === undefined ? {} : { website: provider.website },
+      // `usable` is the registry's own verdict, not the switch: a provider whose
+      // credential flow this lane cannot drive is listed and explained rather
+      // than hidden, because "why is my provider missing" is the question the
+      // card has to answer.
+      supported: provider.auth.kind !== 'oauth' && provider.auth.kind !== 'adc',
+      configured: usable,
+      // The same predicate the catalog uses to decide whether this vendor
+      // contributes rows, so the switch the card draws cannot disagree with the
+      // picker. It is NOT `setting.enabled !== false`: an absent flag means off
+      // for every vendor the user has not configured, which is the whole point
+      // of the roster reading as a directory.
+      enabled: providerEnabled(provider, setting),
+      // The vendor's own one-line description, straight from the registry. It is
+      // the only prose in the whole document — there is no per-model blurb to
+      // travel with, so the row's small print is the vendor's, not a model's.
+      ...provider.notes === undefined ? {} : { notes: PROVIDER_NOTES_ZH[provider.id] ?? provider.notes },
+      ...trimmed(setting.baseUrl) === '' ? {} : { baseUrl: trimmed(setting.baseUrl) },
+      hasListing: hasModelsListing(provider),
+      models,
+      discovered: setting.models === undefined && (setting.discovered?.length ?? 0) > 0,
+      ...setting.addedAt === undefined ? {} : { addedAt: setting.addedAt },
+    })
+  }
+  return {
+    enabled: store.enabled !== false,
+    configured,
+    modelCount: models.length,
+    models,
+    providers,
+  }
+}
+function toWebAccount(account: WorkBuddyAccount, disabled: boolean, preferred: boolean, reserve: number, reserved: boolean): PoolWebAccount {
   const now = Date.now()
   const cooling = account.cooldownUntilMs > now
   const deadUntil = account.credentialDeadUntilMs ?? 0
@@ -334,12 +665,12 @@ function toWebAccount(account: WorkBuddyAccount, disabled: boolean, reserve: num
     ...credentialDead ? { credentialDeadUntil: new Date(deadUntil).toISOString() } : {},
     ...modelCooldowns.length === 0 ? {} : { modelCooldowns },
     disabled,
+    preferred,
     creditReserve: reserve,
     reserved,
     rateLimitHits: account.rateLimitHits,
   }
 }
-
 function toWebModel(
   model: {
     id: string
@@ -372,7 +703,6 @@ function toWebModel(
     enabled: enabled === undefined || enabled.includes(model.id),
   }
 }
-
 /**
  * Assemble the card's status document. Per-account credits and check-in state
  * are queried live; a failing query degrades to `creditsError` / `checkinError`
@@ -390,16 +720,26 @@ export async function poolWebStatus(
   // in here yet", which is information the user wants, rather than a tab that
   // only appears after they have already done the work.
   const regions: readonly PoolRegion[] = ['cn', 'global']
+  // The pin, reported at document level and only when it is still live. A pin
+  // naming an account that is not in THIS region (the two gateways never share
+  // an account) or that has been ignored entirely is omitted rather than
+  // reported with an empty list, so the card cannot offer "stop preferring it"
+  // for an account it cannot show.
+  const pinnedId = deps.pool.preferredId()
+  const preferredAccountId = pinnedId === undefined
+    || !accounts.some(account => account.id === pinnedId)
+    ? undefined
+    : pinnedId
   // The selection the card diffs its draft against. Sourced from the
   // catalog, which is where the settings section pushes it.
   const selection: PoolWebModelSelection = deps.catalogs[region].currentSelection()
   const rows: PoolWebAccount[] = []
   const now = Date.now()
-
   for (const account of accounts) {
     const row = toWebAccount(
       account,
       deps.pool.isDisabled(account.id),
+      deps.pool.preferredId() === account.id,
       deps.pool.creditReserveOf(account.id),
       deps.pool.isReserved(account.id),
     )
@@ -467,7 +807,6 @@ export async function poolWebStatus(
     }
     rows.push(row)
   }
-
   const cooling = rows.filter(row => row.cooling).length
     // "In use now" is what actually served last, not what would serve next:
     // under `balanced` the next pick is a weighted draw, so there is no fixed
@@ -477,7 +816,6 @@ export async function poolWebStatus(
     const firstUsable = lastServed !== undefined
       ? accounts.find(account => account.id === lastServed)
       : accounts.find(account => account.cooldownUntilMs <= now)
-
   let shim: { running: boolean; baseUrl?: string }
   if (deps.shim === undefined) {
     shim = { running: false }
@@ -488,7 +826,6 @@ export async function poolWebStatus(
       shim = { running: false }
     }
   }
-
   // The automation panel reads the scheduler when one is wired, and reports the
   // feature as off otherwise: a card showing an invented schedule would be worse
   // than one that says it is not running.
@@ -511,11 +848,11 @@ export async function poolWebStatus(
     earningsToday: {},
     runInProgress: false,
   }
-
   return {
     ok: accounts.length > 0 && cooling < accounts.length,
     accounts: rows,
     ...firstUsable === undefined ? {} : { activeAccountId: firstUsable.id },
+    ...preferredAccountId === undefined ? {} : { preferredAccountId },
     cooling,
     // The card edits the *user-visible* list, so it gets the selection-applied
     // view: disabled models arrive flagged rather than dropped, which is what
@@ -566,7 +903,6 @@ export async function poolWebStatus(
         },
   }
 }
-
 /**
  * Mount the read-only routes on a context where `webServer` is available. The
  * caller uses `ctx.inject(['webServer'], ...)` so Desktop startup order cannot
@@ -592,7 +928,29 @@ export function registerPoolStatusRoute(ctx: Context, deps: PoolStatusRouteOptio
         }
       },
     })
-
+    /**
+     * Read the usage panel's aggregate.
+     *
+     * GET only and loopback origin only. It never carries a prompt: the
+     * recorder holds counts and timings only, so this document is safe to hand
+     * the browser by construction rather than by scrubbing something out of it.
+     */
+    const disposeUsage = ctx.webServer.register({
+      kind: 'exact',
+      path: POOL_USAGE_PATH,
+      handler: async (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== 'GET') return json(res, 405, { error: 'method not allowed' })
+        if (!loopbackOrigin(req)) return json(res, 403, { error: 'origin-not-trusted' })
+        if (deps.usage === undefined) {
+          return json(res, 503, { error: 'usage accounting is not available in this build' })
+        }
+        try {
+          json(res, 200, deps.usage())
+        } catch (error: unknown) {
+          json(res, 500, { error: safeMessage(error) })
+        }
+      },
+    })
     /**
      * Re-fetch the upstream model catalog.
      *
@@ -622,7 +980,6 @@ export function registerPoolStatusRoute(ctx: Context, deps: PoolStatusRouteOptio
         }
       },
     })
-
     const disposeRescan = ctx.webServer.register({
       kind: 'exact',
       path: POOL_RESCAN_PATH,
@@ -637,7 +994,6 @@ export function registerPoolStatusRoute(ctx: Context, deps: PoolStatusRouteOptio
         }
       },
     })
-
     const disposeReset = ctx.webServer.register({
       kind: 'exact',
       path: POOL_RESET_COOLDOWN_PATH,
@@ -648,7 +1004,6 @@ export function registerPoolStatusRoute(ctx: Context, deps: PoolStatusRouteOptio
         json(res, 200, { ok: true })
       },
     })
-
     // The only mutating route: it collects a daily reward, so it is guarded on
     // three axes — POST only, loopback origin only, and an explicit `accountId`
     // body field. An ambiguous request can never claim on the wrong account
@@ -679,8 +1034,6 @@ export function registerPoolStatusRoute(ctx: Context, deps: PoolStatusRouteOptio
         }
       },
     })
-
-
     // Model selection is the second mutating route. It only ever writes the
     // plugin's own settings namespace, and it validates the shape here rather
     // than trusting the browser: ids must be strings and budgets must be
@@ -731,7 +1084,6 @@ export function registerPoolStatusRoute(ctx: Context, deps: PoolStatusRouteOptio
         }
       },
     })
-
     /**
      * Throw one account out of the pool for good, or take it back.
      *
@@ -771,7 +1123,31 @@ export function registerPoolStatusRoute(ctx: Context, deps: PoolStatusRouteOptio
         }
       },
     })
-
+    const disposeAccountPrefer = ctx.webServer.register({
+      kind: 'exact',
+      path: POOL_ACCOUNT_PREFER_PATH,
+      handler: async (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' })
+        if (!loopbackOrigin(req)) return json(res, 403, { error: 'origin-not-trusted' })
+        if (deps.setPreferredAccount === undefined) {
+          return json(res, 503, { error: 'the preferred account cannot be saved in this build' })
+        }
+        try {
+          const body = await readJsonBody(req)
+          // Known across BOTH regions, not this one: the pin is a property of the
+          // whole pool, so a card tab for the other gateway must be able to move
+          // it. A pin that only the other region's document reports would leave
+          // the user unable to see what they chose.
+          const known = new Set(deps.pool.list().map(account => account.id))
+          const parsed = parseAccountPrefer(body, id => known.has(id))
+          if (parsed === undefined) return json(res, 400, { error: 'invalid account prefer payload' })
+          await deps.setPreferredAccount(parsed.accountId)
+          json(res, 200, { ok: true, ...parsed })
+        } catch (error: unknown) {
+          json(res, 500, { error: safeMessage(error) })
+        }
+      },
+    })
     /**
      * Run one automation job on demand.
      *
@@ -802,8 +1178,6 @@ export function registerPoolStatusRoute(ctx: Context, deps: PoolStatusRouteOptio
         }
       },
     })
-
-
     /**
      * Set or clear one account's reserved-credit floor.
      *
@@ -832,11 +1206,343 @@ export function registerPoolStatusRoute(ctx: Context, deps: PoolStatusRouteOptio
         }
       },
     })
-
+    /**
+     * Read the aggregate lane: the whole registry, each provider's state, and the
+     * model rows the lane currently offers.
+     *
+     * GET only, loopback origin only, and token-free by CONSTRUCTION rather than
+     * by scrubbing: `aggregateStatusOf` builds each provider row field by field
+     * and never copies the key, so there is nothing to redact and a future field
+     * cannot accidentally leak one.
+     *
+     * Not folded into the status document: that one is polled every 30 seconds,
+     * and carrying 76 provider records on every poll would make the pool card's
+     * refresh cost proportional to a directory nobody is looking at.
+     */
+    const disposeAggregate = ctx.webServer.register({
+      kind: 'exact',
+      path: POOL_AGGREGATE_PATH,
+      handler: async (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== 'GET') return json(res, 405, { error: 'method not allowed' })
+        if (!loopbackOrigin(req)) return json(res, 403, { error: 'origin-not-trusted' })
+        if (deps.aggregateDocument === undefined) {
+          return json(res, 503, { error: 'the aggregate lane is not available in this build' })
+        }
+        try {
+          json(res, 200, await deps.aggregateDocument())
+        } catch (error: unknown) {
+          json(res, 500, { error: safeMessage(error) })
+        }
+      },
+    })
+    /**
+     * Save one aggregate provider's setting, or flip the lane's own switch.
+     *
+     * POST only, loopback origin only, and one provider per request — the host
+     * side does read-modify-write, so two tabs editing two providers cannot
+     * clobber each other.
+     *
+     * The answer is the WHOLE document rather than `{ok:true}`: the card has to
+     * re-read the roster anyway (a new key changes which models the picker
+     * offers), and returning it here is what makes a save visible without a
+     * second round trip.
+     */
+    const disposeAggregateSave = ctx.webServer.register({
+      kind: 'exact',
+      path: POOL_AGGREGATE_SAVE_PATH,
+      handler: async (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' })
+        if (!loopbackOrigin(req)) return json(res, 403, { error: 'origin-not-trusted' })
+        if (deps.saveAggregate === undefined) {
+          return json(res, 503, { error: 'the aggregate lane is not available in this build' })
+        }
+        try {
+          const body = await readJsonBody(req)
+          const patch = parseAggregatePatch(body)
+          if (patch === undefined) return json(res, 400, { error: 'invalid aggregate patch payload' })
+          json(res, 200, { ok: true, ...(await deps.saveAggregate(patch)) })
+        } catch (error: unknown) {
+          json(res, 500, { error: safeMessage(error) })
+        }
+      },
+    })
+    /**
+     * Verify one provider's key with a cheap non-generating call.
+     *
+     * Its own route, not a side effect of saving, because this is the ONLY
+     * aggregate action that talks to the network. Folding it into "save" would
+     * mean every keystroke-confirm spends the provider's rate limit behind the
+     * user's back — and a probe that fails would be indistinguishable from a
+     * save that failed.
+     *
+     * The answer never carries the key: `probeAggregateProvider` redacts it out
+     * of the provider's own message, because a 401 body routinely echoes the
+     * rejected key back.
+     */
+    const disposeAggregateTest = ctx.webServer.register({
+      kind: 'exact',
+      path: POOL_AGGREGATE_TEST_PATH,
+      handler: async (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' })
+        if (!loopbackOrigin(req)) return json(res, 403, { error: 'origin-not-trusted' })
+        if (deps.probeAggregate === undefined) {
+          return json(res, 503, { error: 'the aggregate lane is not available in this build' })
+        }
+        try {
+          const body = await readJsonBody(req)
+          const providerId = parseProviderId(body)
+          if (providerId === undefined) return json(res, 400, { error: 'invalid aggregate provider payload' })
+          json(res, 200, await deps.probeAggregate(providerId))
+        } catch (error: unknown) {
+          json(res, 500, { error: safeMessage(error) })
+        }
+      },
+    })
+    /**
+     * Send one real streaming call to one model.
+     *
+     * This is the plugin's only route that spends the user's credits, which is
+     * why it is POST-only and loopback-only and why it exists as its own route
+     * rather than as a flag on the status document: a status read happens every
+     * time the settings card opens, and a probe hidden inside it would bill the
+     * user for looking at their own configuration.
+     *
+     * The abort signal is threaded from the request so that closing the settings
+     * card stops a probe mid-flight instead of leaving it streaming against a
+     * model the user has already stopped looking at.
+     */
+    const disposeModelProbe = ctx.webServer.register({
+      kind: 'exact',
+      path: POOL_MODEL_PROBE_PATH,
+      handler: async (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' })
+        if (!loopbackOrigin(req)) return json(res, 403, { error: 'origin-not-trusted' })
+        if (deps.probeModel === undefined) {
+          return json(res, 503, { error: 'the connectivity probe is not available in this build' })
+        }
+        const controller = new AbortController()
+        req.on('aborted', () => { controller.abort() })
+        try {
+          const body = await readJsonBody(req)
+          const probe = parseModelProbe(body)
+          if (probe === undefined) return json(res, 400, { error: 'invalid model probe payload' })
+          json(res, 200, await deps.probeModel(probe.provider, probe.model, controller.signal))
+        } catch (error: unknown) {
+          json(res, 500, { error: safeMessage(error) })
+        } finally {
+          controller.abort()
+        }
+      },
+    })
+    /**
+     * Fetch one provider's live model list and write it back as its discovered
+     * set.
+     *
+     * Separate from the probe because it COMMITS: it changes what the provider
+     * contributes to the model picker. A failed round keeps the previous roster
+     * — the asymmetry is deliberate, because a flaky listing that emptied the
+     * roster would delete models the user configured on purpose.
+     *
+     * An authoritative EMPTY listing is a real answer and does commit: the
+     * provider serves nothing under this key, and reporting `committed: 0`
+     * rather than an error is what tells the user which of the two happened.
+     */
+    /**
+     * Read what models several login channels contribute right now.
+     *
+     * Cheap and side-effect free, unlike the probe above: this only asks the
+     * host's registry what it already knows, so it can be a plain POST without
+     * the billing argument. POST rather than GET because the provider list is
+     * genuinely a body — a GET would mean either a long query string or a
+     * hard-coded roster, and the roster changes when the plugin does.
+     *
+     * A provider the host cannot answer for is omitted from the map rather than
+     * reported empty, because "no adapter" and "publishes nothing" are different
+     * things to say to a user staring at a channel card.
+     */
+    const disposeChannelModels = ctx.webServer.register({
+      kind: 'exact',
+      path: POOL_CHANNEL_MODELS_PATH,
+      handler: async (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' })
+        if (!loopbackOrigin(req)) return json(res, 403, { error: 'origin-not-trusted' })
+        if (deps.channelModels === undefined) {
+          return json(res, 503, { error: 'the login channels are not available in this build' })
+        }
+        try {
+          const body = await readJsonBody(req)
+          const providers = parseProviderList(body)
+          if (providers === undefined) return json(res, 400, { error: 'invalid channel models payload' })
+          json(res, 200, { models: await deps.channelModels(providers) })
+        } catch (error: unknown) {
+          json(res, 500, { error: safeMessage(error) })
+        }
+      },
+    })
+    const disposeAggregateDiscover = ctx.webServer.register({
+      kind: 'exact',
+      path: POOL_AGGREGATE_DISCOVER_PATH,
+      handler: async (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' })
+        if (!loopbackOrigin(req)) return json(res, 403, { error: 'origin-not-trusted' })
+        if (deps.discoverAggregate === undefined) {
+          return json(res, 503, { error: 'the aggregate lane is not available in this build' })
+        }
+        try {
+          const body = await readJsonBody(req)
+          const providerId = parseProviderId(body)
+          if (providerId === undefined) return json(res, 400, { error: 'invalid aggregate provider payload' })
+          json(res, 200, await deps.discoverAggregate(providerId))
+        } catch (error: unknown) {
+          json(res, 500, { error: safeMessage(error) })
+        }
+      },
+    })
+    // The login-channel list. GET only, and answered even when the pack failed
+    // to mount: an `unavailable` state plus its reason is far more actionable than
+    // a 503, because the card can then say what went wrong instead of guessing.
+    const disposeChannels = ctx.webServer.register({
+      kind: 'exact',
+      path: POOL_CHANNELS_PATH,
+      handler: (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== 'GET') return json(res, 405, { error: 'method not allowed' })
+        if (!loopbackOrigin(req)) return json(res, 403, { error: 'origin-not-trusted' })
+        if (deps.channelsDocument === undefined) {
+          return json(res, 503, { error: 'the login channels are not available in this build' })
+        }
+        try {
+          json(res, 200, deps.channelsDocument())
+        } catch (error: unknown) {
+          json(res, 500, { error: safeMessage(error) })
+        }
+      },
+    })
+    /**
+     * The billion-context relay.
+     *
+     * GET only, loopback origin only. Its own route because it is the one
+     * document here that comes from ANOTHER plugin's loopback listener: the
+     * proxy publishes its own JSON and this only reads it, so folding it into
+     * the pool status document would put a third-party service on the critical
+     * path of every 30-second pool poll.
+     *
+     * Answered even when the proxy is absent — `state: 'missing'` with the
+     * install command is far more actionable than a 503, and it is the normal
+     * state on a machine that has not installed billion-context.
+     */
+    const disposeBillion = ctx.webServer.register({
+      kind: 'exact',
+      path: POOL_BILLION_PATH,
+      handler: async (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== 'GET') return json(res, 405, { error: 'method not allowed' })
+        if (!loopbackOrigin(req)) return json(res, 403, { error: 'origin-not-trusted' })
+        if (deps.billionDocument === undefined) {
+          return json(res, 503, { error: 'the billion-context relay is not available in this build' })
+        }
+        try {
+          json(res, 200, await deps.billionDocument())
+        } catch (error: unknown) {
+          json(res, 500, { error: safeMessage(error) })
+        }
+      },
+    })
+    /**
+     * The chain list plus the roster its members are drawn from.
+     *
+     * GET only. Deliberately not part of the pool status document: chains change
+     * only when the user edits them, while the pool card polls every 30 seconds,
+     * and rebuilding the chain catalog on every one of those polls would resolve
+     * members nobody is looking at.
+     */
+    const disposeCombos = ctx.webServer.register({
+      kind: 'exact',
+      path: POOL_COMBOS_PATH,
+      handler: (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== 'GET') return json(res, 405, { error: 'method not allowed' })
+        if (!loopbackOrigin(req)) return json(res, 403, { error: 'origin-not-trusted' })
+        if (deps.combosDocument === undefined) {
+          return json(res, 503, { error: 'the routing chains are not available in this build' })
+        }
+        try {
+          json(res, 200, deps.combosDocument())
+        } catch (error: unknown) {
+          json(res, 500, { error: safeMessage(error) })
+        }
+      },
+    })
+    /**
+     * Replace the whole chain table.
+     *
+     * POST only, one table per request (see `POOL_COMBOS_SAVE_PATH`). The write
+     * refreshes the running catalog before answering, so a chain saved here is
+     * pickable in the same breath — the same reason the aggregate save does it.
+     */
+    const disposeCombosSave = ctx.webServer.register({
+      kind: 'exact',
+      path: POOL_COMBOS_SAVE_PATH,
+      handler: async (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' })
+        if (!loopbackOrigin(req)) return json(res, 403, { error: 'origin-not-trusted' })
+        if (deps.saveCombos === undefined) {
+          return json(res, 503, { error: 'the routing chains are not available in this build' })
+        }
+        try {
+          const body = await readJsonBody(req)
+          const raw = body['combos']
+          json(res, 200, await deps.saveCombos(Array.isArray(raw) ? raw : []))
+        } catch (error: unknown) {
+          json(res, 500, { error: safeMessage(error) })
+        }
+      },
+    })
+    /**
+     * The relay's state, and the only way to change it.
+     *
+     * Deliberately one route for both verbs rather than a relay setting added to
+     * the settings schema: the relay is a network listener, and the one action
+     * that must always be reachable is turning it off. A switch buried in a
+     * settings form the host renders is a worse place to look for "stop exposing
+     * my account pool to the office Wi-Fi".
+     */
+    const disposeRelay = ctx.webServer.register({
+      kind: 'exact',
+      path: POOL_RELAY_PATH,
+      handler: async (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== 'GET' && req.method !== 'POST') {
+          return json(res, 405, { error: 'method not allowed' })
+        }
+        if (!loopbackOrigin(req)) return json(res, 403, { error: 'origin-not-trusted' })
+        if (deps.relayDocument === undefined || deps.saveRelay === undefined) {
+          return json(res, 503, { error: 'the LAN relay is not available in this build' })
+        }
+        try {
+          if (req.method === 'GET') {
+            json(res, 200, await deps.relayDocument())
+            return
+          }
+          const body = await readJsonBody(req)
+          json(res, 200, await deps.saveRelay(body))
+        } catch (error: unknown) {
+          json(res, 500, { error: safeMessage(error) })
+        }
+      },
+    })
     return () => {
+      disposeRelay()
+      disposeCombosSave()
+      disposeCombos()
+      disposeBillion()
+      disposeChannels()
+      disposeAggregate()
+      disposeAggregateDiscover()
+      disposeAggregateSave()
+      disposeAggregateTest()
+      disposeModelProbe()
+      disposeChannelModels()
       disposeAutomationRun()
       disposeCreditReserve()
       disposeAccountIgnore()
+      disposeAccountPrefer()
       disposeCatalogRefresh()
       disposeCheckin()
       disposeAccountDisable()
@@ -844,6 +1550,7 @@ export function registerPoolStatusRoute(ctx: Context, deps: PoolStatusRouteOptio
       disposeReset()
       disposeRescan()
       disposeStatus()
+      disposeUsage()
     }
   }, 'dsh-workbuddy-xdpool: Web status route')
 }

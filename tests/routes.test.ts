@@ -18,12 +18,19 @@ import { WorkBuddyAccountPool } from '../src/accounts.ts'
 import { WorkBuddyCatalog } from '../src/catalog.ts'
 import {
   POOL_ACCOUNT_DISABLE_PATH,
+  POOL_ACCOUNT_PREFER_PATH,
   POOL_AUTOMATION_RUN_PATH,
+  POOL_CHANNEL_MODELS_PATH,
   POOL_CHECKIN_PATH,
   POOL_CREDIT_RESERVE_PATH,
+  POOL_MODEL_PROBE_PATH,
   POOL_RESCAN_PATH,
   POOL_RESET_COOLDOWN_PATH,
   POOL_STATUS_PATH,
+} from '../src/status-paths.ts'
+import type {
+  PoolWebChannelModel,
+  PoolWebModelProbeResult,
 } from '../src/status-paths.ts'
 import { WorkBuddyUpstreamClient } from '../src/upstream.ts'
 import { registerPoolStatusRoute } from '../src/web-status.ts'
@@ -106,6 +113,9 @@ describe('pool card route table', () => {
       POOL_ACCOUNT_DISABLE_PATH,
       POOL_AUTOMATION_RUN_PATH,
       POOL_CREDIT_RESERVE_PATH,
+      POOL_ACCOUNT_PREFER_PATH,
+      POOL_MODEL_PROBE_PATH,
+      POOL_CHANNEL_MODELS_PATH,
     ]) {
       expect(routes.has(path), `${path} should be registered`).toBe(true)
     }
@@ -171,5 +181,365 @@ describe('pool card route table', () => {
     }
     await handler({ method: 'GET', headers: { origin: 'http://localhost:3000' }, on() {}, destroy() {} }, res)
     expect(res.status).toBe(405)
+  })
+})
+
+/**
+ * The prefer route's own contract.
+ *
+ * It gets its own block because "the pin survives" is only true if BOTH halves
+ * are right: the parser has to reject ids nothing can show, and the handler has
+ * to reach the dependency that writes the file. A route registered but never
+ * wired answers 503, which the card reports as a broken button — so the unwired
+ * case is asserted as its own behaviour rather than left untested.
+ */
+describe('the prefer route', () => {
+  /** Mount with an optional dep, so "wired" and "unwired" are both reachable. */
+  async function mountPrefer(
+    setPreferredAccount?: (accountId: string | null) => Promise<void> | void,
+  ): Promise<Map<string, unknown>> {
+    const pool = new WorkBuddyAccountPool({ authDirs: [await fakeAuthDir(2)], logger: { warn() {} } })
+    await pool.scan()
+    const routes = new Map<string, unknown>()
+    const { ctx } = fakeContext(routes)
+    registerPoolStatusRoute(ctx as never, {
+      pool,
+      catalogs: { cn: new WorkBuddyCatalog(), global: new WorkBuddyCatalog() },
+      client: new WorkBuddyUpstreamClient(),
+      saveSelection() {},
+      setCreditReserve() {},
+      ...setPreferredAccount === undefined ? {} : { setPreferredAccount },
+    })
+    return routes
+  }
+
+  /** A fake request carrying `body` as JSON, from the loopback origin. */
+  function postReq(body: unknown): unknown {
+    const req = {
+      method: 'POST',
+      headers: { origin: 'http://localhost:3000', 'content-type': 'application/json' },
+      on(event: string, listener: (arg?: unknown) => void) {
+        if (event === 'data') setTimeout(() => { listener(Buffer.from(JSON.stringify(body), 'utf8')) }, 0)
+        if (event === 'end') setTimeout(() => { listener() }, 1)
+        return req
+      },
+      destroy() {},
+    }
+    return req
+  }
+
+  function fakeRes(): { res: unknown; read: () => { status: number; body: Record<string, unknown> } } {
+    const state = { status: 0, body: undefined as unknown }
+    const res = {
+      writeHead(status: number) { state.status = status },
+      end(payload: string) { state.body = JSON.parse(payload) },
+    }
+    return { res, read: () => ({ status: state.status, body: state.body as Record<string, unknown> }) }
+  }
+
+  it('answers 503 when the host wired no writer, rather than pretending to pin', async () => {
+    const routes = await mountPrefer()
+    const handler = routes.get(POOL_ACCOUNT_PREFER_PATH) as (req: unknown, res: unknown) => Promise<void>
+    const { res, read } = fakeRes()
+    await handler(postReq({ accountId: 'acct-1' }), res)
+    expect(read().status).toBe(503)
+  })
+
+  it('forwards a pin and a clear to the writer, unchanged', async () => {
+    const seen: (string | null)[] = []
+    const routes = await mountPrefer((accountId) => { seen.push(accountId) })
+    const handler = routes.get(POOL_ACCOUNT_PREFER_PATH) as (req: unknown, res: unknown) => Promise<void>
+    const { res, read } = fakeRes()
+    // A clear is `null`, not a sentinel string: the host decides what a stale id
+    // means, and the card must not have to guess a magic value for "nothing".
+    await handler(postReq({ accountId: null }), res)
+    expect(read().status).toBe(200)
+    expect(seen).toEqual([null])
+  })
+
+  it('rejects an id the pool cannot show, so the file holds no orphans', async () => {
+    const seen: (string | null)[] = []
+    const routes = await mountPrefer((accountId) => { seen.push(accountId) })
+    const handler = routes.get(POOL_ACCOUNT_PREFER_PATH) as (req: unknown, res: unknown) => Promise<void>
+    const { res, read } = fakeRes()
+    await handler(postReq({ accountId: 'not-a-real-account' }), res)
+    expect(read().status).toBe(400)
+    expect(seen).toEqual([])
+  })
+
+  it('refuses GET, because a stray prefetch would pin an account', async () => {
+    const routes = await mountPrefer()
+    const handler = routes.get(POOL_ACCOUNT_PREFER_PATH) as (req: unknown, res: unknown) => Promise<void>
+    const { res, read } = fakeRes()
+    await handler({ method: 'GET', headers: { origin: 'http://localhost:3000' }, on() {}, destroy() {} }, res)
+    expect(read().status).toBe(405)
+  })
+
+  it('refuses a foreign origin, so a page on the LAN cannot choose the account', async () => {
+    const routes = await mountPrefer()
+    const handler = routes.get(POOL_ACCOUNT_PREFER_PATH) as (req: unknown, res: unknown) => Promise<void>
+    const { res, read } = fakeRes()
+    const req = postReq({ accountId: null }) as { headers: Record<string, string>; method: string }
+    req.headers['origin'] = 'http://192.168.1.50:3000'
+    await handler(req, res)
+    expect(read().status).toBe(403)
+  })
+
+  it('unregisters with the rest of the table', async () => {
+    const pool = new WorkBuddyAccountPool({ authDirs: [await fakeAuthDir(1)], logger: { warn() {} } })
+    await pool.scan()
+    const routes = new Map<string, unknown>()
+    const { ctx, disposers } = fakeContext(routes)
+    registerPoolStatusRoute(ctx as never, {
+      pool,
+      catalogs: { cn: new WorkBuddyCatalog(), global: new WorkBuddyCatalog() },
+      client: new WorkBuddyUpstreamClient(),
+      saveSelection() {},
+      setCreditReserve() {},
+    })
+    expect(routes.has(POOL_ACCOUNT_PREFER_PATH)).toBe(true)
+    for (const dispose of disposers) dispose()
+    expect(routes.has(POOL_ACCOUNT_PREFER_PATH)).toBe(false)
+  })
+})
+
+/**
+ * The two per-model routes the three model pages share.
+ *
+ * Both are POST-only on purpose. The probe is the only thing in this plugin
+ * that spends the user's own quota, so a GET would let a prefetch -- or someone
+ * walking URLs on the LAN -- burn it. The channel-model read is the same shape
+ * for the same reason: it walks the host's adapter registry once per id.
+ */
+describe('the per-model routes', () => {
+  /** Mount with whichever deps a case needs, so "wired" and "unwired" are both reachable. */
+  async function mountModels(deps: {
+    probeModel?: (provider: string, model: string, signal?: AbortSignal) => Promise<PoolWebModelProbeResult>
+    channelModels?: (providers: readonly string[]) => Promise<Readonly<Record<string, readonly PoolWebChannelModel[]>>>
+  }): Promise<Map<string, unknown>> {
+    const pool = new WorkBuddyAccountPool({ authDirs: [await fakeAuthDir(1)], logger: { warn() {} } })
+    await pool.scan()
+    const routes = new Map<string, unknown>()
+    const { ctx } = fakeContext(routes)
+    registerPoolStatusRoute(ctx as never, {
+      pool,
+      catalogs: { cn: new WorkBuddyCatalog(), global: new WorkBuddyCatalog() },
+      client: new WorkBuddyUpstreamClient(),
+      saveSelection() {},
+      setCreditReserve() {},
+      ...deps,
+    })
+    return routes
+  }
+
+  function postReq(body: unknown, origin = 'http://localhost:3000'): unknown {
+    const req = {
+      method: 'POST',
+      headers: { origin, 'content-type': 'application/json' },
+      on(event: string, listener: (arg?: unknown) => void) {
+        if (event === 'data') setTimeout(() => { listener(Buffer.from(JSON.stringify(body), 'utf8')) }, 0)
+        if (event === 'end') setTimeout(() => { listener() }, 1)
+        return req
+      },
+      destroy() {},
+    }
+    return req
+  }
+
+  function fakeRes(): { res: unknown; read: () => { status: number; body: Record<string, unknown> } } {
+    const state = { status: 0, body: undefined as unknown }
+    const res = {
+      writeHead(status: number) { state.status = status },
+      end(payload: string) { state.body = JSON.parse(payload) },
+    }
+    return { res, read: () => ({ status: state.status, body: state.body as Record<string, unknown> }) }
+  }
+
+  it('measures a model only when the host wired a probe', async () => {
+    const seen: [string, string][] = []
+    const routes = await mountModels({
+      probeModel: async (provider, model) => {
+        seen.push([provider, model])
+        return { ok: true, firstFrameMs: 412, outputChars: 5 }
+      },
+    })
+    const handler = routes.get(POOL_MODEL_PROBE_PATH) as (req: unknown, res: unknown) => Promise<void>
+    const { res, read } = fakeRes()
+    await handler(postReq({ provider: 'workbuddy-xdpool', model: 'deepseek-v3' }), res)
+    expect(read().status).toBe(200)
+    // The pair goes through exactly as the row spelled it: only the host knows
+    // which credential and endpoint a given provider id resolves to.
+    expect(seen).toEqual([['workbuddy-xdpool', 'deepseek-v3']])
+    expect(read().body).toEqual({ ok: true, firstFrameMs: 412, outputChars: 5 })
+  })
+
+  it('reports the probe as unavailable rather than pretending a model failed', async () => {
+    // "This build cannot measure" and "this model did not answer" are different
+    // sentences, and only the second one should ever make a user distrust a key.
+    const routes = await mountModels({})
+    const handler = routes.get(POOL_MODEL_PROBE_PATH) as (req: unknown, res: unknown) => Promise<void>
+    const { res, read } = fakeRes()
+    await handler(postReq({ provider: 'x', model: 'y' }), res)
+    expect(read().status).toBe(503)
+  })
+
+  it('answers a probe failure as a 200 with the failure inside it', async () => {
+    // The route succeeded; the measurement is what failed. Turning that into a
+    // 500 would make the card's error branch unreachable for the case it exists.
+    const routes = await mountModels({
+      probeModel: async () => ({ ok: false, outputChars: 0, error: 'the model returned no output' }),
+    })
+    const handler = routes.get(POOL_MODEL_PROBE_PATH) as (req: unknown, res: unknown) => Promise<void>
+    const { res, read } = fakeRes()
+    await handler(postReq({ provider: 'x', model: 'y' }), res)
+    expect(read().status).toBe(200)
+    expect(read().body).toEqual({ ok: false, outputChars: 0, error: 'the model returned no output' })
+  })
+
+  it('refuses a probe body that names no model', async () => {
+    const routes = await mountModels({ probeModel: async () => ({ ok: true, outputChars: 1 }) })
+    const handler = routes.get(POOL_MODEL_PROBE_PATH) as (req: unknown, res: unknown) => Promise<void>
+    for (const body of [{}, { provider: 'x' }, { model: 'y' }, { provider: 1, model: 'y' }, { provider: '  ', model: 'y' }]) {
+      const { res, read } = fakeRes()
+      await handler(postReq(body), res)
+      expect(read().status, JSON.stringify(body)).toBe(400)
+    }
+  })
+
+  it('probes a model that is not in any roster, because that is often the question', async () => {
+    // No membership check on purpose: the most useful thing to measure is a
+    // model that has just been published upstream and is not selectable yet.
+    const seen: [string, string][] = []
+    const routes = await mountModels({
+      probeModel: async (provider, model) => { seen.push([provider, model]); return { ok: true, outputChars: 1 } },
+    })
+    const handler = routes.get(POOL_MODEL_PROBE_PATH) as (req: unknown, res: unknown) => Promise<void>
+    const { res, read } = fakeRes()
+    await handler(postReq({ provider: 'zcode', model: 'brand-new-1' }), res)
+    expect(read().status).toBe(200)
+    expect(seen).toEqual([['zcode', 'brand-new-1']])
+  })
+
+  it('refuses GET on the probe, so a prefetch cannot spend the quota', async () => {
+    const routes = await mountModels({ probeModel: async () => ({ ok: true, outputChars: 1 }) })
+    const handler = routes.get(POOL_MODEL_PROBE_PATH) as (req: unknown, res: unknown) => Promise<void>
+    const { res, read } = fakeRes()
+    await handler({ method: 'GET', headers: { origin: 'http://localhost:3000' }, on() {}, destroy() {} }, res)
+    expect(read().status).toBe(405)
+  })
+
+  it('refuses a foreign origin on both routes', async () => {
+    const routes = await mountModels({
+      probeModel: async () => ({ ok: true, outputChars: 1 }),
+      channelModels: async () => ({}),
+    })
+    for (const path of [POOL_MODEL_PROBE_PATH, POOL_CHANNEL_MODELS_PATH]) {
+      const handler = routes.get(path) as (req: unknown, res: unknown) => Promise<void>
+      const { res, read } = fakeRes()
+      await handler(postReq({ provider: 'x', model: 'y', providers: ['x'] }, 'http://192.168.1.50:3000'), res)
+      expect(read().status, path).toBe(403)
+    }
+  })
+
+  it('asks the host about exactly the providers it was given', async () => {
+    const seen: (readonly string[])[] = []
+    const routes = await mountModels({
+      channelModels: async (providers) => { seen.push(providers); return { gemini: [{ id: 'gemini-3', name: 'Gemini 3' }] } },
+    })
+    const handler = routes.get(POOL_CHANNEL_MODELS_PATH) as (req: unknown, res: unknown) => Promise<void>
+    const { res, read } = fakeRes()
+    await handler(postReq({ providers: ['gemini', 'codearts'] }), res)
+    expect(read().status).toBe(200)
+    expect(seen).toEqual([['gemini', 'codearts']])
+    expect(read().body).toEqual({ models: { gemini: [{ id: 'gemini-3', name: 'Gemini 3' }] } })
+  })
+
+  it('collapses a repeated provider rather than asking about it twice', async () => {
+    // A page that merges two lists will produce a duplicate. Refusing it would
+    // fail for a reason the user cannot see and cannot act on.
+    const seen: (readonly string[])[] = []
+    const routes = await mountModels({
+      channelModels: async (providers) => { seen.push(providers); return {} },
+    })
+    const handler = routes.get(POOL_CHANNEL_MODELS_PATH) as (req: unknown, res: unknown) => Promise<void>
+    const { res, read } = fakeRes()
+    await handler(postReq({ providers: ['gemini', ' gemini ', 'gemini'] }), res)
+    expect(read().status).toBe(200)
+    expect(seen).toEqual([['gemini']])
+  })
+
+  it('answers an empty roster with an empty document rather than a rejection', async () => {
+    // A page with nothing signed in has nothing to ask about, and that is a
+    // normal state rather than a malformed request.
+    const routes = await mountModels({ channelModels: async () => ({}) })
+    const handler = routes.get(POOL_CHANNEL_MODELS_PATH) as (req: unknown, res: unknown) => Promise<void>
+    const { res, read } = fakeRes()
+    await handler(postReq({ providers: [] }), res)
+    expect(read().status).toBe(200)
+    expect(read().body).toEqual({ models: {} })
+  })
+
+  it('refuses a roster long enough to be an amplifier', async () => {
+    // Each id costs one walk of the host's adapter registry. The login roster
+    // is thirteen rows, so a thousand is not a page that forgot to slice.
+    const routes = await mountModels({ channelModels: async () => ({}) })
+    const handler = routes.get(POOL_CHANNEL_MODELS_PATH) as (req: unknown, res: unknown) => Promise<void>
+    const { res, read } = fakeRes()
+    const many = Array.from({ length: 33 }, (_, index) => `p${index}`)
+    await handler(postReq({ providers: many }), res)
+    expect(read().status).toBe(400)
+  })
+
+  it('rejects a roster that is not a list of strings', async () => {
+    const routes = await mountModels({ channelModels: async () => ({}) })
+    const handler = routes.get(POOL_CHANNEL_MODELS_PATH) as (req: unknown, res: unknown) => Promise<void>
+    for (const body of [{}, { providers: 'gemini' }, { providers: [1] }, { providers: null }]) {
+      const { res, read } = fakeRes()
+      await handler(postReq(body), res)
+      expect(read().status, JSON.stringify(body)).toBe(400)
+    }
+  })
+
+  it('surfaces a throwing host rather than answering with an empty document', async () => {
+    // An empty document is a claim: "these channels have no models". A route
+    // failure is not that claim, so it must not be dressed as one.
+    const routes = await mountModels({
+      channelModels: async () => { throw new Error('registry is down') },
+    })
+    const handler = routes.get(POOL_CHANNEL_MODELS_PATH) as (req: unknown, res: unknown) => Promise<void>
+    const { res, read } = fakeRes()
+    await handler(postReq({ providers: ['gemini'] }), res)
+    expect(read().status).toBe(500)
+  })
+
+  it('reports the channel models as unavailable when no pack is mounted', async () => {
+    const routes = await mountModels({})
+    const handler = routes.get(POOL_CHANNEL_MODELS_PATH) as (req: unknown, res: unknown) => Promise<void>
+    const { res, read } = fakeRes()
+    await handler(postReq({ providers: ['gemini'] }), res)
+    expect(read().status).toBe(503)
+  })
+
+  it('unregisters both with the rest of the table', async () => {
+    const pool = new WorkBuddyAccountPool({ authDirs: [await fakeAuthDir(1)], logger: { warn() {} } })
+    await pool.scan()
+    const routes = new Map<string, unknown>()
+    const { ctx, disposers } = fakeContext(routes)
+    registerPoolStatusRoute(ctx as never, {
+      pool,
+      catalogs: { cn: new WorkBuddyCatalog(), global: new WorkBuddyCatalog() },
+      client: new WorkBuddyUpstreamClient(),
+      saveSelection() {},
+      setCreditReserve() {},
+      probeModel: async () => ({ ok: true, outputChars: 1 }),
+      channelModels: async () => ({}),
+    })
+    for (const path of [POOL_MODEL_PROBE_PATH, POOL_CHANNEL_MODELS_PATH]) {
+      expect(routes.has(path), path).toBe(true)
+    }
+    for (const dispose of disposers) dispose()
+    for (const path of [POOL_MODEL_PROBE_PATH, POOL_CHANNEL_MODELS_PATH]) {
+      expect(routes.has(path), path).toBe(false)
+    }
   })
 })

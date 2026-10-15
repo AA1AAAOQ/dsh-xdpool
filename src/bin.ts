@@ -20,6 +20,7 @@ import {
 import { WORKBUDDY_APP_EXECUTABLE_ENV, workbuddyAppExecutableCandidates } from './at-rest.ts'
 import { createCore } from './index.ts'
 import { ignoreAccount, readIgnoredAccounts, unignoreAccount } from './ignored.ts'
+import { readPreferredId, writePreferredId } from './preferred.ts'
 import { formatRates, formatStatus } from './status.ts'
 
 /** Directory holding imported account snapshots. */
@@ -70,6 +71,8 @@ function usage(): string {
     '  ignore <acct>       Drop an account from the pool for good (id or label)',
     '  unignore <acct>     Put an ignored account back into the pool',
     '  ignored             List the accounts dropped from the pool (add --json)',
+    '  prefer <acct>       Try one account first (id or label); `none` clears it',
+    '  preferred           Show which account is preferred, if any',
     '  login               Guide for adding another account (desktop app is single-sign-in)',
     '  checkin [all|<acct>] Daily check-in: report status, or collect with `all` / a label',
     '  reset               Clear all rate-limit cooldowns immediately',
@@ -501,6 +504,76 @@ async function commandIgnored(args: string[]): Promise<number> {
   return 0
 }
 
+/**
+ * Name the account to try first, or hand the choice back to the strategy.
+ *
+ * The target may be a full account id (as `accounts --json` prints it) or any
+ * unambiguous fragment of the label, so the user does not have to copy a hash.
+ * The id is what gets stored — a label can change when the account is renamed,
+ * and a pin keyed by a mutable label would silently stop matching.
+ *
+ * `none` clears the pin. It is checked BEFORE the lookup because there is no
+ * state that could make clearing wrong: a user whose pinned account has since
+ * been ignored has no other way to reach "stop preferring it" from a terminal,
+ * so requiring the account to still exist would strand the command exactly when
+ * it is needed most.
+ */
+async function commandPrefer(args: string[]): Promise<number> {
+  const target = args.filter(arg => !arg.startsWith('--'))[0]
+  if (target === undefined) {
+    console.error('usage: dsh-workbuddy-xdpool prefer <account-id|label>|none')
+    return 2
+  }
+  if (target === 'none') {
+    await writePreferredId(undefined)
+    console.log('Cleared the preferred account. The distribution strategy decides again.')
+    return 0
+  }
+
+  const core = await cliCore()
+  const accounts = await core.pool.scan()
+  const matches = accounts.filter(account =>
+    account.id === target
+    || account.label === target
+    || account.id.startsWith(target)
+    || account.label.includes(target))
+  if (matches.length === 0) {
+    console.error(`No account matches "${target}". Run \`accounts\` to list them.`)
+    return 1
+  }
+  if (matches.length > 1) {
+    console.error(`"${target}" matches ${matches.length} accounts; use the full id:\n`
+      + matches.map(account => `  ${account.id}  ${account.label}`).join('\n'))
+    return 1
+  }
+  const account = matches[0]!
+  await writePreferredId(account.id)
+  console.log(
+    `Preferred ${account.label} (${account.id}).\n`
+    + '  It is tried first while it stays healthy; when it goes into cooldown, runs out\n'
+    + '  of credits, or is signed out, the pool falls back to your distribution setting.\n'
+    + '  This survives restarts. Undo with: dsh-workbuddy-xdpool prefer none',
+  )
+  return 0
+}
+
+/** Print which account is pinned, if any. */
+async function commandPreferred(): Promise<number> {
+  const pinned = await readPreferredId()
+  if (pinned === undefined) {
+    console.log('No account is preferred; the distribution strategy decides. '
+      + 'Set one with: dsh-workbuddy-xdpool prefer <account-id|label>')
+    return 0
+  }
+  const core = await cliCore()
+  const known = core.pool.list().find(account => account.id === pinned)
+  console.log(known === undefined
+    ? `Preferred account ${pinned} is not in the pool right now (ignored, signed out, or not scanned in). `
+      + 'It is inert until it returns. Clear it with: dsh-workbuddy-xdpool prefer none'
+    : `Preferred ${known.label} (${known.id}). Clear it with: dsh-workbuddy-xdpool prefer none`)
+  return 0
+}
+
 function commandLogin(): number {
   console.log(
     [
@@ -597,6 +670,10 @@ export async function main(argv: string[]): Promise<number> {
       return commandIgnore(rest, false)
     case 'ignored':
       return commandIgnored(rest)
+    case 'prefer':
+      return commandPrefer(rest)
+    case 'preferred':
+      return commandPreferred()
     case 'login':
       return commandLogin()
     case 'logout':

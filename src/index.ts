@@ -5,7 +5,6 @@
  *
  * @module dsh-workbuddy-xdpool/index
  */
-
 import { dirname } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -13,15 +12,170 @@ import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { WorkBuddyAccountPool } from './accounts.ts'
 import { WorkBuddyCatalog } from './catalog.ts'
 import {
+  mountChannelPack,
+  POOL_OWNED_CHANNELS,
+  REGISTERED_CHANNELS,
+  type MountedChannelPack,
+} from './channels.ts'
+import {
   POOL_NAME_BY_REGION,
   POOL_PROVIDER_BY_REGION,
+  WORKBUDDY_AGGREGATE_PROVIDER,
+  WORKBUDDY_FREE_PROVIDER,
   WORKBUDDY_GLOBAL_POOL_PROVIDER,
   WORKBUDDY_POOL_PROVIDER,
+  EXTRA_LANE_NAMES,
   createWorkBuddyAdapter,
   type WorkBuddyAdapter,
 } from './adapter.ts'
+import { AggregateCatalog, probeAggregateProvider, type AggregateModelRow } from './aggregate.ts'
+import { mountBillionContext, type MountedBillionContext } from './billion-mount.ts'
+import { FreeCatalog } from './free-catalog.ts'
+import { createFreeLaneSource } from './free-lane.ts'
+import { getProvider } from './providers.ts'
+import type { WorkBuddyModelInfo } from './catalog.ts'
+import {
+  buildComboCatalog,
+  comboId,
+  COMBO_DEFAULT_CONTEXT_WINDOW,
+  type ComboSetting,
+} from './combos.ts'
+import {
+  clearProviderSetting,
+  combosOf,
+  configuredProviderIds,
+  providerAuthUsable,
+  providerSettingOf,
+  readAggregateSettings,
+  readAggregateSettingsSync,
+  saveCombos as writeCombos,
+  setAggregateEnabled,
+  updateProviderSetting,
+  updateRelaySetting as writeRelaySetting,
+  type AggregateStore,
+  type RelaySetting,
+} from './store.ts'
+import { aggregateStatusOf, registerPoolStatusRoute } from './web-status.ts'
+import type {
+  PoolWebAggregatePatch,
+  PoolWebAggregateProbe,
+  PoolWebModelProbeResult,
+  PoolWebAggregateStatus,
+  PoolWebChannelsStatus,
+  PoolWebChannelModel,
+  PoolWebCombo,
+  PoolWebComboCandidate,
+  PoolWebCombosStatus,
+  PoolWebRelayPatch,
+} from './status-paths.ts'
+import type { PoolRelayStatus as PoolWebRelayStatus } from './relay.ts'
+import { readBillionStatus } from './billion.ts'
+import { describeError, recordStartupNote } from './diagnostics.ts'
+import { probeModelConnectivity } from './model-probe.ts'
+/**
+ * One aggregate catalog row as the card renders it.
+ *
+ * A local mapping rather than a cast: the row is the plugin's own type and the
+ * document's is the card's, and a cast would let one gain a field the other
+ * lacks without anything saying so.
+ */
+function toWebAggregateModel(row: AggregateModelRow) {
+  return {
+    id: row.id,
+    name: row.name,
+    providerId: row.providerId,
+    modelId: row.modelId,
+    contextWindow: row.contextWindow,
+    maxOutputTokens: row.maxOutputTokens,
+    supportsImages: row.supportsImages,
+    source: row.source,
+  }
+}
+/**
+ * The relay's settings, with defaults filled in.
+ *
+ * A partially-written section reads as the safest interpretation of itself: off,
+ * loopback-only, no key. `enabled` in particular is never inferred from the
+ * presence of a key or a host — an absent `enabled` means the user never turned
+ * this on, and guessing otherwise would expose their account pool to the network
+ * because a file happened to have a port in it.
+ */
+function relaySettingsOf(store: AggregateStore): RelaySettings {
+  const saved = store.relay ?? {}
+  const host = RELAY_HOSTS.includes(saved.host ?? '') ? saved.host ?? RELAY_HOSTS[0] ?? '127.0.0.1' : RELAY_HOSTS[0] ?? '127.0.0.1'
+  return {
+    enabled: saved.enabled === true,
+    host,
+    port: saved.port ?? RELAY_DEFAULT_PORT,
+    key: saved.key ?? '',
+  }
+}
+/**
+ * The routing document the chain editor draws from.
+ *
+ * `missing` is reported rather than silently dropped: the user's chain named a
+ * model that is gone, and the only honest thing is to show them WHICH one. OFM
+ * makes the same choice, for the same reason — a chain that quietly rewrites
+ * itself looks like it obeyed, and the user is the only one who can tell that a
+ * member they paid for is now a fallback to something free.
+ */
+function combosStatusOf(
+  store: AggregateStore,
+  catalog: AggregateCatalog,
+  poolRows: readonly WorkBuddyModelInfo[],
+): PoolWebCombosStatus {
+  const chains = combosOf(store)
+  const providerRows = catalog.providerRows()
+  const settings = new Map(
+    configuredProviderIds(store).map(providerId => [providerId, providerSettingOf(store, providerId)]),
+  )
+  const candidates: PoolWebComboCandidate[] = [
+    ...poolRows.map(row => ({
+      id: row.id,
+      name: row.name,
+      owner: 'workbuddy',
+      usable: true,
+      contextWindow: row.contextWindow,
+      supportsImages: row.supportsImages,
+    })),
+    ...providerRows.map(row => {
+      const setting = settings.get(row.providerId)
+      const provider = getProvider(row.providerId)
+      return {
+        id: row.id,
+        name: row.name,
+        owner: row.providerId,
+        usable: provider === null || setting === undefined
+          ? false
+          : providerAuthUsable(provider, setting),
+        contextWindow: row.contextWindow,
+        supportsImages: row.supportsImages,
+      }
+    }),
+  ]
+  const known = new Set(candidates.map(candidate => candidate.id))
+  return {
+    combos: chains.map(chain => {
+      const resolved = buildComboCatalog([chain], { pool: poolRows, aggregate: providerRows })[0]
+      return {
+        id: resolved?.id ?? comboId(chain.name),
+        name: chain.name,
+        models: resolved?.models ?? [],
+        missing: chain.models.filter(modelId => !known.has(modelId)),
+        strategy: resolved?.strategy ?? chain.strategy ?? 'fallback',
+        stickyLimit: resolved?.stickyLimit ?? chain.stickyLimit ?? 1,
+        enabled: chain.enabled !== false,
+        contextWindow: resolved?.contextWindow ?? COMBO_DEFAULT_CONTEXT_WINDOW,
+        supportsImages: resolved?.supportsImages ?? false,
+      }
+    }),
+    candidates,
+  }
+}
 import { WorkBuddyScheduler, type AutomationJobKind, type AutomationLedger, type AutomationOptions } from './scheduler.ts'
 import { createWorkBuddyShim, type WorkBuddyShim } from './shim.ts'
+import { createPoolRelay, newRelayKey, RELAY_DEFAULT_PORT, RELAY_HOSTS, type RelaySettings } from './relay.ts'
+import { UsageRecorder } from './stats.ts'
 import { buildStatus } from './status.ts'
 export {
   AUTOMATION_JOB_KINDS, AUTOMATION_TICK_MS, EVENT_SCORE_WAIT_MS, WorkBuddyScheduler, dayKey,
@@ -29,16 +183,13 @@ export {
   type AutomationLedger, type AutomationRunSummary, type AutomationStatus, type SchedulerLogger,
 } from './scheduler.ts'
 import { regionOf, WorkBuddyUpstreamClient, type WorkBuddyRegion } from './upstream.ts'
-import { registerPoolStatusRoute } from './web-status.ts'
 import {
   ignoreAccount,
   ignoredIdsPath,
   readIgnoredAccountsSync,
   unignoreAccount,
 } from './ignored.ts'
-
 import { fileURLToPath } from 'node:url'
-
 /**
  * This plugin's install root, the tree its own provider is assembled from.
  *
@@ -61,7 +212,6 @@ const HOST_MODULE_ROOT = ((): string => {
     return ''
   }
 })()
-
 export { WORKBUDDY_POOL_PROVIDER, createWorkBuddyAdapter, type WorkBuddyAdapter } from './adapter.ts'
 export { createWorkBuddyShim, type WorkBuddyShim } from './shim.ts'
 export {
@@ -121,19 +271,22 @@ export {
   writeIgnoredAccounts,
   type IgnoredAccount,
 } from './ignored.ts'
+import {
+  preferredIdPath,
+  readPreferredId,
+  readPreferredIdSync,
+  writePreferredId,
+} from './preferred.ts'
+export { preferredIdPath, readPreferredId, readPreferredIdSync, writePreferredId } from './preferred.ts'
 export type { ModelSelection } from './catalog.ts'
-
 // The card half talks to these routes over HTTP; exporting the registrar and
 // its option shape lets a probe mount the real table instead of trusting that
 // a registration landed outside the teardown closure.
 export { poolWebStatus, registerPoolStatusRoute, type PoolStatusRouteOptions } from './web-status.ts'
-
 /** Stable Cordis plugin name. */
 export const name = 'llm-workbuddy-xdpool'
-
 /** The model registry required before the provider can register. */
 export const inject = ['llm', 'settings']
-
 /**
  * Settings namespace for the WorkBuddy XD Pool card. Registering a section here
  * is what makes the provider appear on the Models settings page and causes the
@@ -141,7 +294,6 @@ export const inject = ['llm', 'settings']
  * the mechanism the single-account connector uses.
  */
 export const WORKBUDDY_POOL_SETTINGS_NS = 'workbuddy-xdpool' as SettingsNamespace
-
 /** Plugin configuration. */
 export interface Config {
   /** Explicit WorkBuddy desktop auth-file path override. */
@@ -222,14 +374,12 @@ export interface Config {
    */
   automationEarnings?: AutomationLedger
 }
-
 /** One region's saved model selection. */
 export interface ModelSelectionConfig {
   enabledModelIds?: string[]
   imageModelIds?: string[]
   contextBudgets?: Record<string, number>
 }
-
 /**
  * Daily-points automation.
  *
@@ -258,11 +408,8 @@ export interface AutomationConfig {
   /** How long an account rests after its credits run out, in milliseconds. */
   exhaustCooldownMs?: number
 }
-
-
 /** Upper bound the card offers as the "default" context window, in tokens. */
 export const DEFAULT_CONTEXT_BUDGET = 200_000
-
 /**
  * Fold a saved automation block into scheduler options.
  *
@@ -280,7 +427,6 @@ export function automationOptions(automation: AutomationConfig | undefined): Aut
     ...automation?.travelHours === undefined ? {} : { travelHours: automation.travelHours },
   }
 }
-
 /**
  * One region's model-selection schema.
  *
@@ -293,7 +439,6 @@ function asVolatile<S>(schema: S): S {
   const candidate = schema as unknown as { volatile?: () => S }
   return typeof candidate.volatile === 'function' ? candidate.volatile() : schema
 }
-
 /**
  * Peel one live volatile reference.
  *
@@ -312,7 +457,6 @@ function unwrapVolatile<T>(value: T): T {
   }
   return value
 }
-
 /**
  * Deep copy of a config value with every live `{get(): T}` reference replaced
  * by the value it resolves to.
@@ -335,7 +479,6 @@ function unwrapVolatileDeep<T>(value: T): T {
   }
   return peeled
 }
-
 /**
  * One region's model-selection schema.
  *
@@ -349,7 +492,6 @@ const modelSelectionSchema = z.object({
   imageModelIds: z.array(z.string()).description('Model ids accepting image input in this region (absent = follow upstream)'),
   contextBudgets: z.dict(z.number().step(1).min(1)).description('Per-model context-window override for this region'),
 })
-
 /**
  * Automation schema.
  *
@@ -371,12 +513,9 @@ const automationSchema = z.object({
   travelHours: z.array(z.number().step(1).min(0).max(23)).description('Local hours for the buddy travel loop'),
   exhaustCooldownMs: z.number().step(1).min(1000).description('How long a spent account rests, in milliseconds'),
 })
-
-
 /** Settings key holding one region's saved selection. */
 export const modelSelectionKeyFor = (region: 'cn' | 'global'): string =>
   region === 'cn' ? 'modelSelectionCn' : 'modelSelectionGlobal'
-
 /**
  * Plugin configuration schema.
  *
@@ -408,9 +547,7 @@ export const Config: z<Config> = z.object({
   modelSelectionGlobal: asVolatile(modelSelectionSchema.description('Model selection for the international gateway')),
   automation: asVolatile(automationSchema.description('Daily points automation (activity report, task claiming, check-in)')),
   automationEarnings: asVolatile(z.any().description('Automation earnings ledger (written by the scheduler)'))
-
 })
-
 /** Everything the CLI needs from a live plugin instance. */
 export interface WorkBuddyPoolApi {
   pool: WorkBuddyAccountPool
@@ -424,22 +561,17 @@ export interface WorkBuddyPoolApi {
   resetCooldowns(): void
   /** Daily-points automation; assembled with the core, inert until started. */
   scheduler: WorkBuddyScheduler
-
 }
-
 /** Live API, published for the CLI. */
 let api: WorkBuddyPoolApi | undefined
-
 /** The live API, or undefined when the plugin has not applied yet. */
 export function currentApi(): WorkBuddyPoolApi | undefined {
   return api
 }
-
 /** Test seam: install an API instance without booting cordis. */
 export function setApi(next: WorkBuddyPoolApi | undefined): void {
   api = next
 }
-
 /** Assemble the runtime objects without registering anything. */
 /**
  * Assemble the runtime objects without registering anything.
@@ -461,7 +593,6 @@ export function createCore(logger?: { warn(...args: unknown[]): void; info?(...a
   const scheduler = new WorkBuddyScheduler(pool, client, { ...logger === undefined ? {} : { logger } })
   return { pool, catalogs, client, scheduler }
 }
-
 /**
  * Log a warning when the plugin and the host resolve different pi-ai
  * generations.
@@ -483,7 +614,6 @@ function warnOnPiAiGenerationMismatch(ctx: Context): void {
     // mismatch it looks for.
   }
 }
-
 /**
  * Start the loopback endpoint, register the `workbuddy-xdpool` provider, and
  * discover accounts. The provider registers only after `shim.ready` resolves,
@@ -491,7 +621,6 @@ function warnOnPiAiGenerationMismatch(ctx: Context): void {
  */
 export function apply(ctx: Context, config: Config = {}): void {
   const core = createCore(ctx.logger)
-
   // Cross-generation guard, checked ONCE at load.
   //
   // Two copies of @earendil-works/pi-ai on one call chain — the plugin's and the
@@ -503,7 +632,6 @@ export function apply(ctx: Context, config: Config = {}): void {
   // runs, because a mismatch may be benign and a hard failure on a guess would
   // be worse.
   warnOnPiAiGenerationMismatch(ctx)
-
   // The permanent ignore list, read ONCE here (synchronously) and kept live.
   //
   // Loaded at apply time rather than on the first scan because `apply()` is
@@ -514,13 +642,23 @@ export function apply(ctx: Context, config: Config = {}): void {
   const ignoredPath = ignoredIdsPath()
   let ignoredAccounts = readIgnoredAccountsSync(ignoredPath)
   core.pool.applyIgnored(ignoredAccounts.map(entry => entry.id))
-
   /** Re-read the ignore file and push it into the pool. */
   const refreshIgnored = (): void => {
     ignoredAccounts = readIgnoredAccountsSync(ignoredPath)
     core.pool.applyIgnored(ignoredAccounts.map(entry => entry.id))
   }
-
+  // The pinned account, read the same way and for the same reason.
+  //
+  // A stale pin is harmless by construction — `acquire()` falls back to the
+  // distribution strategy whenever the pinned account fails a gate — so this
+  // cannot pin an account that no longer exists. It just must be read
+  // synchronously, or the first request of the process would be served by
+  // whichever account the strategy picked rather than the one the user chose.
+  const preferredPath = preferredIdPath()
+  const applyPreferred = (accountId: string | undefined): void => {
+    core.pool.prefer(accountId)
+  }
+  applyPreferred(readPreferredIdSync(preferredPath))
   /**
    * Fetch and install the model catalog for both regions.
    *
@@ -564,7 +702,6 @@ export function apply(ctx: Context, config: Config = {}): void {
     }
     return { regions }
   }
-
   /**
    * Invalidate the provider snapshot so the picker re-reads the catalog.
    *
@@ -577,9 +714,7 @@ export function apply(ctx: Context, config: Config = {}): void {
    */
   /** The domestic adapter, published for the CLI after registration. */
   let builtAdapter: WorkBuddyAdapter | undefined
-
   let invalidateCatalog = (): void => {}
-
   // Effective config: the plugin config, then the settings-scope value once
   // the WorkBuddy XD Pool settings section joins (so edits made on the card's
   // Models settings page stay authoritative). A dedicated section is also what
@@ -732,7 +867,6 @@ export function apply(ctx: Context, config: Config = {}): void {
   if (typeof settingsService.installSection !== 'function' && typeof settingsService.configure !== 'function') {
     ctx.logger.warn?.('dsh-workbuddy-xdpool: settings service exposes neither installSection nor configure; the card will not mount')
   }
-
   // On 0.1.7 a saved edit lands in the profile patch and is announced as
   // `loader/volatile-update`; the loader then hands the plugin a fresh live
   // reference. Re-applying here is what makes a save on the card take effect
@@ -741,7 +875,6 @@ export function apply(ctx: Context, config: Config = {}): void {
   // simply never fires.
   ;(ctx as unknown as { on(name: string, listener: () => void): unknown })
     .on('loader/volatile-update', () => { applyConfigFromSource() })
-
   // Apply the SAVED configuration once at startup, not only when it changes.
   //
   // On 0.1.7 `configure({auto})` registers the presentation policy and nothing
@@ -757,7 +890,12 @@ export function apply(ctx: Context, config: Config = {}): void {
   // never broken — `current()` resolves the loader's config — which is exactly
   // why the symptom looked like "the values are saved but ignored".
   applyConfigFromSource()
-
+  // Written before anything below can throw, so the trace distinguishes "the
+  // plugin never got as far as registering" from "registration was reached and
+  // rejected" — the two look identical from the outside (a card with no models).
+  recordStartupNote(
+    `apply entered host=${typeof ctx.llm?.registerAdapter} settings=${typeof settingsService.installSection}/${typeof settingsService.configure}`,
+  )
   /**
    * Write one key of the plugin's own settings section. Only ever called with
    * the three model-selection keys, so the settings file cannot be steered from
@@ -788,7 +926,6 @@ export function apply(ctx: Context, config: Config = {}): void {
 function stableJsonEqual(left: unknown, right: unknown): boolean {
   return canonicalJson(left) === canonicalJson(right)
 }
-
 function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
   if (typeof value === 'object' && value !== null) {
@@ -799,7 +936,6 @@ function canonicalJson(value: unknown): string {
   }
   return JSON.stringify(value)
 }
-
   /**
    * The namespace `settings.update` expects on the running line.
    *
@@ -843,7 +979,6 @@ function canonicalJson(value: unknown): string {
       }
     }
   }
-
   // Persist the automation's daily earnings ledger through the same settings
   // path everything else uses. Without this the ledger lives only in memory, so
   // a host restart mid-day would show nothing for rewards the automation had
@@ -857,17 +992,50 @@ function canonicalJson(value: unknown): string {
   })
   const storedLedger = current().automationEarnings
   if (storedLedger !== undefined) core.scheduler.applyEarningsLedger(storedLedger)
-
-
   // One shim per region. Each carries its own ephemeral port and secret, and
   // each is scoped to its gateway's accounts, so the two providers are fully
   // independent: a failing region cannot take the other one down with it.
+  // One recorder for BOTH regions on purpose. The panel answers "how much did
+  // I call today", and two recorders would make that total a sum of two
+  // unrelated half-tables - a number that looks authoritative and is wrong.
+  const usageRecorder = new UsageRecorder()
+  // A chain may name a pool model as well as a third-party one, so the catalog
+  // is handed the CN roster: without it a chain pointing at `hy3` would drop
+  // that member and advertise only the aggregate half. The CN rows are the
+  // ones the CN shim can actually serve, which is where chains are answered.
+  const aggregateCatalog = new AggregateCatalog(
+    () => readAggregateSettingsSync(),
+    () => core.catalogs.cn.current(),
+  )
+  void aggregateCatalog.refresh()
+  // The免密 free lane. It owns its own roster behind its own provider id, so it
+  // shares neither the pool's cooldown table nor its usage panel.
+  //
+  // Constructed with its static fallback already in place: a lane whose first
+  // listing has not landed must still answer the picker, because an empty group
+  // is the one thing a user reads as "the plugin is broken".
+  const freeCatalog = new FreeCatalog()
+  const freeLane = createFreeLaneSource(freeCatalog, ctx.logger)
   const shims = {
-    cn: createWorkBuddyShim({ pool: core.pool, client: core.client, catalog: core.catalogs.cn, logger: ctx.logger, region: 'cn' }),
-    global: createWorkBuddyShim({ pool: core.pool, client: core.client, catalog: core.catalogs.global, logger: ctx.logger, region: 'global' }),
+    cn: createWorkBuddyShim({
+      pool: core.pool,
+      client: core.client,
+      catalog: core.catalogs.cn,
+      logger: ctx.logger,
+      region: 'cn',
+      usageRecorder,
+      // The aggregate lane rides on the CN shim and nowhere else: it has no
+      // gateway to be scoped to, so mounting it twice would list the same
+      // third-party models under two providers the user cannot tell apart.
+      aggregate: { catalog: aggregateCatalog, readStore: () => readAggregateSettingsSync() },
+      // The free lane rides on the CN shim as well: its model ids carry the
+      // lane's own prefix, which is what selects the upstream, so it needs no
+      // gateway of its own and no second loopback listener.
+      extra: { free: freeLane },
+    }),
+    global: createWorkBuddyShim({ pool: core.pool, client: core.client, catalog: core.catalogs.global, logger: ctx.logger, region: 'global', usageRecorder }),
   } as const
   const shim = shims.cn
-
   /** Resolve a region's loopback origin once it has bound a port. */
   const shimInfo = (which: 'cn' | 'global'): { running: boolean; baseUrl?: string } => {
     try {
@@ -877,17 +1045,34 @@ function canonicalJson(value: unknown): string {
       return { running: false }
     }
   }
-
   let stopped = false
+  /**
+   * The LAN relay, mounted on the CN shim only.
+   *
+   * It is not folded into the shim's own listener on purpose — see
+   * `src/relay.ts`: the shim secret is per-process, and handing it to every
+   * device on the network would break every client on the next DSH restart.
+   * The relay holds that secret and authenticates clients with a key of its own.
+   */
+  const relay = createPoolRelay({
+    shim: shims.cn,
+    read: () => relaySettingsOf(readAggregateSettingsSync()),
+    logger: ctx.logger,
+  })
   ctx.effect(() => () => {
     stopped = true
+    // Before the shim it points at: a relay must not outlive the listener it
+    // forwards to, or it keeps accepting requests it can only answer with 502.
+    void relay.close()
     void shims.cn.close()
     void shims.global.close()
     // The scheduler holds a timer; stop it before the shims so a tick in flight
     // cannot reach an upstream client whose base has already gone.
     core.scheduler.stop()
   })
-
+  void relay.ready.catch((error: unknown) => {
+    ctx.logger.warn(`xdpool relay: startup failed — ${String(error)}`)
+  })
   // Same-origin routes backing the WorkBuddy XD Pool settings card. `webServer`
   // is an optional service: on a headless profile without it, no card routes
   // mount and the card shows an offline banner — the provider still works.
@@ -895,6 +1080,9 @@ function canonicalJson(value: unknown): string {
     pool: core.pool,
     catalogs: core.catalogs,
     client: core.client,
+    // The usage panel reads the SAME recorder both shims write to, so its totals
+    // cover every gateway rather than one half of them.
+    usage: () => usageRecorder.summary(),
     shim: () => shimInfo('cn'),
     // The automation is pool-wide, not per region, so both routes read the same
     // scheduler snapshot.
@@ -959,6 +1147,21 @@ function canonicalJson(value: unknown): string {
       if (!ignored) await core.pool.scan()
     },
     ignoredAccounts: () => ignoredAccounts,
+    // Pin one account to be tried first, or clear the pin with null.
+    //
+    // Same file-backed reasoning as the ignore list: `dsh-workbuddy-xdpool prefer`
+    // writes this file from a terminal with no host running, and a pin that only
+    // the card could set would make the CLI command a lie.
+    //
+    // Order matters and is the whole point: the file is written FIRST, so a
+    // failure leaves the pin unchanged rather than applied-but-unremembered (the
+    // mirror image of the ignore list's own hazard), and the pool is updated
+    // BEFORE the handler resolves, so the card's next poll and the very next
+    // request both already agree with what the user just pressed.
+    setPreferredAccount: async (accountId) => {
+      await writePreferredId(accountId ?? undefined, preferredPath)
+      applyPreferred(accountId ?? undefined)
+    },
     // Re-fetch both regions' catalogs on demand. This is what the card's
     // "refresh models" button calls; before it existed, a startup fetch failure
     // left the static (shorter) roster in place until DSH was restarted.
@@ -966,6 +1169,197 @@ function canonicalJson(value: unknown): string {
       const result = await seedCatalog()
       invalidateCatalog()
       return result
+    },
+    // One read for the card's aggregate document: the store says which
+    // providers are configured, and the RUNNING catalog says which rows that
+    // actually produces. Reading them separately could straddle a save and show
+    // a provider as configured while contributing nothing.
+    aggregateDocument: (): PoolWebAggregateStatus => aggregateStatusOf(
+      readAggregateSettingsSync(),
+      // Provider rows only: this document is the aggregate lane's provider
+      // table, and a chain is a route over models, not a vendor with a key.
+      // Chain rows are answered by the `/combos` document instead.
+      aggregateCatalog.providerRows().map(toWebAggregateModel),
+    ),
+    saveAggregate: async (patch: PoolWebAggregatePatch): Promise<PoolWebAggregateStatus> => {
+      if (patch.kind === 'lane') await setAggregateEnabled(patch.enabled)
+      else if (patch.kind === 'clear') await clearProviderSetting(patch.providerId)
+      else {
+        await updateProviderSetting(patch.providerId, {
+          ...patch.enabled === undefined ? {} : { enabled: patch.enabled },
+          ...patch.apiKey === undefined ? {} : { apiKey: patch.apiKey },
+          ...patch.baseUrl === undefined ? {} : { baseUrl: patch.baseUrl },
+        })
+      }
+      // Refreshing here is what makes a new key appear in the model picker
+      // without a DSH restart — the reason the whole panel exists.
+      await aggregateCatalog.refresh()
+      return aggregateStatusOf(readAggregateSettingsSync(), aggregateCatalog.providerRows().map(toWebAggregateModel))
+    },
+    // Probe and discover share one implementation; the route decides whether the
+    // answer is displayed or written back, so the two cannot drift.
+    probeAggregate: async (providerId: string): Promise<PoolWebAggregateProbe> => {
+      const probe = await probeAggregateProvider(readAggregateSettingsSync(), providerId)
+      return { ok: probe.ok, status: probe.status, message: probe.message, ...probe.modelCount === undefined ? {} : { modelCount: probe.modelCount }, ...probe.modelIds === undefined ? {} : { modelIds: probe.modelIds } }
+    },
+    /**
+     * One real streaming call, for the card's per-model "test connection" button.
+     *
+     * Routed through `ctx.llm.stream` rather than through any of this plugin's
+     * own lanes, and that is the whole point: `ctx.llm` is the host's adapter
+     * registry, so it resolves the provider/model pair to whichever credential
+     * and endpoint actually serve it — including lanes this plugin knows nothing
+     * about. Asking our own shims instead would make the button report on the
+     * plumbing rather than on the model the user clicked.
+     *
+     * Never throws (see {@link probeModelConnectivity}): the measurement is the
+     * answer, and a rejection here would show as a bare route failure that reads
+     * like a wrong key.
+     */
+    probeModel: async (provider: string, model: string, signal?: AbortSignal): Promise<PoolWebModelProbeResult> => {
+      // The host types `ctx.llm` itself; the cast is to this module's minimal
+      // structural slice rather than to `any`, so a change in the host's stream
+      // signature that breaks the fields we actually read is still caught here.
+      return probeModelConnectivity(
+        ctx.llm as unknown as Parameters<typeof probeModelConnectivity>[0],
+        provider,
+        model,
+        { signal },
+      )
+    },
+    /**
+     * What each login channel contributes, read from the host's own catalogue.
+     *
+     * Not from the pack, on purpose. The pack's `model.list` keeps the id, the
+     * name and two flags and drops the rest, and the rest is exactly what the
+     * login page is asked to show. The host's `listModels` is also the same
+     * catalogue the model picker builds from, so a row's window here is the
+     * window the picker will enforce.
+     *
+     * A provider with no adapter registered under it is left out of the record
+     * instead of being reported empty: "not signed in" and "signed in with
+     * nothing to offer" would otherwise be drawn identically, and the user has
+     * no way to tell which one they are looking at.
+     */
+    channelModels: async (providers: readonly string[]): Promise<Readonly<Record<string, readonly PoolWebChannelModel[]>>> => {
+      const models: Record<string, readonly PoolWebChannelModel[]> = {}
+      for (const provider of providers) {
+        try {
+          const rows = await ctx.llm.listModels(provider)
+          models[provider] = rows.map(row => ({
+            id: row.id,
+            name: row.name,
+            ...row.description === undefined ? {} : { description: row.description },
+            ...row.inputModalities === undefined ? {} : { inputModalities: row.inputModalities },
+          }))
+        } catch {
+          // No adapter, or the adapter refused to list. Either way the answer is
+          // "nothing to show for this one", and the page draws no model row for
+          // it — which is what an unsignable channel looks like anyway.
+        }
+      }
+      return models
+    },
+    discoverAggregate: async (providerId: string): Promise<PoolWebAggregateProbe> => {
+      const store = readAggregateSettingsSync()
+      const probe = await probeAggregateProvider(store, providerId)
+      if (!probe.ok || probe.modelIds === undefined) {
+        return { ok: probe.ok, status: probe.status, message: probe.message, ...probe.modelCount === undefined ? {} : { modelCount: probe.modelCount } }
+      }
+      // An authoritative EMPTY listing is a real answer and DOES commit: the
+      // provider serves nothing under this key, and reporting `committed: 0`
+      // rather than an error is what tells the user which of the two happened.
+      // A failed round keeps the previous roster instead — an empty one would
+      // delete models the user configured on purpose.
+      await updateProviderSetting(providerId, { models: probe.modelIds })
+      await aggregateCatalog.refresh()
+      return {
+        ok: true,
+        status: probe.status,
+        message: probe.message,
+        ...probe.modelCount === undefined ? {} : { modelCount: probe.modelCount },
+        modelIds: probe.modelIds,
+        committed: probe.modelIds.length,
+      }
+    },
+    // The login-channel list is a pure read of what mounted. It answers
+    // `pending` until the pack's dynamic import settles, which is the honest
+    // answer — the card shows a loading line rather than an empty grid that
+    // would read as "this host supports no channels at all".
+    channelsDocument: (): PoolWebChannelsStatus => {
+      const state = channels.state()
+      return {
+        state: state.state,
+        // `reason` is omitted rather than set for a pending mount: "not ready yet"
+        // is not a failure and must not be rendered as one.
+        ...state.state === 'unavailable' ? { reason: state.reason } : {},
+        channels: REGISTERED_CHANNELS.map((channel) => ({
+          id: channel.id,
+          name: channel.name,
+          org: channel.org,
+          // `...channel.domain === undefined ? {} : { domain: channel.domain }`
+          // rather than `domain: channel.domain` because
+          // `exactOptionalPropertyTypes` is on: assigning `undefined` to an
+          // optional property is a type error, and the wire contract is
+          // "absent means the vendor publishes no host".
+          ...channel.domain === undefined ? {} : { domain: channel.domain },
+          accent: channel.accent,
+          note: channel.note,
+          loginKind: channel.login,
+          ownedByPool: POOL_OWNED_CHANNELS.has(channel.id),
+        })),
+      }
+    },
+    // One read for the whole routing document. The pool roster is passed in
+    // rather than read here because the catalog already holds a reference to it:
+    // two sources for the same list could disagree, and a chain that resolved
+    // against a different roster than the one displayed is exactly the kind of
+    // self-contradiction this panel must not have.
+    combosDocument: (): PoolWebCombosStatus =>
+      combosStatusOf(readAggregateSettingsSync(), aggregateCatalog, core.catalogs.cn.current()),
+    saveCombos: async (raw: unknown): Promise<PoolWebCombosStatus> => {
+      await writeCombos(raw)
+      // Refresh before answering, so a chain written here is pickable in the
+      // same breath instead of after a restart. `writeCombos` normalises on the
+      // way in, so what comes back out is what will actually be served.
+      await aggregateCatalog.refresh()
+      return combosStatusOf(readAggregateSettingsSync(), aggregateCatalog, core.catalogs.cn.current())
+    },
+    // A read-only relay to a separately installed billion-context proxy. It
+    // resolves "is one running, where, and what is it holding" and returns a
+    // `missing` state rather than an error when there is none — which is the
+    // normal case on a machine that has not installed it.
+    billionDocument: readBillionStatus,
+    /**
+     * Relay state and patches.
+     *
+     * The write path mints a key when the card asks for a rotation and the user
+     * has never had one: an enabled relay with no key would have to either refuse
+     * everyone (so the switch silently does nothing) or accept everyone. Minting
+     * one keeps "enabled" honest, and the card shows it so it can be pasted into
+     * the other device.
+     */
+    relayDocument: async (): Promise<PoolWebRelayStatus> => relay.status(),
+    saveRelay: async (patch: PoolWebRelayPatch): Promise<PoolWebRelayStatus> => {
+      const current = readAggregateSettingsSync()
+      const before = current.relay ?? {}
+      // Rotation is `key: ''` — an empty key CLEARS in the store, so the new one
+      // has to be minted here rather than passed through as an empty string.
+      const key = patch.key === '' ? newRelayKey() : patch.key
+      const wanted: Partial<RelaySetting> = {
+        ...(patch.enabled === undefined ? {} : { enabled: patch.enabled }),
+        ...(patch.host === undefined ? {} : { host: patch.host }),
+        ...(patch.port === undefined ? {} : { port: patch.port }),
+        // Falling back to the stored key means a first-time enable does not
+        // accidentally rotate and lock out a device the user already set up.
+        key: key ?? before.key ?? newRelayKey(),
+      }
+      await writeRelaySetting(wanted)
+      // Re-evaluate the listener from what was actually persisted, not from the
+      // patch: a port the store refused (out of range) must not leave the
+      // relay listening where the user asked when the file says otherwise.
+      await relay.sync()
+      return relay.status()
     },
   }))
   api = {
@@ -1000,13 +1394,69 @@ function canonicalJson(value: unknown): string {
   // immediately must not find a half-applied core. The scheduler no-ops while
   // `enabled` is false, so this is safe on an install that never opened the card.
   core.scheduler.start()
-
+  // The vendored free-channel pack (thirteen login channels).
+  //
+  // Mounted on a fiber of its own, gated on the three services its exported
+  // `inject` declares. Passing our ctx straight through would register the pack
+  // eagerly on services we already hold but which the host may not have provided
+  // by the time we run, and a throw here would take the account pool down with
+  // it. Cordis resolves the gate, so the mount happens exactly when
+  // `credentials`, `commands` and `llm` are all live, and a composition that
+  // never provides `commands` simply loses the channels — the same trade every
+  // optional service in this plugin already makes.
+  //
+  // `stopped` is captured rather than read: the pack's `apply` is synchronous and
+  // installs its own effects on the scoped fiber, so mounting one after this
+  // plugin has been torn down would leave it running with nothing to unhook it.
+  let channels: MountedChannelPack = { state: () => ({ state: 'pending' }) }
+  ctx.inject(['credentials', 'commands'], (scoped) => {
+    // The `llm` gate is the plugin's own, already resolved before `apply` was
+    // called — so only the two the pack adds are requested here. A composition
+    // that never provides `commands` simply never runs this fiber, and the
+    // channels stay `pending` rather than reporting a failure the host cannot act
+    // on.
+    //
+    // `stopped` gates the mount itself, not just the log: the pack's `apply` is
+    // synchronous and installs its own effects on the fiber, so mounting after
+    // teardown would leave thirteen adapters running with nothing to unhook them.
+    const mount = async (): Promise<void> => {
+      const mounted = await mountChannelPack(scoped, ctx.logger)
+      if (stopped) return
+      channels = mounted
+    }
+    void mount().catch((error: unknown) => {
+      if (stopped) return
+      ctx.logger.warn(`[xdpool] free-channel pack unavailable (${error instanceof Error ? error.message : String(error)})`)
+      channels = {
+        state: () => ({
+          state: 'unavailable',
+          reason: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300),
+        }),
+      }
+    })
+  })
+  // The compressor behind the billion card. Mounted from its own fiber, off the
+  // critical path and outside every try block below: a proxy that will not start
+  // is a card that says so, and the account pool has no reason to care.
+  //
+  // The outcome is recorded rather than merely attempted, because the card's
+  // "missing" state has two very different causes — the package never got
+  // installed, or the host refused to mount it — and this line is where a user
+  // reporting a blank billion page sends us.
+  void mountBillionContext(ctx, ctx.logger).then((outcome: MountedBillionContext) => {
+    recordStartupNote(`billion-context ${outcome.state}`)
+    if (outcome.state === 'unavailable') {
+      ctx.logger.warn(`[xdpool] billion-context not mounted — ${outcome.reason}`)
+    }
+  }, (error: unknown) => {
+    recordStartupNote(`billion-context mount failed: ${describeError(error)}`)
+  })
   // Register once BOTH loopback listeners hold a port: each adapter reads its
   // shim origin at construction time, so neither can be built any earlier.
   void Promise.all([shims.cn.ready, shims.global.ready])
     .then(async () => {
       if (stopped) return
-
+      recordStartupNote(`both shims ready cn=${shims.cn.baseUrl()} global=${shims.global.baseUrl()}; entering registration`)
       try {
         // One adapter per region. Each provider is bound to its own account
         // slice of the pool (see the `region` argument on `pool.acquire`), so a
@@ -1027,11 +1477,45 @@ function canonicalJson(value: unknown): string {
             providerId: POOL_PROVIDER_BY_REGION.global,
             displayName: POOL_NAME_BY_REGION.global,
           }),
+          // The third lane: providers the user holds a key for. It reuses the CN
+          // shim's loopback (the composite model id in the request is what
+          // selects an upstream) but keeps its OWN catalog and its own provider
+          // id, so a third-party failure never touches the pool's cooldown table.
+          aggregate: createWorkBuddyAdapter({
+            ctx,
+            shim: shims.cn,
+            catalog: aggregateCatalog,
+            providerId: WORKBUDDY_AGGREGATE_PROVIDER,
+            displayName: '聚合渠道',
+          }),
+          // The免密 lane: a pooled gateway credential with a per-session quota.
+          // Its own provider id keeps that shared quota out of the pool's cooldown
+          // table and its tokens out of the pool's usage panel.
+          free: createWorkBuddyAdapter({
+            ctx,
+            shim: shims.cn,
+            catalog: core.catalogs.cn,
+            providerId: WORKBUDDY_FREE_PROVIDER,
+            displayName: EXTRA_LANE_NAMES.free,
+            extraRows: () => freeCatalog.current(),
+          }),
         } as const
-
         let releaseAdapterCn: (() => void) | undefined
         let releaseAdapterGlobal: (() => void) | undefined
+        let releaseAdapterAggregate: (() => void) | undefined
+        let releaseAdapterFree: (() => void) | undefined
         let releaseDirectory: (() => void) | undefined
+        // Adapters first, in a try of their own, and ONLY THEN the directory.
+        //
+        // `registerConfigurableProviders` is all-or-nothing: the host validates
+        // the whole array inside one `commit` loop and throws on the first entry
+        // that fails (`dsh-llm/lib/index.js`, `registerConfigurableProviders`),
+        // so one rejected entry costs all five providers their picker entry.
+        // Doing this in a single try made the release `finally` unwind the
+        // adapters along with it — a rejected directory left the card mounted and
+        // every model gone. Registering the adapters separately means a
+        // directory rejection now costs the settings entry alone and the models
+        // keep being served.
         try {
           releaseAdapterCn = ctx.llm.registerAdapter(
             [POOL_PROVIDER_BY_REGION.cn],
@@ -1041,6 +1525,32 @@ function canonicalJson(value: unknown): string {
             [POOL_PROVIDER_BY_REGION.global],
             adaptersByRegion.global.adapter,
           )
+          releaseAdapterAggregate = ctx.llm.registerAdapter(
+            [WORKBUDDY_AGGREGATE_PROVIDER],
+            adaptersByRegion.aggregate.adapter,
+          )
+          // The free lane registers in the SAME try as the three pool adapters,
+          // deliberately. It is the same kind of thing — a pi-ai provider over
+          // the same loopback shim — so if it cannot be created the plugin is no
+          // longer in a state it should advertise at all, and letting three
+          // through would only hide that.
+          releaseAdapterFree = ctx.llm.registerAdapter(
+            [WORKBUDDY_FREE_PROVIDER],
+            adaptersByRegion.free.adapter,
+          )
+        } catch (error: unknown) {
+          // An adapter that cannot be created is not survivable — the picker
+          // would advertise a provider with nothing behind it — so this is the
+          // one path that still unwinds everything and gives up.
+          ctx.logger.error('dsh-workbuddy-xdpool: adapter registration failed', error)
+          recordStartupNote(`adapters REJECTED: ${describeError(error)}`)
+          releaseAdapterCn?.()
+          releaseAdapterGlobal?.()
+          releaseAdapterAggregate?.()
+          releaseAdapterFree?.()
+          return
+        }
+        try {
           // Both entries go in ONE call: the host mounts a single configuration
           // form for the pair, sharing the plugin settings section. Registering
           // them one at a time left the second call reading a registry entry the
@@ -1060,29 +1570,66 @@ function canonicalJson(value: unknown): string {
               settingsPath: [],
               declared: false,
             },
+            {
+              // No settings form: every aggregate provider's key lives in the
+              // plugin's own store file, so the host has nothing to render and
+              // mounting an empty form would only invite the user to look for it.
+              provider: WORKBUDDY_AGGREGATE_PROVIDER,
+              displayName: '聚合渠道',
+              settingsNs: WORKBUDDY_POOL_SETTINGS_NS,
+              settingsPath: [],
+              declared: false,
+            },
+            {
+              // Grouped so the picker shows the免密 lane beside the pool rather
+              // than folding it in: the rows come from a different gateway and
+              // spend a different quota, and a user who cannot tell them apart
+              // cannot tell which one answered.
+              provider: WORKBUDDY_FREE_PROVIDER,
+              displayName: EXTRA_LANE_NAMES.free,
+              settingsNs: WORKBUDDY_POOL_SETTINGS_NS,
+              settingsPath: [],
+              declared: false,
+            },
           ])
-        } finally {
-          // A throw part-way through leaves the earlier registrations live; undo
-          // them so a failed startup does not leave half a provider behind.
-          if (releaseAdapterCn === undefined || releaseAdapterGlobal === undefined || releaseDirectory === undefined) {
-            releaseAdapterCn?.()
-            releaseAdapterGlobal?.()
-            releaseDirectory?.()
-          }
+        } catch (error: unknown) {
+          // Recoverable on purpose. The adapters above are already live and the
+          // catalog answer below is installed independently, so the plugin keeps
+          // serving models with no settings form to mount — the user sees a
+          // working provider in the picker and can fix the settings entry later,
+          // instead of a mounted card with an empty picker.
+          ctx.logger.error('dsh-workbuddy-xdpool: configurable-provider directory rejected; models will still be served', error)
+          recordStartupNote(`directory REJECTED: ${describeError(error)}`)
         }
-
         builtAdapter = adaptersByRegion.cn
         // From here on a settings change can rebuild the picker. Until this line
         // runs, `invalidateCatalog` is the no-op seeded at the top of apply.
         invalidateCatalog = () => {
           adaptersByRegion.cn.invalidate()
           adaptersByRegion.global.invalidate()
+          adaptersByRegion.aggregate.invalidate()
+          adaptersByRegion.free.invalidate()
         }
-
-        /** Release everything the two providers registered, once. */
+        // A stored provider (key added, provider switched off, model list pinned)
+        // rewrites the aggregate roster. Without this the picker's three-region
+        // count would only move on restart — the one failure mode the whole
+        // stored-file design was chosen to avoid.
+        void aggregateCatalog.onChange(() => {
+          invalidateCatalog()
+        })
+        // The same for the free lane: its roster is read live, so a
+        // listing that lands after startup has to be able to move the picker
+        // without a restart. This is also what makes a failed refresh honest —
+        // the rows are kept, so the picker keeps them.
+        void freeCatalog.onChange(() => {
+          invalidateCatalog()
+        })
+        /** Release everything the providers registered, once. */
         const releaseProviders = (): void => {
           releaseAdapterCn?.()
           releaseAdapterGlobal?.()
+          releaseAdapterAggregate?.()
+          releaseAdapterFree?.()
           releaseDirectory?.()
         }
         try {
@@ -1091,13 +1638,37 @@ function canonicalJson(value: unknown): string {
           // The plugin was disposed while registering; release immediately.
           releaseProviders()
         }
-
         // The model picker asks the host for a provider's catalog; answering
         // here (rather than only from the adapter's static snapshot) is what
         // makes a saved selection visible without a restart. Each region answers
         // from its own catalog — the two gateways do not advertise the same
         // roster, so one shared list would serve the wrong models to one of them.
         ctx.llm.registerModelDiscovery(WORKBUDDY_POOL_SETTINGS_NS, async (request: { provider?: string }) => {
+          // The free lane's mapper: the picker asks for a flat shape and the
+          // roster already carries the fields it wants. Narrowed rather than cast
+          // so a new field on the row has to be accounted for.
+          if (request.provider === WORKBUDDY_FREE_PROVIDER) {
+            return freeCatalog.current().map(row => ({
+              id: row.modelId,
+              name: row.name,
+              contextWindow: row.contextWindow,
+              maxTokens: row.maxOutput,
+              inputModalities: row.vision ? ['text', 'image'] : ['text'],
+            }))
+          }
+          if (request.provider === WORKBUDDY_AGGREGATE_PROVIDER) {
+            // Both row kinds answer here: a chain is a route the user can pick
+            // directly, so hiding it from the picker would make it reachable only
+            // by typing its id. The shared fields are read off a union rather than
+            // cast, so a new field on either kind has to be accounted for.
+            return aggregateCatalog.current().map(row => ({
+              id: row.id,
+              name: row.name,
+              contextWindow: row.contextWindow,
+              maxTokens: row.maxOutputTokens,
+              inputModalities: row.supportsImages ? ['text', 'image'] : ['text'],
+            }))
+          }
           if (request.provider !== WORKBUDDY_POOL_PROVIDER
             && request.provider !== WORKBUDDY_GLOBAL_POOL_PROVIDER) return []
           const region = request.provider === WORKBUDDY_GLOBAL_POOL_PROVIDER ? 'global' : 'cn'
@@ -1109,15 +1680,36 @@ function canonicalJson(value: unknown): string {
             inputModalities: model.supportsImages ? ['text', 'image'] : ['text'],
           }))
         })
-
         ctx.logger.info?.(
-          `dsh-workbuddy-xdpool: providers registered at cn=${shims.cn.baseUrl()} global=${shims.global.baseUrl()}`,
+          `dsh-workbuddy-xdpool: providers registered at cn=${shims.cn.baseUrl()} global=${shims.global.baseUrl()} aggregate=${aggregateCatalog.current().length} free=${freeCatalog.current().length} model(s)`,
+        )
+        recordStartupNote(
+          `providers registered cn=${shims.cn.baseUrl()} global=${shims.global.baseUrl()} aggregate=${aggregateCatalog.current().length} free=${freeCatalog.current().length} model(s) directory=${releaseDirectory === undefined ? 'rejected' : 'mounted'}`,
+        )
+        // Refresh the live roster now that the picker can be rebuilt, so a listing
+        // that lands replaces the static fallback without a restart.
+        //
+        // It needs its own rejection handler, for the reason the catalog seed
+        // below documents: the host installs `installFailLoud`, which turns an
+        // unhandled rejection into `exit(1)`. A free gateway that is simply
+        // unreachable from this network must cost the免密 rows their freshness,
+        // never the whole desktop.
+        void freeCatalog.refresh().then(
+          rows => {
+            invalidateCatalog()
+            ctx.logger.info?.(`dsh-workbuddy-xdpool: free lane serves ${rows.length} model(s)`)
+            recordStartupNote(`free lane ready rows=${rows.length} live=${freeCatalog.updatedAt() !== undefined}`)
+          },
+          (error: unknown) => {
+            ctx.logger.warn('dsh-workbuddy-xdpool: free lane listing failed', error)
+            recordStartupNote(`free lane listing failed: ${describeError(error)}`)
+          },
         )
       } catch (error: unknown) {
         ctx.logger.error('dsh-workbuddy-xdpool: provider registration failed', error)
+        recordStartupNote(`registration FAILED: ${describeError(error)}`)
         return
       }
-
       // Discover accounts; the fallback catalog already serves models meanwhile.
       if (stopped) return
       void core.pool.scan().then(
@@ -1128,7 +1720,6 @@ function canonicalJson(value: unknown): string {
           ctx.logger.warn('dsh-workbuddy-xdpool: account discovery failed', error)
         },
       )
-
       // Seed the live model catalog (with per-model credit multipliers and
       // reasoning levels) from the upstream; the static fallback covers an
       // offline upstream so the provider is never empty.
@@ -1155,6 +1746,5 @@ function canonicalJson(value: unknown): string {
       ctx.logger.error('dsh-workbuddy-xdpool: shim failed to listen', error)
     })
 }
-
 void ({} as unknown as Context | undefined)
 export type { Context }

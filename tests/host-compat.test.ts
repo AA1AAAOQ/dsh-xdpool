@@ -283,29 +283,86 @@ describe('the browser entry stays loadable on both lines', () => {
 })
 
 describe('the settings page renders on both kernel lines', () => {
-  it('renders the whole page with no collapse affordance', () => {
+  it('renders the whole page with no page-level collapse affordance', () => {
     // The card used to be a collapsible plugin-configuration row; inside a
     // dedicated settings page that fold only hid the pool behind a click, so
     // the whole body renders immediately.
+    //
+    // `aria-expanded` is now allowed, and the reason matters. The rule this
+    // assertion enforced was "the page as a whole must not be foldable" — a
+    // page that renders nothing until a header is clicked. What the pool page
+    // has now is four LABELLED disclosures INSIDE each region card (accounts,
+    // models, account-usage mode, automation), each with its own trigger and
+    // its own `aria-controls`. The card itself, both region cards and every
+    // summary line all render without a click, so the original rule still
+    // holds where it was aimed; what is new is a disclosure control, not a
+    // hidden page. A blanket ban on the attribute would only be satisfiable by
+    // refusing to let the user open a 200-row account list on demand.
+    //
+    // The bans that are still absolute: the whole-card `open` state, and
+    // `dsm-plugin-card` (the host's collapsible plugin-configuration wrapper,
+    // which this card must never be nested in).
     const card = readFileSync(new URL('../src/client/PoolCard.tsx', import.meta.url), 'utf8')
     expect(card).not.toMatch(/\{open\s*$/)
-    expect(card).not.toContain('setOpen')
-    expect(card).not.toContain('aria-expanded')
     expect(card).not.toContain('dsm-plugin-card')
-    // The body renders directly inside the page now, split into cards: one per
-    // feature area, plus the status card that carries the region switch.
-    expect(card).toContain('dsm-workbuddy-xdpool-page')
-    expect(card).toMatch(/dsm-workbuddy-xdpool-card dsm-workbuddy-xdpool-status/)
-    expect(card).toMatch(/dsm-workbuddy-xdpool-card dsm-workbuddy-xdpool-accounts/)
-    expect(card).toMatch(/dsm-workbuddy-xdpool-card dsm-workbuddy-xdpool-models/)
+    // The shell must still exist as the page's single scroll container, and the
+    // two region cards are the pool's top-level blocks now. The old
+    // status / accounts / models CARDS are gone: the accounts and the model
+    // list each became a disclosure inside a region card rather than a card of
+    // their own, because a card that duplicated the region's own summary two
+    // levels up was the layout the user asked to be replaced.
+    const shell = readFileSync(new URL('../src/client/shell.tsx', import.meta.url), 'utf8')
+    expect(shell).toContain('className="dsm-workbuddy-xdpool-body"')
+    expect(card).toContain('</PoolShell>')
+    expect(card).toMatch(/dsm-workbuddy-xdpool-card dsm-workbuddy-xdpool-usage/)
+    expect(card).toMatch(/dsm-workbuddy-xdpool-regions/)
+    expect(card).toMatch(/dsm-workbuddy-xdpool-region-grid/)
+    // Both lanes render, always — the tab that only appeared after a sign-in
+    // is the failure mode here.
+    expect(card).toContain('REGION_CARDS.map(region =>')
+    expect(card).toContain("const REGION_CARDS = ['cn', 'global'] as const")
+  })
+
+  it('exposes the region disclosures as accessible controls', () => {
+    // The counterpart to the relaxation above: if `aria-expanded` is allowed,
+    // each one of them must name the pane it controls, or the attribute is
+    // decoration. Both the segmented triggers and the CN-only tool buttons
+    // have to agree.
+    const card = readFileSync(new URL('../src/client/PoolCard.tsx', import.meta.url), 'utf8')
+    const expanded = card.match(/aria-expanded=\{/g) ?? []
+    expect(expanded.length, 'the region card must carry explicit disclosures').toBeGreaterThanOrEqual(2)
+    // The segmented triggers pass the pane id as a prop; the shared component
+    // turns it into `aria-controls`. The two CN-only tool buttons write the
+    // attribute themselves.
+    expect(card).toContain('controls={accountsPaneId}')
+    expect(card).toContain('controls={modelsPaneId}')
+    expect(card).toContain('aria-controls={distPaneId}')
+    expect(card).toContain('aria-controls={autoPaneId}')
+    // Every pane it names has to exist with the same id, or the control points
+    // at nothing.
+    for (const suffix of ['accounts', 'models', 'dist', 'auto']) {
+      const id = `\`dsm-xdpool-\${region}-${suffix}\``
+      expect(card, `pane id ${suffix} must be declared`).toContain(id)
+      expect(card, `pane ${suffix} must be rendered`).toContain(`id={` + suffix + 'PaneId}')
+    }
+    // And the shared trigger must be the one that emits them, so the two
+    // disclosures cannot drift apart.
+    const regionCard = readFileSync(new URL('../src/client/region-card.tsx', import.meta.url), 'utf8')
+    expect(regionCard).toContain('aria-expanded={open}')
+    expect(regionCard).toContain('aria-controls={controls}')
+    expect(regionCard).toContain('hidden={!open}')
   })
 
   it('polls while the page is mounted instead of while it is expanded', () => {
     // The old gate (`if (!open) return`) meant a collapsed page never fetched;
-    // with no fold the effect must run on mount.
+    // with no page-level fold the effect must run on mount, and it must keep
+    // fetching for BOTH region cards — a fold inside a card is not a reason to
+    // stop watching a lane, and the user is expected to leave a card closed for
+    // minutes at a time.
     const card = readFileSync(new URL('../src/client/PoolCard.tsx', import.meta.url), 'utf8')
     expect(card).not.toMatch(/if \(!open\) return/)
     expect(card).toContain('}, [refresh, activeRegion])')
+    expect(card).toContain('REGION_CARDS.filter(other => other !== activeRegion)')
   })
   it('marks the nav row and masks the plugin glyph over the shell icon', () => {
     // `settings.section` projects only id / order / label — there is no icon

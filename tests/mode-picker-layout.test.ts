@@ -124,10 +124,36 @@ describe('the selected mode is unmistakable', () => {
     // actually on, and the chips keep the full text as their tooltip.
     expect(rule('dsm-workbuddy-xdpool-dist-hint')).not.toBe('')
     expect(card).toContain('dsm-workbuddy-xdpool-dist-hint')
-    expect(card).toContain('distHint(status.distribution ?? \'priority\', t)')
+    // The hint reads the LIVE distribution of the card that rendered it, which
+    // is now `card.status` rather than a page-wide `status` — the picker moved
+    // into the domestic region card, so the expression changed shape but the
+    // `?? 'priority'` fallback that keeps an unanswered document off the
+    // "balanced by accident" reading is still there.
+    expect(card).toContain('distHint(card.status?.distribution ?? \'priority\', t)')
     // The per-chip hint element is what made each chip two lines tall.
     expect(rule('dsm-workbuddy-xdpool-dist-option-hint')).toBe('')
     expect(card).not.toContain('dsm-workbuddy-xdpool-dist-option-hint')
+  })
+
+  it('lives inside the domestic region card rather than the page header', () => {
+    // The user asked for the mode picker and the automation switch to be
+    // reachable from the domestic card instead of floating above it. This locks
+    // in that the picker is inside the card's own disclosure pane, so a future
+    // edit cannot quietly hoist it back to the page level where it would
+    // describe a lane it is not inside.
+    const paneOpen = card.indexOf('id={distPaneId} open={distOpen}')
+    expect(paneOpen, 'the mode picker must be rendered in a region disclosure pane').toBeGreaterThan(-1)
+    const regionStart = card.indexOf('className="dsm-workbuddy-xdpool-region ')
+    expect(regionStart, 'the region card must exist').toBeGreaterThan(-1)
+    expect(paneOpen).toBeGreaterThan(regionStart)
+    // The pane is opened by a CN-only tool button that repeats the active mode,
+    // so the mode is legible without expanding anything.
+    expect(card).toContain('dsm-workbuddy-xdpool-region-tool-value')
+    expect(card).toContain("distLabel(card.status?.distribution ?? 'priority', t)")
+    // The distribution is genuinely shared between the lanes (one settings key,
+    // one pool instance), so the write refreshes both cards.
+    expect(card).toContain("await write.call(settingsScope, 'distribution', next)")
+    expect(card).toContain('for (const other of REGION_CARDS) await refresh(other)')
   })
 })
 

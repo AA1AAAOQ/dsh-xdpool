@@ -1,36 +1,28 @@
-/**
- * Client styles for the WorkBuddy XD Pool card.
+/*
+ * The plugin's stylesheets.
  *
- * The card uses the same dark-theme token vocabulary as the built-in plugin
- * cards (`--dsw-alias-*`), so the pooled account and model directory sit
- * naturally next to the other configuration rows instead of looking like a
- * bright Google-Material block on top of DSH's dark surface.
+ * RECOVERED FROM THE COMPILED BUNDLE, NOT HAND-WRITTEN: this file was lost to a bad
+ * PowerShell string replace (a literal backtick inside a double-quoted argument closed the
+ * quoting and the write truncated the file to zero bytes). The nine constants below
+ * were lifted back out of the deployed client.js, which holds each one verbatim as a
+ * template literal. Only the module header and the export keywords were retyped.
  *
- * The page renders at full height with no collapse affordance, and its content is
- * split into cards: a header row with the primary actions, a status card (region
- * switch + distribution), then one card per feature area. The inner
- * workbuddy-specific classes are namespaced `dsm-workbuddy-xdpool-*`.
- *
- * @module dsh-workbuddy-xdpool/client/styles
+ * Every rule below is byte-identical to what shipped in build
+ * 2026-10-14T16:30. Do not reformat: the test suites slice this file with indexOf()
+ * on marker comments, so moving a marker moves a slice boundary.
  */
 
 export const POOL_CARD_CSS = `
+
 /*
  * Page shell. The settings shell renders this inside its own scrollable content
  * column, so the page supplies only the rhythm and the cards — no outer border
  * and no extra margin (the column pads its own edges).
  */
-.dsm-workbuddy-xdpool-page{max-width:860px;flex-direction:column;gap:16px;display:flex}
 /*
  * Header row: identity on the left, primary actions on the right. Wraps so a
  * narrow panel drops the buttons below the title instead of squeezing it.
  */
-.dsm-workbuddy-xdpool-page-head{align-items:center;gap:12px;flex-wrap:wrap;display:flex}
-.dsm-workbuddy-xdpool-page-icon{width:32px;height:32px;flex:none;border-radius:7px}
-.dsm-workbuddy-xdpool-page-copy{flex-direction:column;gap:4px;min-width:0;flex:1 1 220px;display:flex}
-.dsm-workbuddy-xdpool-page-title{color:var(--dsw-alias-label-primary,#e6e6e6);margin:0;font-size:16px;font-weight:600;line-height:1.4}
-.dsm-workbuddy-xdpool-page-desc{color:var(--dsw-alias-label-tertiary,#999);margin:0;font-size:13px;line-height:1.5}
-.dsm-workbuddy-xdpool-page-actions{align-items:center;gap:8px;flex-wrap:wrap;flex:none;display:flex}
 /*
  * One feature area per card. The surface separates the sections the way the
  * built-in settings pages do; without it every panel ran together into a single
@@ -40,14 +32,10 @@ export const POOL_CARD_CSS = `
 /* Status card: the region switch sits above the state line, then the switch. */
 .dsm-workbuddy-xdpool-status{gap:14px}
 /* Reusable button primitives shared with the rest of the card body. */
-.dsm-btn{appearance:none;font:inherit;cursor:pointer;border:1px solid transparent;border-radius:8px;padding:5px 14px;font-size:13px;line-height:1.5}
-.dsm-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:1px}
-.dsm-btn:disabled{opacity:.4;cursor:default}
-.dsm-btn-outline{border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);background:transparent;font-weight:500}
-.dsm-btn-outline:hover:not(:disabled){color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-label-dimmed);background:rgba(255,255,255,.04)}
-.dsm-btn-primary{background:var(--dsw-alias-label-primary,#e6e6e6);color:var(--dsw-alias-bg-layer-3,#202126)}
-.dsm-btn-primary:hover:not(:disabled){opacity:.9}
-
+/* A disabled button must not MOVE. The outline button's hover changes only
+   colour, so opacity alone was enough there; the pool card's own buttons lift on
+   hover (see the region-card rules), and a control that rises under the cursor
+   while refusing the click reads as broken rather than unavailable. */
 /* Region tabs: two independent suppliers, one shown at a time. */
 .dsm-workbuddy-xdpool-tabs{display:flex;gap:6px;padding:4px;border:1px solid var(--dsw-alias-border-l2,#3a3d45);border-radius:10px;background:var(--dsw-alias-bg-layer-3,#2a2c33)}
 /* Empty-region guide: steps for signing in on the other gateway. */
@@ -116,27 +104,51 @@ export const POOL_CARD_CSS = `
    chips cannot each carry a sentence without becoming five paragraphs. */
 .dsm-workbuddy-xdpool-dist-hint{color:var(--dsw-alias-label-tertiary,#9aa0a8);font-size:11px;line-height:16px}
 .dsm-workbuddy-xdpool-usage-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-
 /* Account list (each account = a labeled subpanel, same as dingminhua). */
 .dsm-workbuddy-xdpool-accounts{gap:14px}
 .dsm-workbuddy-xdpool-accounts-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
-/* "In use now": answers which account is serving without scanning every row. */
-/* A hairline + tint reads as status; a filled bar would read as a call to action. */
-.dsm-workbuddy-xdpool-current{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:10px 0 0;padding:9px 13px;border:1px solid color-mix(in oklab, var(--dsw-alias-state-success-primary,#22a06b) 32%, transparent);border-radius:12px;background:color-mix(in oklab, var(--dsw-alias-state-success-primary,#22a06b) 9%, transparent)}
-.dsm-workbuddy-xdpool-current-dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--dsw-alias-state-success-primary,#22a06b);box-shadow:0 0 0 3px color-mix(in oklab, var(--dsw-alias-state-success-primary,#22a06b) 18%, transparent)}
-.dsm-workbuddy-xdpool-current-label{color:var(--dsw-alias-state-success-primary,#22a06b);font-size:11.5px;line-height:18px;font-weight:600;letter-spacing:.02em;flex:none}
-.dsm-workbuddy-xdpool-current-name{color:var(--dsw-alias-label-primary,#e6e6e6);font-size:13px;line-height:18px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dsm-workbuddy-xdpool-current-note{color:var(--dsw-alias-state-warning-primary,#d97706);font-size:11px;line-height:16px}
+/* "In use now": a marker ON the serving account's own row, not a bar floating
+   above the list. It used to be its own green strip between the section title
+   and the first account, which put a fact about one row in a place that read as
+   a summary of all of them — and made the eye hunt for which row it belonged to.
+   The dot now sits on the row itself, so the answer and its subject are the
+   same object. The strip's styling survives as the dot's halo. */
+/* The account the pool served its last request with. It is a badge ON that
+   account's row, not a strip above the list — so it is a capsule sized for a
+   row of chips. The account's own name is right next to it, which is why this
+   no longer carries one (the strip above the list had to, and that is what made
+   it read as a summary of the whole pool). */
+.dsm-workbuddy-xdpool-current{display:inline-flex;align-items:center;gap:5px;flex:none;padding:0 9px 0 7px;border-radius:999px;border:1px solid color-mix(in oklab, var(--dsw-alias-state-success-primary,#22a06b) 32%, transparent);background:color-mix(in oklab, var(--dsw-alias-state-success-primary,#22a06b) 9%, transparent)}
+.dsm-workbuddy-xdpool-current-dot{width:6px;height:6px;border-radius:50%;flex:none;background:var(--dsw-alias-state-success-primary,#22a06b);box-shadow:0 0 0 3px color-mix(in oklab, var(--dsw-alias-state-success-primary,#22a06b) 18%, transparent)}
+.dsm-workbuddy-xdpool-current-label{color:var(--dsw-alias-state-success-primary,#22a06b);font-size:10.5px;line-height:18px;font-weight:600;letter-spacing:.02em;flex:none;white-space:nowrap}
 .dsm-workbuddy-xdpool-accounts-title{margin:0;color:var(--dsw-alias-label-primary,#e6e6e6);font-size:14px;font-weight:600;line-height:20px}
 .dsm-workbuddy-xdpool-accounts-summary{margin:2px 0 0;color:var(--dsw-alias-label-tertiary,#999);font-size:12px;line-height:18px}
-.dsm-workbuddy-xdpool-account{display:flex;flex-direction:column;gap:0;padding:0;border:1px solid color-mix(in oklab, var(--dsw-alias-border-l2,#3a3d45) 55%, transparent);border-radius:16px;background:var(--dsw-alias-bg-layer-2,#24262c);box-shadow:0 1px 3px rgba(0,0,0,.04);overflow:hidden}
-/* Body row inside a card: identity on the left, credit panels on the right. */
-/* flex-wrap lets the panels drop below on a narrow card instead of squeezing both. */
-.dsm-workbuddy-xdpool-account-body{display:flex;align-items:stretch;gap:0;flex-wrap:wrap}
-.dsm-workbuddy-xdpool-account-copy{display:flex;flex-direction:column;align-items:flex-start;gap:6px;flex:1 1 200px;min-width:0;padding:14px 16px;justify-content:center}
-.dsm-workbuddy-xdpool-account-label{color:var(--dsw-alias-label-primary,#e6e6e6);font-size:14px;font-weight:600;line-height:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* One account = one flat row, the shape the reference build uses: name, state
+   chips, actions, all on one line with the numbers. It used to be a card whose
+   left half held a single token-expiry line next to a two-column credit grid,
+   which produced a tall box mostly made of padding and a left column that said
+   almost nothing — and, at the card's real width inside a lane, a grid that
+   collapsed to one column anyway. The flat row puts the account's identity and
+   its state on the same line, and lets the credit figures be a quiet inline
+   group underneath rather than two boxed sub-panels. */
+.dsm-workbuddy-xdpool-account{display:flex;flex-direction:column;gap:0;padding:0;border:1px solid color-mix(in oklab, var(--dsw-alias-border-l2,#3a3d45) 55%, transparent);border-radius:13px;background:var(--dsw-alias-bg-layer-2,#24262c);box-shadow:0 1px 3px rgba(0,0,0,.04);overflow:hidden}
+/* The row that served the last request. One green hairline on the leading edge,
+   the same trick the lane cards use for their accent, so the answer reads as
+   "this row is the live one" without tinting the whole card — a tinted card
+   would also imply the others are not usable, which is the opposite of the
+   rotation this pool is built around. */
+.dsm-workbuddy-xdpool-account[data-serving="true"]{border-color:color-mix(in oklab, var(--dsw-alias-state-success-primary,#22a06b) 40%, var(--dsw-alias-border-l2,#3a3d45))}
+/* Body row inside a card: identity and state on the top line, the credit
+   figures and the automation's takings underneath. */
+.dsm-workbuddy-xdpool-account-body{display:flex;flex-direction:column;align-items:stretch;gap:0;padding:9px 13px 11px}
+.dsm-workbuddy-xdpool-account-copy{display:flex;flex-direction:column;align-items:flex-start;gap:6px;flex:1 1 auto;min-width:0}
+.dsm-workbuddy-xdpool-account-label{color:var(--dsw-alias-label-primary,#e6e6e6);font-size:13.5px;font-weight:650;letter-spacing:-.1px;line-height:20px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dsm-workbuddy-xdpool-account-head .dsm-workbuddy-xdpool-account-toggle{margin-left:auto}
-.dsm-workbuddy-xdpool-account-head{display:flex;align-items:center;gap:10px;min-width:0;padding:12px 16px;border-bottom:1px solid color-mix(in oklab, var(--dsw-alias-border-l2,#3a3d45) 45%, transparent)}
+/* Identity on the left, state chips in the middle, the two decisions on the
+   right. flex-wrap is what lets a long account name push the chips down a line
+   instead of squeezing them — the name is what has to shrink first, and it is the
+   only thing here allowed to. */
+.dsm-workbuddy-xdpool-account-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;padding:9px 13px}
 /* Account switched off on the card: still listed (so it can be turned back on) but visually muted. */
 .dsm-workbuddy-xdpool-account-off{opacity:.55}
 /* Small pill switch: "in rotation" vs "off". Native checkbox styled by the label. */
@@ -151,7 +163,25 @@ export const POOL_CARD_CSS = `
 .dsm-workbuddy-xdpool-account-ignore:hover:not(:disabled){color:var(--dsw-alias-state-error-primary,#ef4444);border-color:color-mix(in oklab, var(--dsw-alias-state-error-primary,#ef4444) 45%, transparent);background:color-mix(in oklab, var(--dsw-alias-state-error-primary,#ef4444) 10%, transparent)}
 .dsm-workbuddy-xdpool-account-ignore:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:1px}
 .dsm-workbuddy-xdpool-account-ignore:disabled{cursor:default;opacity:.6}
+ /* "Prefer" button: same pill family as the toggle and "Remove", so three
+    controls on one row read as siblings. It is the only one with a glyph, which
+    is what tells the eye where to look first among three equally-weighted
+    buttons; the star dims to 35% when the row is not the pinned one so the
+    pinned row is the only one that shouts. */
+.dsm-workbuddy-xdpool-account-prefer{appearance:none;font:inherit;flex:none;cursor:pointer;display:inline-flex;align-items:center;gap:5px;border:1px solid transparent;border-radius:999px;padding:3px 10px;font-size:11px;line-height:17px;background:transparent;color:var(--dsw-alias-label-tertiary,#9aa0a8);transition:color .16s,border-color .16s,background .16s}
+.dsm-workbuddy-xdpool-account-prefer-star{font-size:10px;line-height:1;opacity:.35;transition:opacity .16s,transform .2s}
+.dsm-workbuddy-xdpool-account-prefer:hover:not(:disabled){color:var(--dsw-alias-label-primary,#e6e6e6);border-color:var(--dsw-alias-label-dimmed,#777)}
+.dsm-workbuddy-xdpool-account-prefer:hover:not(:disabled) .dsm-workbuddy-xdpool-account-prefer-star{opacity:.7;transform:rotate(72deg)}
+.dsm-workbuddy-xdpool-account-prefer:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:1px}
+.dsm-workbuddy-xdpool-account-prefer:disabled{cursor:default;opacity:.6}
+.dsm-workbuddy-xdpool-account-prefer-on{background:color-mix(in oklab, var(--dsw-alias-state-success-primary,#22a06b) 14%, transparent);border-color:color-mix(in oklab, var(--dsw-alias-state-success-primary,#22a06b) 55%, transparent);color:var(--dsw-alias-state-success-primary,#22a06b);font-weight:600}
+.dsm-workbuddy-xdpool-account-prefer-on .dsm-workbuddy-xdpool-account-prefer-star{opacity:1}
+.dsm-workbuddy-xdpool-account-prefer:disabled .dsm-workbuddy-xdpool-account-prefer-star{transform:none}
 /* Ignored-account list: visible proof that "remove" can be undone. */
+/* The container the ignored-account list renders into. It had no rule at all:
+   the rows inside it were styled, so the list looked like a stray block of text
+   pinned to the card's edge rather than a panel. */
+.dsm-workbuddy-xdpool-ignored{margin:6px 0 0;border-radius:10px;border:1px solid color-mix(in srgb, var(--dsw-alias-border-l2,#36373b) 70%, transparent);background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 55%, transparent);overflow:hidden}
 .dsm-workbuddy-xdpool-ignored-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid color-mix(in oklab, var(--dsw-alias-border-l2,#3a3d45) 45%, transparent)}
 .dsm-workbuddy-xdpool-ignored-title{margin:0;color:var(--dsw-alias-label-primary,#e6e6e6);font-size:13px;font-weight:600;line-height:19px}
 .dsm-workbuddy-xdpool-ignored-summary{margin:0;color:var(--dsw-alias-label-tertiary,#9aa0a8);font-size:11px;line-height:17px}
@@ -179,35 +209,36 @@ export const POOL_CARD_CSS = `
    a second problem. */
 .dsm-workbuddy-xdpool-account-modelcool-twin{color:var(--dsw-alias-label-secondary,#c6c9d0);cursor:help}
 .dsm-workbuddy-xdpool-account-error{margin:0;color:var(--dsw-alias-state-error-primary,#ef4444);font-size:13px;line-height:20px}
-
-/* Two-column stats: packages on the left, total + check-in on the right. */
-.dsm-workbuddy-xdpool-stats{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(168px,.85fr);gap:0;flex:1 1 420px;min-width:0;max-width:660px;border-left:1px solid color-mix(in oklab, var(--dsw-alias-border-l2,#3a3d45) 45%, transparent)}
-.dsm-workbuddy-xdpool-panel{display:flex;flex-direction:column;min-width:0;gap:7px;padding:14px 16px}
-.dsm-workbuddy-xdpool-panel-title{color:var(--dsw-alias-label-tertiary,#999);font-size:11px;line-height:16px;letter-spacing:.03em;text-transform:uppercase;font-weight:600}
-.dsm-workbuddy-xdpool-panel-empty{color:var(--dsw-alias-label-tertiary,#999);font-size:14px;line-height:20px}
-.dsm-workbuddy-xdpool-panel-error{color:var(--dsw-alias-state-error-primary,#ef4444);font-size:12px;line-height:18px;word-break:break-word}
+/* Credit figures: one quiet inline line — the total, the check-in action, then
+   the package breakdown as chips underneath. A grid of two boxed panels said
+   "these are two systems" when they are one balance and its breakdown, and the
+   28px green total inside a tinted box with a 3px cap made a routine number read
+   like a headline. The total keeps its emphasis as a figure among figures. */
+.dsm-workbuddy-xdpool-stats{display:flex;align-items:center;gap:9px 15px;flex-wrap:wrap;min-width:0;margin-top:7px;padding-top:8px;border-top:1px dashed var(--dsw-alias-border-l2,#36373b)}
+.dsm-workbuddy-xdpool-panel{display:flex;align-items:center;gap:6px;min-width:0;padding:0}
+.dsm-workbuddy-xdpool-panel-title{color:var(--dsw-alias-label-tertiary,#999);font-size:11.5px;line-height:17px;font-weight:500}
 /* A rejected sign-in gets a compact chip: the upstream paragraph is long, and
    printed inline it pushed the neighbouring "Total" panel off screen. */
 .dsm-workbuddy-xdpool-panel-error-dead{display:inline-flex;align-items:center;align-self:flex-start;padding:1px 8px;border-radius:999px;background:var(--dsw-alias-state-error-subtle,rgba(239,68,68,.12));font-size:11px;line-height:18px;white-space:nowrap;cursor:help}
-.dsm-workbuddy-xdpool-panel-foot{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-top:9px;padding-top:9px;border-top:1px solid var(--dsw-alias-border-l2,#36373b);color:var(--dsw-alias-label-secondary,#c6c9d0);font-size:12px;line-height:18px}
-.dsm-workbuddy-xdpool-panel-foot strong{color:var(--dsw-alias-label-primary,#e6e6e6);font-size:15px;font-variant-numeric:tabular-nums}
-.dsm-workbuddy-xdpool-packages{display:flex;flex-direction:column;gap:5px;margin:0;padding:0;list-style:none}
-/* One credit package: name + amount on the first line, its deadline beneath.
-   A two-row grid keeps the columns aligned across rows; a wrapping flex row
-   dropped the deadline onto a second line that started at the container edge,
-   so the list read as ragged text rather than a table. */
-.dsm-workbuddy-xdpool-packages li{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:10px;row-gap:1px;align-items:baseline;color:var(--dsw-alias-label-secondary,#c6c9d0);font-size:12px;line-height:18px}
-.dsm-workbuddy-xdpool-packages-name{grid-column:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dsm-workbuddy-xdpool-packages-value{grid-column:2;justify-self:end;color:var(--dsw-alias-label-tertiary,#999);font-size:11px;font-variant-numeric:tabular-nums}
+/* The package breakdown rides along on the same line as the figures above it.
+   As its own column it needed a heading to say what it was; as a chip list the
+   name says it, and the amounts stay comparable across accounts. */
+.dsm-workbuddy-xdpool-packages{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;margin:0;padding:0;list-style:none}
+/* One credit package: name, then what is left of it. A grid gave the numbers a
+   column of their own, which is right for a table and wrong for three chips
+   sharing a line with a total. */
+.dsm-workbuddy-xdpool-packages li{display:inline-flex;align-items:baseline;gap:5px;min-width:0;padding:1px 8px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1,#2f3035);background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 62%, transparent);color:var(--dsw-alias-label-secondary,#c6c9d0);font-size:11px;line-height:17px}
+.dsm-workbuddy-xdpool-packages-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsm-workbuddy-xdpool-packages-value{color:var(--dsw-alias-label-tertiary,#999);font-variant-numeric:tabular-nums}
 /* Per-package deadline: the upstream grants one-off packs at arbitrary clock
-   times, so each row carries its own timestamp; the soon ones are tinted and
-   fold onto their own line so a long package name cannot squeeze them out. */
-.dsm-workbuddy-xdpool-packages-when{grid-column:1/-1;color:var(--dsw-alias-label-tertiary,#9aa0a8);font-size:11px;line-height:15px;font-variant-numeric:tabular-nums}
+   times, so each pack carries its own timestamp. It sits inside its own chip on
+   its own line — a pack name plus two timestamps did not fit on one line, and
+   dropping the timestamp to the row's left edge made the list look ragged. */
+.dsm-workbuddy-xdpool-packages-when{color:var(--dsw-alias-label-tertiary,#9aa0a8);font-size:10.5px;line-height:15px;font-variant-numeric:tabular-nums}
 .dsm-workbuddy-xdpool-packages-when-soon{color:var(--dsw-alias-state-warning-primary,#d97706)}
-.dsm-workbuddy-xdpool-panel-total{position:relative;align-items:center;text-align:center;justify-content:center;overflow:hidden;background:color-mix(in oklab, var(--dsw-alias-state-success-primary,#22a06b) 5%, transparent)}
-.dsm-workbuddy-xdpool-panel-total::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;opacity:.9;background:var(--dsw-alias-state-success-primary,#22a06b)}
-.dsm-workbuddy-xdpool-total-value{color:var(--dsw-alias-state-success-primary,#22a06b);font-size:28px;line-height:32px;font-weight:800;letter-spacing:-.02em;white-space:nowrap;font-variant-numeric:tabular-nums}
-
+/* The balance. Still the most important figure on the row — colour and weight,
+   not size: at 28px it outweighed the account name it belongs to. */
+.dsm-workbuddy-xdpool-total-value{color:var(--dsw-alias-state-success-primary,#22a06b);font-size:16px;line-height:22px;font-weight:700;letter-spacing:-.2px;white-space:nowrap;font-variant-numeric:tabular-nums}
 /* Model directory list. */
 .dsm-workbuddy-xdpool-models{gap:10px}
 .dsm-workbuddy-xdpool-models-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
@@ -252,47 +283,48 @@ export const POOL_CARD_CSS = `
 .dsm-workbuddy-xdpool-model-budget label{display:inline-flex;align-items:center;gap:4px;cursor:pointer}
 .dsm-workbuddy-xdpool-model-budget input{margin:0;accent-color:var(--dsw-alias-brand-primary,#5686fe)}
 .dsm-workbuddy-xdpool-models-heading{display:flex;flex-direction:column;gap:2px;min-width:0}
+.dsm-workbuddy-xdpool-usage{display:flex;flex-direction:column;gap:10px}
+.dsm-workbuddy-xdpool-usage-head{display:flex;flex-direction:column;gap:2px}
+.dsm-workbuddy-xdpool-usage-title{margin:0;font-size:13px;font-weight:600}
+.dsm-workbuddy-xdpool-usage-summary{margin:0;color:var(--dsw-alias-label-tertiary,#999);font-size:12px;line-height:18px}
+.dsm-workbuddy-xdpool-usage-rows{display:flex;flex-direction:column;gap:6px}
+.dsm-workbuddy-xdpool-usage-row{display:flex;flex-direction:column;gap:2px;padding:8px 10px;border:1px solid var(--dsw-alias-border-subtle,rgba(127,127,127,.25));border-radius:8px}
+.dsm-workbuddy-xdpool-usage-model{font-size:12px;font-weight:600;word-break:break-all}
+.dsm-workbuddy-xdpool-usage-numbers{color:var(--dsw-alias-label-tertiary,#999);font-size:11px;line-height:17px;word-break:break-word}
+.dsm-workbuddy-xdpool-usage-note{margin:0;color:var(--dsw-alias-label-tertiary,#999);font-size:11px;line-height:17px}
 .dsm-workbuddy-xdpool-models-actions{display:flex;align-items:center;gap:8px;flex:none}
 /* "Built-in list (offline)" chip: a warning tint, since the user is looking at
    a SHORTER roster than the gateway offers and may wonder where models went. */
 .dsm-workbuddy-xdpool-catalog-offline{flex:none;padding:2px 9px;border-radius:999px;font-size:11px;line-height:17px;font-weight:600;background:var(--dsw-alias-state-warning-subtle,rgba(217,119,6,.15));color:var(--dsw-alias-state-warning-primary,#d97706);white-space:nowrap}
-
-
 /* Automation: run-now button and the per-job progress line. */
 .dsm-workbuddy-xdpool-auto-run{flex:none}
 .dsm-workbuddy-xdpool-auto-job-detail{grid-column:1/-1;color:var(--dsw-alias-label-tertiary,#9aa0a8);font-size:11px;line-height:16px}
-/* Credit packages panel heading inside the right-hand column. */
-.dsm-workbuddy-xdpool-panel-packages{display:flex;flex-direction:column;gap:7px;min-width:0}
-
-/* Check-in docked under the total, inside the right-hand panel. */
-.dsm-workbuddy-xdpool-checkin{display:flex;flex-direction:column;align-items:center;gap:7px;width:100%;margin-top:10px;padding-top:11px;border-top:1px solid var(--dsw-alias-border-l2,#36373b)}
-.dsm-workbuddy-xdpool-checkin-meta{display:flex;flex-direction:column;align-items:center;gap:2px;width:100%}
-.dsm-workbuddy-xdpool-checkin-streak{color:var(--dsw-alias-label-secondary,#c6c9d0);font-size:12px;line-height:17px;font-variant-numeric:tabular-nums}
+/* Credit packages ride on the figures line above the check-in row. */
+.dsm-workbuddy-xdpool-panel-packages{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
+/* Check-in: the action and its state on ONE line. It was a centred column under
+   a huge number with a hairline above it, which put the one daily thing the
+   user can actually do here behind a divider inside a card that is not a
+   dialog. The streak stays beside the button because it is the reason the
+   button is still worth pressing. */
+.dsm-workbuddy-xdpool-checkin{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.dsm-workbuddy-xdpool-checkin-meta{display:flex;align-items:center;gap:7px;flex-wrap:wrap;min-width:0}
+.dsm-workbuddy-xdpool-checkin-streak{color:var(--dsw-alias-label-secondary,#c6c9d0);font-size:11.5px;line-height:17px;font-variant-numeric:tabular-nums}
 .dsm-workbuddy-xdpool-checkin-daily{color:var(--dsw-alias-state-success-primary,#22a06b);font-size:11px;line-height:16px;font-variant-numeric:tabular-nums}
-.dsm-workbuddy-xdpool-checkin-bonus{padding:1px 8px;border-radius:999px;font-size:11px;line-height:16px;background:var(--dsw-alias-state-success-subtle,rgba(51,160,107,.14));color:var(--dsw-alias-state-success-primary,#22a06b);text-align:center}
-.dsm-workbuddy-xdpool-checkin-btn{width:100%;padding:5px 10px;border-radius:8px;border:1px solid transparent;font-size:12px;font-weight:600;line-height:18px;cursor:pointer;background:var(--dsw-alias-state-success-primary,#22a06b);color:#fff;transition:opacity .16s,border-color .16s,background .16s}
+.dsm-workbuddy-xdpool-checkin-bonus{padding:1px 8px;border-radius:999px;font-size:11px;line-height:16px;background:var(--dsw-alias-state-success-subtle,rgba(51,160,107,.14));color:var(--dsw-alias-state-success-primary,#22a06b)}
+.dsm-workbuddy-xdpool-checkin-btn{flex:none;padding:3px 11px;border-radius:8px;border:1px solid transparent;font-size:11.5px;font-weight:600;line-height:18px;cursor:pointer;background:var(--dsw-alias-state-success-primary,#22a06b);color:#fff;transition:opacity .16s,border-color .16s,background .16s}
 .dsm-workbuddy-xdpool-checkin-btn:hover:not(:disabled){opacity:.88}
 .dsm-workbuddy-xdpool-checkin-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:1px}
 .dsm-workbuddy-xdpool-checkin-btn:disabled{cursor:default;background:transparent;border-color:var(--dsw-alias-border-l2,#3a3d45);color:var(--dsw-alias-label-tertiary,#9aa0a8);opacity:1}
-.dsm-workbuddy-xdpool-checkin-error{color:var(--dsw-alias-state-error-primary,#ef4444);font-size:11px;line-height:16px;text-align:center;word-break:break-word}
-
+.dsm-workbuddy-xdpool-checkin-error{color:var(--dsw-alias-state-error-primary,#ef4444);font-size:11px;line-height:16px;word-break:break-word}
 /* Inline notes + error messages. */
-.dsm-workbuddy-xdpool-note{margin:0;color:var(--dsw-alias-label-tertiary,#9aa0a8);font-size:13px;line-height:20px}
 .dsm-workbuddy-xdpool-error{margin:0;color:var(--dsw-alias-state-error-primary,#ef4444);font-size:13px;line-height:20px}
-
-/* Responsive: stack the stats columns on narrow screens. */
+/* Responsive: the figures line is already one wrapping row, so nothing about
+   it needs a column count at narrow widths. */
 @media (max-width:760px){
-  .dsm-workbuddy-xdpool-stats{grid-template-columns:1fr}
-  .dsm-workbuddy-xdpool-panel-total{align-items:stretch;text-align:left}
-  .dsm-workbuddy-xdpool-total-value{text-align:left}
-  .dsm-workbuddy-xdpool-checkin{align-items:stretch}
-  .dsm-workbuddy-xdpool-checkin-meta{align-items:flex-start}
-  .dsm-workbuddy-xdpool-checkin-bonus{text-align:left}
   /* The chips wrap on their own (auto-fit), so the only thing left to do here
      is stop reserving desktop height for rows that are now one chip tall. */
   .dsm-workbuddy-xdpool-dist-option{min-height:0}
 }
-
 /* Automation panel: schedule and last-run summary, collapsed behind a switch. */
 .dsm-workbuddy-xdpool-auto{margin-top:12px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:10px;background:var(--dsw-alias-bg-module-platform,#202126)}
 .dsm-workbuddy-xdpool-auto-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -335,4 +367,629 @@ export const POOL_CARD_CSS = `
 .dsm-workbuddy-xdpool-reserve-note{flex:0 0 auto;font-size:11px;line-height:16px}
 .dsm-workbuddy-xdpool-reserve-note-ok{color:var(--dsw-alias-state-success-primary,#22a06b)}
 .dsm-workbuddy-xdpool-reserve-note-bad{color:var(--dsw-alias-state-error-primary,#ef4444);font-weight:600}
+/* Page switch between the account pool and the aggregate lane. */
+/* Region cards: one per supplier lane, side by side.
+ *
+ * Placed at the END of this constant on purpose. The mode-picker suite reads
+ * this stylesheet with two indexOf calls to carve out the block it asserts on
+ * (the narrow-screen media query, and the Automation-panel comment that
+ * follows it), so anything inserted between those two markers leaks into that
+ * block and the assertions start failing for reasons that have nothing to do
+ * with the modes. Appended rules cannot move either marker.
+ *
+ * A card is a two-column grid at 1080px: the shell leaves 1080 - 48 of
+ * padding, minus a 12px gap, so each lane gets 510px. Below 900px the two
+ * lanes stop being comparable side by side, so they stack. */
+.dsm-workbuddy-xdpool-regions{display:flex;flex-direction:column;gap:12px}
+/* Stacked, full width, one lane per row — the same arrangement the login-channel
+   page uses. The two lanes are not a comparison table; each one is a supplier
+   the user signs into and reads on its own, and side-by-side columns made the
+   shorter lane look like it was missing something. */
+.dsm-workbuddy-xdpool-region-grid{display:flex;flex-direction:column;gap:12px;min-width:0}
+/* One lane. The colour variables are injected inline by regionCardStyle(); the
+   fallbacks here keep the card legible if that call is ever dropped.
+
+   The SHELL is deliberately identical to the login-channel card below in this
+   file: same 13px radius, same 12px/13px/12px/15px padding, same translucent
+   layer-3 fill, same 5px gap. The user asked for the account pool to be the
+   same size as the login page, and "same size" has to mean the same shell -
+   three numbers carry it, and if one drifts the two pages stop reading as the
+   same object. Only the colour differs. */
+.dsm-workbuddy-xdpool-region{--dsm-workbuddy-xdpool-region-accent:var(--dsw-alias-brand-primary,#5686fe);position:relative;display:flex;flex-direction:column;gap:5px;padding:12px 13px 12px 15px;overflow:hidden;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:13px;background:color-mix(in srgb, var(--dsw-alias-bg-layer-3,#2a2c33) 80%, transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 6%), 0 1px 2px rgb(0 0 0 / 6%);transition:border-color .2s ease,box-shadow .24s ease,transform .22s cubic-bezier(.32,.72,0,1)}
+/* The accent hairline across the top, in the lane's own colour, is what welds
+   the two pages into one family at a glance. Error breaks the lane's colour,
+   because a red hairline beside a purple one is the only place the failure
+   stays visible once the card has scrolled below the fold. */
+.dsm-workbuddy-xdpool-region::before{content:"";position:absolute;left:0;top:0;right:0;height:2px;background:linear-gradient(90deg,var(--dsm-workbuddy-xdpool-region-accent,#5686fe),color-mix(in srgb,var(--dsm-workbuddy-xdpool-region-accent,#5686fe) 30%,transparent));opacity:.85}
+.dsm-workbuddy-xdpool-region[data-state="error"]::before{background:linear-gradient(90deg,var(--dsw-alias-state-error-primary,#ef4444),transparent)}
+/* The card enters on one short upward ease. One animation, not one per child:
+   staggered children make a settings panel feel like a loading screen. */
+.dsm-workbuddy-xdpool-region-in{animation:dsm-workbuddy-xdpool-region-in .32s var(--ease-instrument, cubic-bezier(.16,1,.3,1)) both}
+@keyframes dsm-workbuddy-xdpool-region-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@media (prefers-reduced-motion:reduce){.dsm-workbuddy-xdpool-region-in{animation:none}}
+/* Tile, titles, state pill. Centred, not flex-start: the reference build's
+   ".ofm_chanhead" aligns its three parts on one optical line, and a top-aligned
+   head put the pill above the tile's midline beside a 40px logo. */
+.dsm-workbuddy-xdpool-region-head{display:flex;align-items:center;gap:11px}
+/* The glyph is a MASK, not a background-image: hovering the tile rotates the
+   glyph, and if the glyph were painted as a background the gradient would be
+   repainted with it and the animation would stutter. */
+.dsm-workbuddy-xdpool-region:hover .dsm-workbuddy-xdpool-tile{transform:translateY(-1px) rotate(-4deg);box-shadow:inset 0 1px 0 rgb(255 255 255 / 26%),inset 0 -1px 2px rgb(0 0 0 / 20%),0 8px 18px color-mix(in srgb,var(--dsm-workbuddy-xdpool-tile-accent,#5686fe) 34%,transparent)}
+.dsm-workbuddy-xdpool-region-titles{flex:1 1 auto;min-width:0}
+/* 14px / 700 / -.2px, the reference build's ".ofm_chanid b". The lane is a
+   supplier the user signs into, so it reads at the same weight as a channel
+   name on the login page rather than as a section heading. */
+.dsm-workbuddy-xdpool-region-title{display:block;font-size:14px;font-weight:700;letter-spacing:-.2px;color:var(--dsw-alias-label-primary,#e8e8ea);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* "腾讯 · copilot.tencent.com" — the vendor, then the host it publishes, because
+   those two are what the user is looking for when two lanes both say "Tencent".
+   Tertiary, 11px, ".ofm_chanid span". */
+.dsm-workbuddy-xdpool-region-sub{display:block;margin-top:2px;font-size:11px;line-height:1.4;color:var(--dsw-alias-label-tertiary,#8a90a0);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Three states, three meanings: healthy / every account cooling / the status
+   document could not be read. "No accounts" is NOT one of them; that reads as
+   the copy under the pill, not as a health colour.
+
+   This is the login-channel list's badge in the reference build (the class
+   ".ofm_poolbadge" there) rather than a pill I invented: 999px radius, 6px/14px
+   padding, 8px gap, a translucent
+   layer-1 fill and an inset top highlight, copied value for value. It carries a
+   dot as well as a word, because a colour on its own is unreadable for anyone
+   who cannot separate the tint from the surface, and "cooling" must never be
+   told from "connected" by hue alone. */
+.dsm-workbuddy-xdpool-region-state{flex:none;display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1,#ffffff14);background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 72%, transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 4%);font-size:12.5px;font-weight:650;white-space:nowrap;color:var(--dsw-alias-label-secondary,#c6c9d0)}
+.dsm-workbuddy-xdpool-region-state::before{content:"";width:8px;height:8px;flex:none;border-radius:50%;background:currentColor}
+/* Each state tints the badge's OWN fill. A coloured box-shadow RING was the
+   earlier treatment and it read as a notification rather than as a status.
+   Cooling stays neutral grey on purpose: grey means "waiting", and painting it
+   green or red would assert something the card has not measured. */
+.dsm-workbuddy-xdpool-region[data-state="ok"] .dsm-workbuddy-xdpool-region-state{color:var(--dsw-alias-state-success-primary,#22a06b);border-color:color-mix(in srgb, var(--dsw-alias-state-success-primary,#22a06b) 34%, transparent);background:color-mix(in srgb, var(--dsw-alias-state-success-primary,#22a06b) 11%, transparent)}
+.dsm-workbuddy-xdpool-region[data-state="cooling"] .dsm-workbuddy-xdpool-region-state{color:var(--dsw-alias-label-secondary,#c6c9d0);border-color:var(--dsw-alias-border-l1,#ffffff14);background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 72%, transparent)}
+.dsm-workbuddy-xdpool-region[data-state="error"] .dsm-workbuddy-xdpool-region-state{color:var(--dsw-alias-state-error-primary,#ef4444);border-color:color-mix(in srgb, var(--dsw-alias-state-error-primary,#ef4444) 34%, transparent);background:color-mix(in srgb, var(--dsw-alias-state-error-primary,#ef4444) 11%, transparent)}
+/* One line, clamped to two. A card that grows with its copy stops being a
+   card, and a 40px tile beside four wrapped lines reads as a broken layout.
+
+   This is what the lane actually IS, in Chinese, from the channel roster: what
+   the free line covers and what it costs. The reference build's ".ofm_note" is
+   11px tertiary for the same reason — it is context, not a claim, and it must
+   not compete with the figures above it. */
+.dsm-workbuddy-xdpool-region-note{font-size:11px;line-height:1.5;color:var(--dsw-alias-label-tertiary,#8a90a0);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+/* Three figures in ONE quiet line: the label is a dim noun, the number beside it
+   is the loud part.
+
+   This replaced three recessed tiles (the reference build's ".ofm_stat" look).
+   The user asked for the account-pool card to match the reference build's
+   channel card, and there the figures are ".ofm_chanmeta": a wrapped flex line
+   of "label <b>number</b>" pairs, 11.5px, tertiary labels, secondary numbers.
+   The tile version read as three more boxes competing with the brand tile above
+   them, and it gave a 7.1K credit balance more weight than the note explaining
+   what it buys.
+
+   Label BEFORE number, because that is what the reference build does and the
+   user's screenshot shows: "账号 4/4", not "4/4 账号". */
+.dsm-workbuddy-xdpool-region-stats{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;font-size:11.5px;line-height:16px;color:var(--dsw-alias-label-tertiary,#8a90a0)}
+.dsm-workbuddy-xdpool-region-stat{display:inline-flex;align-items:baseline;gap:5px;min-width:0}
+.dsm-workbuddy-xdpool-region-num{font-weight:650;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary,#c6c9d0);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* "Not measured" is dimmer than a measured figure, including a measured zero.
+   A gateway that never answered has not spent nothing; it has told us nothing. */
+.dsm-workbuddy-xdpool-region-num[data-tone="quiet"]{color:var(--dsw-alias-label-dimmed,#8a90a0)}
+.dsm-workbuddy-xdpool-region-label{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* The button row. The reference build's ".ofm_chanacts" is a left-aligned
+   wrapping row with no space-between, and that is the shape here: the segmented
+   disclosure is part of the row, not pinned to the right edge. It wraps as a
+   WHOLE, because one line squeezing three buttons plus a segmented control into
+   510px is how the control that used to sit at the right end ends up
+   overlapping the leftmost button. */
+.dsm-workbuddy-xdpool-region-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dsm-workbuddy-xdpool-region-btns{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
+/* The three outlined actions. Sized by content rather than by a column track, so
+   a short label like "Clear cooldown" and a long one like "Refresh models"
+   both fit without a fixed width that the narrower of the two would have to
+   stretch to. */
+.dsm-workbuddy-xdpool-region-btn{flex:0 1 auto;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* The segmented disclosure: a recessed groove, so the open half reads as
+   raised rather than tinted. */
+.dsm-workbuddy-xdpool-region-seg{display:inline-flex;align-items:center;gap:2px;padding:3px;border-radius:10px;background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 70%, transparent);border:1px solid var(--dsw-alias-border-l1,#2f3035);flex:none}
+.dsm-workbuddy-xdpool-region-seg-btn{appearance:none;display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary,#c6c9d0);font:inherit;font-size:11.5px;font-weight:600;line-height:16px;cursor:pointer;transition:background .18s ease,color .18s ease,box-shadow .2s ease,transform .18s var(--ease-instrument, cubic-bezier(.16,1,.3,1))}
+.dsm-workbuddy-xdpool-region-seg-btn:hover{background:color-mix(in srgb, var(--dsm-workbuddy-xdpool-region-accent,#5686fe) 14%, transparent);color:var(--dsw-alias-label-primary,#e8e8ea)}
+/* Inside a 3px groove the default 2px outline offset escapes the groove and
+   draws over the card border, so the ring is pulled IN here. */
+.dsm-workbuddy-xdpool-region-seg-btn:focus-visible{outline:2px solid var(--dsm-workbuddy-xdpool-region-accent,#5686fe);outline-offset:-2px;box-shadow:none}
+.dsm-workbuddy-xdpool-region-seg-btn[aria-expanded="true"]{background:var(--dsw-alias-bg-layer-3,#0f1013);color:var(--dsw-alias-label-primary,#e8e8ea);box-shadow:0 1px 3px rgb(0 0 0 / 14%)}
+.dsm-workbuddy-xdpool-region-seg-btn[aria-expanded="true"] .dsm-workbuddy-xdpool-region-seg-glyph{opacity:1}
+.dsm-workbuddy-xdpool-region-seg-btn:disabled{opacity:.4;filter:saturate(.35);cursor:default;transform:none}
+.dsm-workbuddy-xdpool-region-seg-btn:disabled:hover{transform:none;background:transparent;color:var(--dsw-alias-label-secondary,#c6c9d0)}
+.dsm-workbuddy-xdpool-region-seg-glyph{font-size:9px;line-height:1;opacity:.72;transition:opacity .18s ease,transform .22s var(--ease-settle, cubic-bezier(.34,1.4,.4,1))}
+.dsm-workbuddy-xdpool-region-seg-btn:hover .dsm-workbuddy-xdpool-region-seg-glyph{transform:scale(1.12)}
+.dsm-workbuddy-xdpool-region-seg-text{white-space:nowrap}
+.dsm-workbuddy-xdpool-region-seg-count{font-size:10.5px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-dimmed,#8a90a0)}
+/* hidden, never max-height:0. A collapsed panel whose height is animated to
+   zero CLIPS the focus ring of everything inside it, so the first Tab after
+   expanding lands somewhere invisible. */
+.dsm-workbuddy-xdpool-region-pane{margin-top:10px;padding-top:10px;border-top:1px dashed var(--dsw-alias-border-l1,#2f3035)}
+.dsm-workbuddy-xdpool-region-pane[hidden]{display:none}
+.dsm-workbuddy-xdpool-region-pane-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px}
+.dsm-workbuddy-xdpool-region-pane-title{font-size:12px;font-weight:650;letter-spacing:.1px;color:var(--dsw-alias-label-primary,#e8e8ea)}
+/* The CN-only tools: two triggers for the two panels that only exist there. */
+.dsm-workbuddy-xdpool-region-cntools{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.dsm-workbuddy-xdpool-region-tool{appearance:none;display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary,#c6c9d0);font:inherit;font-size:11px;font-weight:600;line-height:16px;cursor:pointer;transition:border-color .18s ease,color .18s ease,background .18s ease,transform .18s var(--ease-instrument, cubic-bezier(.16,1,.3,1))}
+.dsm-workbuddy-xdpool-region-tool:hover:not(:disabled){border-color:color-mix(in srgb, var(--dsm-workbuddy-xdpool-region-accent,#5686fe) 60%, transparent);color:var(--dsw-alias-label-primary,#e8e8ea);background:color-mix(in srgb, var(--dsm-workbuddy-xdpool-region-accent,#5686fe) 9%, transparent)}
+.dsm-workbuddy-xdpool-region-tool:focus-visible{outline:2px solid var(--dsm-workbuddy-xdpool-region-accent,#5686fe);outline-offset:2px;box-shadow:0 0 0 4px color-mix(in srgb, var(--dsm-workbuddy-xdpool-region-accent,#5686fe) 13%, transparent)}
+.dsm-workbuddy-xdpool-region-tool[aria-expanded="true"]{border-color:color-mix(in srgb, var(--dsm-workbuddy-xdpool-region-accent,#5686fe) 70%, transparent);color:var(--dsw-alias-label-primary,#e8e8ea);background:color-mix(in srgb, var(--dsm-workbuddy-xdpool-region-accent,#5686fe) 13%, transparent)}
+.dsm-workbuddy-xdpool-region-tool:disabled{opacity:.4;filter:saturate(.35);cursor:default;transform:none}
+.dsm-workbuddy-xdpool-region-tool:disabled:hover{transform:none;background:transparent;border-color:var(--dsw-alias-border-l2,#36373b);color:var(--dsw-alias-label-secondary,#c6c9d0)}
+.dsm-workbuddy-xdpool-region-tool-caret{font-size:9px;line-height:1;opacity:.7;transition:transform .2s var(--ease-instrument, cubic-bezier(.16,1,.3,1))}
+.dsm-workbuddy-xdpool-region-tool[aria-expanded="true"] .dsm-workbuddy-xdpool-region-tool-caret{transform:rotate(90deg)}
+/* The chosen value sits at the end of the trigger, dimmed, so a collapsed
+   trigger still answers "which mode is this card on?" without being opened. */
+.dsm-workbuddy-xdpool-region-tool-value{margin-left:auto;padding-left:8px;font-size:11px;color:var(--dsw-alias-label-dimmed,#8a90a0);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dsm-workbuddy-xdpool-region-tool[aria-expanded="true"] .dsm-workbuddy-xdpool-region-tool-value{color:var(--dsw-alias-label-secondary,#c6c9d0)}
+/* An empty pane says so here rather than rendering nothing: a disclosure that
+   opens onto blank space reads as a broken control. */
+.dsm-workbuddy-xdpool-region-empty{margin:0;font-size:11.5px;line-height:1.6;color:var(--dsw-alias-label-tertiary,#8a90a0)}
+/* A busy button keeps its WIDTH. Swapping the label for a spinner-sized box
+   reflows the row and shoves the segmented control sideways mid-click. */
+.dsm-workbuddy-xdpool-region-btn[aria-busy="true"]{position:relative;padding-left:26px;cursor:progress;pointer-events:none}
+.dsm-workbuddy-xdpool-region-btn[aria-busy="true"]::before{content:"";position:absolute;left:10px;top:50%;width:11px;height:11px;margin-top:-5.5px;border:1.6px solid color-mix(in srgb, currentColor 28%, transparent);border-top-color:currentColor;border-radius:50%;animation:dsm-workbuddy-xdpool-region-spin .7s linear infinite}
+@keyframes dsm-workbuddy-xdpool-region-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.dsm-workbuddy-xdpool-region-btn[aria-busy="true"]::before{animation-duration:1.6s}}
+/* Inside a 510px column the shared two-column stats grid is crushed, so it is
+   overridden HERE and only here: a selector scoped to .region cannot leak into
+   the aggregate and relay pages that use the same classes at full width. */
+/* The account card sits inside a lane card about 510px wide. The figures line is
+   a wrapping row, so the only thing the narrow column still needs is the room to
+   wrap: no grid columns and no left divider to inherit from the wider pages that
+   share these class names. */
+.dsm-workbuddy-xdpool-region .dsm-workbuddy-xdpool-stats{gap:8px 14px}
+.dsm-workbuddy-xdpool-region .dsm-workbuddy-xdpool-usage-head{flex-wrap:wrap;row-gap:8px}
+.dsm-workbuddy-xdpool-region .dsm-workbuddy-xdpool-usage-actions{flex:1 1 100%;justify-content:flex-start}
+@media (max-width:900px){
+  /* The figure row tightens its gap on the way down. It gets its own 900px block
+     rather than joining the 760px one: the layout test's mediaRule helper takes the
+     FIRST 760px query in the region slice, and that has to stay the one holding the
+     button groups. */
+  .dsm-workbuddy-xdpool-region-stats{gap:12px}
+}
+@media (max-width:760px){
+  /* Each group takes its own line instead of sharing one, and the two halves of
+     the segmented control split it evenly, so neither can push the other out
+     of the card at the narrowest width the host dialog reaches. */
+  .dsm-workbuddy-xdpool-region-btns{flex:1 1 100%}
+  .dsm-workbuddy-xdpool-region-btns .dsm-btn{flex:1 1 0;min-width:0}
+  .dsm-workbuddy-xdpool-region-seg{width:100%}
+  .dsm-workbuddy-xdpool-region-seg-btn{flex:1 1 0;min-width:0;justify-content:center}
+  .dsm-workbuddy-xdpool-region-cntools{flex:1 1 100%}
+  .dsm-workbuddy-xdpool-region-tool{flex:1 1 0;min-width:0;justify-content:center}
+}
+
+`.trim()
+
+export const AGGREGATE_CARD_CSS = `
+
+.dsm-workbuddy-xdpool-agg{display:flex;flex-direction:column;gap:10px;min-width:0}
+.dsm-workbuddy-xdpool-agg-pill{display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;font-size:11px;line-height:17px;white-space:nowrap;border:1px solid var(--dsw-alias-border-l2,#36373b);color:var(--dsw-alias-label-secondary,#c6c9d0)}
+.dsm-workbuddy-xdpool-agg-pill[data-tone="ok"]{border-color:color-mix(in oklab, var(--dsw-alias-state-success-primary,#22a06b) 45%, transparent);color:var(--dsw-alias-state-success-primary,#22a06b)}
+.dsm-workbuddy-xdpool-agg-pill[data-tone="off"]{border-color:color-mix(in oklab, var(--dsw-alias-label-tertiary,#8a90a0) 40%, transparent);color:var(--dsw-alias-label-tertiary,#8a90a0)}
+.dsm-workbuddy-xdpool-agg-pill[data-tone="info"]{border-color:color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 38%, transparent);color:var(--dsw-alias-brand-primary,#5686fe)}
+.dsm-workbuddy-xdpool-agg-lanebar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 10px;border-radius:8px;background:color-mix(in oklab, var(--dsw-alias-state-business-primary,#5686fe) 6%, transparent);border:1px solid var(--dsw-alias-border-l2,#36373b)}
+.dsm-workbuddy-xdpool-agg-hint{color:var(--dsw-alias-label-tertiary,#8a90a0);font-size:11px;line-height:17px}
+.dsm-workbuddy-xdpool-agg-filter{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dsm-workbuddy-xdpool-agg-list{display:flex;flex-direction:column;gap:8px;min-width:0}
+.dsm-workbuddy-xdpool-agg-row{position:relative;display:flex;flex-direction:column;gap:5px;padding:12px 13px 12px 15px;border-radius:13px;border:1px solid var(--dsw-alias-border-l2,#36373b);background:color-mix(in srgb, var(--dsw-alias-bg-layer-3,#2a2c33) 80%, transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 6%), 0 1px 2px rgb(0 0 0 / 6%);transition:transform .2s cubic-bezier(.32,.72,0,1),box-shadow .24s ease,border-color .18s ease}
+.dsm-workbuddy-xdpool-agg-row::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:0 3px 3px 0;background:var(--dsm-workbuddy-xdpool-agg-accent,#5686fe);opacity:.85}
+.dsm-workbuddy-xdpool-agg-row:hover{transform:translateY(-2px);border-color:color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 66%, var(--dsw-alias-border-l2,#36373b));box-shadow:inset 0 1px 0 rgb(255 255 255 / 9%), 0 16px 34px color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 12%, transparent)}
+.dsm-workbuddy-xdpool-agg-row:hover .dsm-workbuddy-xdpool-tile{transform:translateY(-1px) rotate(-4deg)}
+/* "Off" is dimmed rather than greyed out: a vendor that is not in the pool is
+   still one the user may want, and a row they cannot read is a row they
+   cannot judge. */
+.dsm-workbuddy-xdpool-agg-row[data-off="true"]{opacity:.68}
+.dsm-workbuddy-xdpool-agg-row[data-open="true"]{border-color:color-mix(in srgb, var(--dsm-workbuddy-xdpool-agg-accent,#5686fe) 52%, var(--dsw-alias-border-l2,#36373b))}
+.dsm-workbuddy-xdpool-agg-rowhead{display:flex;align-items:center;gap:9px;flex-wrap:wrap;min-width:0}
+.dsm-workbuddy-xdpool-agg-titles{flex:1 1 180px;display:flex;flex-direction:column;gap:1px;min-width:0}
+.dsm-workbuddy-xdpool-agg-name{font-size:13.5px;line-height:19px;font-weight:650;letter-spacing:-.1px;color:var(--dsw-alias-label-primary,#e8e8ea);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsm-workbuddy-xdpool-agg-org{color:var(--dsw-alias-label-tertiary,#8a90a0);font-size:11px;line-height:16px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* The state pill is a word and a colour together, never a colour alone. */
+.dsm-workbuddy-xdpool-agg-state{flex:none;display:inline-flex;align-items:center;gap:5px;margin-left:auto;padding:2px 9px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2,#36373b);color:var(--dsw-alias-label-secondary,#c6c9d0);font-size:10.5px;line-height:16px;white-space:nowrap}
+.dsm-workbuddy-xdpool-agg-state::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.dsm-workbuddy-xdpool-agg-state[data-tone="ok"]{border-color:color-mix(in oklab, var(--dsw-alias-state-success-primary,#22a06b) 45%, transparent);color:var(--dsw-alias-state-success-primary,#22a06b)}
+.dsm-workbuddy-xdpool-agg-state[data-tone="off"]{border-color:color-mix(in oklab, var(--dsw-alias-label-tertiary,#8a90a0) 40%, transparent);color:var(--dsw-alias-label-tertiary,#8a90a0)}
+/* The vendor's own description. Clamped to two lines because the longest entry
+   in the registry runs to 259 characters and a full-height paragraph pushes the
+   next dozen rows off the screen. */
+.dsm-workbuddy-xdpool-agg-note{margin:0;color:var(--dsw-alias-label-secondary,#c6c9d0);font-size:11px;line-height:17px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.dsm-workbuddy-xdpool-agg-foot{display:flex;align-items:center;gap:9px;flex-wrap:wrap;min-width:0}
+.dsm-workbuddy-xdpool-agg-foot .dsm-workbuddy-xdpool-agg-tags{flex:1 1 200px;min-width:0}
+.dsm-workbuddy-xdpool-agg-open{appearance:none;display:inline-flex;align-items:center;gap:6px;margin-left:auto;flex:none;padding:4px 12px;border-radius:8px;border:1px solid color-mix(in srgb, var(--dsw-alias-border-l2,#36373b) 85%, transparent);background:color-mix(in srgb, var(--dsw-alias-bg-layer-3,#2a2c33) 70%, transparent);color:var(--dsw-alias-label-secondary,#c6c9d0);font:inherit;font-size:11.5px;font-weight:560;line-height:17px;white-space:nowrap;cursor:pointer;transition:border-color .16s ease,color .16s ease,background .16s ease,transform .18s cubic-bezier(.16,1,.3,1)}
+.dsm-workbuddy-xdpool-agg-open:hover{border-color:color-mix(in srgb, var(--dsm-workbuddy-xdpool-agg-accent,#5686fe) 55%, var(--dsw-alias-border-l2,#36373b));color:var(--dsw-alias-label-primary,#e8e8ea);transform:translateY(-1px)}
+.dsm-workbuddy-xdpool-agg-open:active{transform:translateY(0);box-shadow:inset 0 2px 4px rgb(0 0 0 / 22%)}
+.dsm-workbuddy-xdpool-agg-open:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:2px}
+.dsm-workbuddy-xdpool-agg-open-caret{width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid currentColor;transition:transform .2s cubic-bezier(.34,1.4,.4,1)}
+.dsm-workbuddy-xdpool-agg-open[aria-expanded="true"] .dsm-workbuddy-xdpool-agg-open-caret{transform:rotate(180deg)}
+/* The "hidden" attribute, never "max-height:0": a collapsed pane that clips
+   its own box cuts the focus ring off the first field when the user tabs
+   into it. */
+.dsm-workbuddy-xdpool-agg-pane{display:flex;flex-direction:column;gap:8px;margin-top:3px;padding-top:9px;border-top:1px dashed color-mix(in srgb, var(--dsw-alias-border-l2,#36373b) 75%, transparent)}
+.dsm-workbuddy-xdpool-agg-pane[hidden]{display:none}
+.dsm-workbuddy-xdpool-agg-switch{align-self:flex-start}
+.dsm-workbuddy-xdpool-agg-warn{margin:0;color:var(--dsw-alias-state-warning-primary,#e8a33d);font-size:11px;line-height:17px}
+.dsm-workbuddy-xdpool-agg-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}
+.dsm-workbuddy-xdpool-agg-field{display:flex;flex-direction:column;gap:3px;min-width:0}
+.dsm-workbuddy-xdpool-agg-field span{color:var(--dsw-alias-label-tertiary,#8a90a0);font-size:11px;line-height:16px}
+.dsm-workbuddy-xdpool-agg-field input{padding:6px 10px;border-radius:9px;border:1px solid var(--dsw-alias-border-l2,#36373b);background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 78%, transparent);box-shadow:inset 0 1px 2px rgb(0 0 0 / 5%);color:var(--dsw-alias-label-primary,#e8e8ea);font:inherit;font-size:12px;transition:border-color .16s ease,box-shadow .16s ease}
+.dsm-workbuddy-xdpool-agg-field input:focus{outline:none;border-color:var(--dsw-alias-brand-primary,#5686fe);box-shadow:0 0 0 3px color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 20%, transparent)}
+.dsm-workbuddy-xdpool-agg-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.dsm-workbuddy-xdpool-agg-models{margin:0;color:var(--dsw-alias-label-tertiary,#8a90a0);font-size:11px;line-height:17px;word-break:break-word}
+.dsm-workbuddy-xdpool-agg-facts{display:flex;flex-direction:column;gap:1px;min-width:0;margin:7px 0 0;padding:0;list-style:none}
+.dsm-workbuddy-xdpool-agg-fact{display:flex;flex-direction:column;min-width:0;padding:5px 8px;border-radius:8px;background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 55%, transparent)}
+.dsm-workbuddy-xdpool-agg-fact:nth-child(even){background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 30%, transparent)}
+.dsm-workbuddy-xdpool-agg-fact-name{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;line-height:16px;color:var(--dsw-alias-label-secondary,#c3c7d4);font-weight:600}
+.dsm-workbuddy-xdpool-agg-fact[data-live="true"] .dsm-workbuddy-xdpool-agg-fact-name::after{content:"";display:inline-block;width:5px;height:5px;margin-left:6px;border-radius:50%;vertical-align:middle;background:var(--dsw-alias-state-success-primary,#22a06b)}
+.dsm-workbuddy-xdpool-agg-fact .dsm-workbuddy-xdpool-mfacts{margin-top:1px}
+.dsm-workbuddy-xdpool-agg-fact .dsm-workbuddy-xdpool-mfacts-probe,.dsm-workbuddy-xdpool-agg-fact .dsm-workbuddy-xdpool-mfacts-result{margin-left:0}
+.dsm-workbuddy-xdpool-agg-flash{margin:0;padding:5px 9px;border-radius:6px;background:color-mix(in oklab, var(--dsw-alias-label-primary,#e8e8ea) 5%, transparent);color:var(--dsw-alias-label-secondary,#c6c9d0);font-size:11px;line-height:17px;word-break:break-word}
+@media (max-width:760px){
+  .dsm-workbuddy-xdpool-agg-fields{grid-template-columns:1fr}
+  .dsm-workbuddy-xdpool-agg-foot .dsm-workbuddy-xdpool-agg-tags{flex:1 1 100%}
+  .dsm-workbuddy-xdpool-agg-open{margin-left:0;flex:1 1 100%;justify-content:center}
+  .dsm-workbuddy-xdpool-agg-state{margin-left:auto}
+}
+
+`.trim()
+
+export const CHANNEL_CARD_CSS = `
+
+.dsm-workbuddy-xdpool-channels{display:flex;flex-direction:column;gap:8px;min-width:0}
+/* The brand tile itself lives in SHARED_CARD_CSS: the pool's region cards and
+   the aggregate rows render it too, and neither page loads this sheet. Keeping
+   it here is why those two pages showed a bare 40px gap where the logo should
+   be. Only the channel row's own hover belongs to this page. */
+/* The channel action button. It is named "-btn" rather than reusing ".dsm-btn"
+   because it sits inside a 40px-tall row next to a 40px tile and needs the
+   smaller metrics, but it has to read as the same family: same radius, same
+   inset highlight, same lift on hover. It had no rule at all before, so the
+   sign-in and cancel controls rendered as bare browser buttons. */
+.dsm-workbuddy-xdpool-btn{appearance:none;display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:11.5px;font-weight:560;line-height:17px;padding:4px 12px;border-radius:8px;border:1px solid color-mix(in srgb, var(--dsw-alias-border-l2,#36373b) 85%, transparent);background:color-mix(in srgb, var(--dsw-alias-bg-layer-3,#2a2c33) 70%, transparent);color:var(--dsw-alias-label-secondary,#c6c9d0);text-decoration:none;cursor:pointer;white-space:nowrap;transition:border-color .16s ease,color .16s ease,background .16s ease,transform .18s var(--ease-instrument,cubic-bezier(.16,1,.3,1))}
+.dsm-workbuddy-xdpool-btn:hover:not(:disabled){transform:translateY(-1px);border-color:color-mix(in srgb, var(--dsm-workbuddy-xdpool-channel-accent,#5686fe) 55%, var(--dsw-alias-border-l2,#36373b));color:var(--dsw-alias-label-primary,#e8e8ea)}
+.dsm-workbuddy-xdpool-btn:active:not(:disabled){transform:translateY(0);box-shadow:inset 0 2px 4px rgb(0 0 0 / 22%)}
+.dsm-workbuddy-xdpool-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:2px}
+.dsm-workbuddy-xdpool-btn:disabled{opacity:.5;cursor:default;filter:saturate(.35);transform:none}
+.dsm-workbuddy-xdpool-channel:hover .dsm-workbuddy-xdpool-tile{transform:translateY(-1px) rotate(-4deg);box-shadow:inset 0 1px 0 rgb(255 255 255 / 26%),inset 0 -1px 2px rgb(0 0 0 / 20%),0 8px 18px color-mix(in srgb,var(--dsm-workbuddy-xdpool-tile-accent,#5686fe) 30%,transparent)}
+.dsm-workbuddy-xdpool-channel{position:relative;display:flex;flex-direction:column;gap:5px;padding:12px 13px 12px 15px;border-radius:13px;border:1px solid var(--dsw-alias-border-l2,#36373b);background:color-mix(in srgb, var(--dsw-alias-bg-layer-3,#2a2c33) 80%, transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 6%), 0 1px 2px rgb(0 0 0 / 6%);transition:transform .2s cubic-bezier(.32,.72,0,1),box-shadow .24s ease,border-color .18s ease}
+.dsm-workbuddy-xdpool-channel:hover{transform:translateY(-2px);border-color:color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 66%, var(--dsw-alias-border-l2,#36373b));box-shadow:inset 0 1px 0 rgb(255 255 255 / 9%), 0 16px 34px color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 12%, transparent)}
+.dsm-workbuddy-xdpool-channel::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:0 3px 3px 0;background:var(--dsm-workbuddy-xdpool-channel-accent,#5686fe);opacity:.85}
+.dsm-workbuddy-xdpool-channel-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.dsm-workbuddy-xdpool-channel-name{font-size:13.5px;line-height:19px;font-weight:650;letter-spacing:-.1px;color:var(--dsw-alias-label-primary,#e8e8ea);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsm-workbuddy-xdpool-channel-org{color:var(--dsw-alias-label-tertiary,#8a90a0);font-size:11px;line-height:16px}
+.dsm-workbuddy-xdpool-channel-tag{margin-left:auto;display:inline-flex;align-items:center;padding:1px 8px;border-radius:999px;font-size:10px;line-height:16px;white-space:nowrap;border:1px solid color-mix(in oklab, var(--dsw-alias-state-success-primary,#22a06b) 45%, transparent);color:var(--dsw-alias-state-success-primary,#22a06b)}
+.dsm-workbuddy-xdpool-channel-note{margin:0;color:var(--dsw-alias-label-secondary,#c6c9d0);font-size:11px;line-height:17px}
+.dsm-workbuddy-xdpool-channel-owned{margin:0;color:var(--dsw-alias-label-tertiary,#8a90a0);font-size:11px;line-height:17px;font-style:italic}
+.dsm-workbuddy-xdpool-channel-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.dsm-workbuddy-xdpool-channel-waiting{color:var(--dsw-alias-state-business-primary,#5686fe);font-size:11px;line-height:17px}
+.dsm-workbuddy-xdpool-channel-ok{color:var(--dsw-alias-state-success-primary,#22a06b);font-size:11px;line-height:17px;font-weight:600}
+.dsm-workbuddy-xdpool-channel-error{color:var(--dsw-alias-state-error-primary,#e5534b);font-size:11px;line-height:17px;word-break:break-word}
+/* The per-model facts and the connectivity test, from the same component the
+   aggregate and pool pages use. A signed-in channel contributes nothing here
+   until it has models, so the list appearing is itself the sign-in signal —
+   there is no separate empty state to keep in step with this. */
+.dsm-workbuddy-xdpool-channel-models{display:flex;flex-direction:column;gap:1px;min-width:0;margin:7px 0 0;padding:0;list-style:none}
+.dsm-workbuddy-xdpool-channel-model{display:flex;flex-direction:column;min-width:0;padding:5px 8px;border-radius:8px;background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 55%, transparent)}
+.dsm-workbuddy-xdpool-channel-model:nth-child(even){background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 30%, transparent)}
+.dsm-workbuddy-xdpool-channel-model-name{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;line-height:16px;color:var(--dsw-alias-label-secondary,#c3c7d4);font-weight:600}
+.dsm-workbuddy-xdpool-channel-model .dsm-workbuddy-xdpool-mfacts{margin-top:1px}
+.dsm-workbuddy-xdpool-channel-model .dsm-workbuddy-xdpool-mfacts-probe,.dsm-workbuddy-xdpool-channel-model .dsm-workbuddy-xdpool-mfacts-result{margin-left:0}
+
+`.trim()
+
+export const SHELL_CSS = `
+
+.dsm-workbuddy-xdpool-shell{--ease-instrument:cubic-bezier(.16,1,.3,1);--ease-settle:cubic-bezier(.34,1.4,.4,1);--gap:14px;position:relative;display:flex;flex-direction:column;gap:calc(var(--gap)*1.4);max-width:1080px;font-size:13px;line-height:1.55;color:var(--dsw-alias-label-primary,#e8e8ea);-webkit-font-smoothing:antialiased;box-sizing:border-box}
+/* A 180px fractal-noise tile at 2.2% opacity. It is the same grain the sibling
+   plugin lays over its root, and it exists for one reason: large flat dark
+   panels read as plastic, and a whisper of noise makes them read as a
+   surface. "position:absolute" (not "fixed") so it travels with the card
+   instead of floating over the host dialog when the panel scrolls. */
+.dsm-workbuddy-xdpool-shell::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;opacity:.022;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E")}
+.dsm-workbuddy-xdpool-shell *,.dsm-workbuddy-xdpool-shell *::before,.dsm-workbuddy-xdpool-shell *::after{box-sizing:border-box}
+/* Scrollbars are part of the chrome here, not the host's: this card scrolls
+   inside the settings dialog, and a default 15px bar eats a settings panel
+   that is already narrow. "background-clip:padding-box" keeps the 2.5px
+   transparent ring from painting over the thumb's own colour. */
+.dsm-workbuddy-xdpool-shell ::-webkit-scrollbar{width:10px;height:10px}
+.dsm-workbuddy-xdpool-shell ::-webkit-scrollbar-thumb{background:color-mix(in srgb, var(--dsw-alias-label-tertiary,#8a90a0) 32%, transparent);border-radius:99px;border:2.5px solid transparent;background-clip:padding-box}
+.dsm-workbuddy-xdpool-shell ::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb, var(--dsw-alias-label-tertiary,#8a90a0) 52%, transparent);background-clip:padding-box}
+.dsm-workbuddy-xdpool-shell{scrollbar-width:thin;scrollbar-color:color-mix(in srgb, var(--dsw-alias-label-tertiary,#8a90a0) 32%, transparent) transparent}
+.dsm-workbuddy-xdpool-shell ::selection{background:color-mix(in srgb, var(--dsw-alias-state-business-primary,#5686fe) 24%, transparent)}
+/* One focus ring for the whole card. Every control below inherits it, so a
+   rewrite of an individual button cannot invent a second, louder one. */
+.dsm-workbuddy-xdpool-shell :focus-visible{outline:2px solid color-mix(in srgb, var(--dsw-alias-state-business-primary,#5686fe) 78%, transparent);outline-offset:2px;box-shadow:0 0 0 4px color-mix(in srgb, var(--dsw-alias-state-business-primary,#5686fe) 13%, transparent)}
+.dsm-workbuddy-xdpool-glass{border:1px solid color-mix(in srgb, var(--dsw-alias-border-l2,#ffffff1f) 78%, transparent);border-radius:16px;background:color-mix(in srgb, var(--dsw-alias-bg-layer-2,#1c1e22) 68%, transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 6%), 0 12px 34px rgb(0 0 0 / 9%)}
+/* Three soft colour washes behind the chrome. Low opacity and no
+   "filter:blur()" on purpose — see the note on the nav above: a blurred child
+   inside a dialog whose ancestors already use "backdrop-filter" is the
+   expensive way to spell "soft gradient". Two of them are cool and one is
+   warm so the top of the card does not read as a single blue smear. */
+.dsm-workbuddy-xdpool-aurora{position:absolute;inset:-10% -6% auto;height:280px;pointer-events:none;overflow:hidden;border-radius:18px;z-index:0}
+.dsm-workbuddy-xdpool-aurora i{position:absolute;display:block;border-radius:50%;opacity:.18;filter:none}
+.dsm-workbuddy-xdpool-aurora i:nth-child(1){width:280px;height:280px;left:4%;top:-40px;background:radial-gradient(circle, rgba(86,134,254,.55), transparent 70%)}
+.dsm-workbuddy-xdpool-aurora i:nth-child(2){width:240px;height:240px;right:8%;top:-30px;background:radial-gradient(circle, rgba(150,97,255,.45), transparent 70%)}
+.dsm-workbuddy-xdpool-aurora i:nth-child(3){width:220px;height:220px;left:38%;top:20px;background:radial-gradient(circle, rgba(46,207,160,.32), transparent 70%)}
+.dsm-workbuddy-xdpool-shell > *:not(.dsm-workbuddy-xdpool-aurora){position:relative;z-index:1}
+/* Sticky brand bar. "backdrop-filter" is deliberately absent even though the
+   sibling plugin's nav uses it: this card is rendered inside a host dialog
+   that already applies "backdrop-filter" to some ancestors, and stacking a
+   backdrop-filtered ancestor with another one is where GPUs go to die. Large
+   radius + a low-opacity solid fill gives the same frosted read for a
+   fraction of the cost. */
+.dsm-workbuddy-xdpool-nav{position:sticky;top:0;z-index:30;display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px 12px;padding:10px 12px;border-radius:16px;border:1px solid color-mix(in srgb, var(--dsw-alias-border-l2,#ffffff1f) 82%, transparent);background:color-mix(in srgb, var(--dsw-alias-bg-layer-2,#1c1e22) 62%, transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 7%), 0 8px 26px rgb(0 0 0 / 10%)}
+.dsm-workbuddy-xdpool-brand{display:flex;align-items:center;gap:9px;min-width:0}
+.dsm-workbuddy-xdpool-avatar{width:26px;height:26px;flex:none;border-radius:9px;object-fit:cover;box-shadow:inset 0 1px 0 rgb(255 255 255 / 22%), 0 4px 12px rgb(0 0 0 / 34%)}
+.dsm-workbuddy-xdpool-brand-copy{display:flex;flex-direction:column;min-width:0}
+.dsm-workbuddy-xdpool-brand-title{display:flex;align-items:baseline;gap:6px;font-size:14px;line-height:19px;font-weight:700;letter-spacing:-.2px;color:var(--dsw-alias-label-primary,#e8e8ea);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dsm-workbuddy-xdpool-version{font-size:10.5px;line-height:14px;font-weight:500;color:var(--dsw-alias-label-tertiary,#8a90a0);font-variant-numeric:tabular-nums}
+/* The star is pinned to the brand row explicitly. Grid auto-placement would
+   put it below the tab strip (the strip comes first in the DOM) and stretch it
+   across that row instead of hugging the right edge of the brand row. */
+.dsm-workbuddy-xdpool-star{grid-column:2;grid-row:1;justify-self:end;position:relative;display:inline-flex;gap:7px;align-items:center;padding:7px 15px;border-radius:999px;overflow:hidden;text-decoration:none;white-space:nowrap;font-size:12.5px;line-height:17px;font-weight:650;border:1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary,#5686fe) 55%, transparent);background:linear-gradient(140deg, color-mix(in srgb, var(--dsw-alias-state-business-primary,#5686fe) 16%, transparent), transparent 70%);color:var(--dsw-alias-state-business-primary,#5686fe);transition:transform .18s ease, box-shadow .22s ease, color .22s ease, background .22s ease}
+.dsm-workbuddy-xdpool-star:hover{transform:translateY(-1px);box-shadow:0 0 0 4px color-mix(in srgb, var(--dsw-alias-state-business-primary,#5686fe) 10%, transparent), 0 8px 22px color-mix(in srgb, var(--dsw-alias-state-business-primary,#5686fe) 34%, transparent)}
+.dsm-workbuddy-xdpool-star svg{fill:currentColor;transition:transform .5s cubic-bezier(.34,1.56,.64,1)}
+.dsm-workbuddy-xdpool-star:hover svg{transform:rotate(72deg) scale(1.12)}
+.dsm-workbuddy-xdpool-star:active svg{transform:rotate(72deg) scale(.94)}
+.dsm-workbuddy-xdpool-navtabs{grid-column:1/-1;position:relative;display:flex;flex-wrap:wrap;gap:2px;padding:3px;border-radius:13px;border:1px solid color-mix(in srgb, var(--dsw-alias-border-l1,#ffffff14) 80%, transparent);background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 62%, transparent);box-shadow:inset 0 1px 2px rgb(0 0 0 / 4%)}
+/* A raised surface, not a tinted wash: the glider has to read as "this one is
+   sitting on top of the strip" from across the panel, and a wash alone is
+   indistinguishable from hover. */
+.dsm-workbuddy-xdpool-navglider{position:absolute;left:0;top:0;border-radius:10px;background:linear-gradient(150deg, color-mix(in srgb, var(--dsw-alias-bg-layer-3,#23252b) 92%, transparent), color-mix(in srgb, var(--dsw-alias-bg-layer-2,#1c1e22) 88%, transparent));box-shadow:0 3px 10px rgb(0 0 0 / 14%), inset 0 1px 0 rgb(255 255 255 / 9%);transition:transform .34s cubic-bezier(.22,.61,.36,1), width .34s cubic-bezier(.22,.61,.36,1), height .34s cubic-bezier(.22,.61,.36,1);pointer-events:none}
+.dsm-workbuddy-xdpool-navtab{position:relative;z-index:1;display:inline-flex;align-items:center;gap:5px;padding:6px 13px;border:none;border-radius:10px;background:transparent;color:var(--dsw-alias-label-secondary,#c6c9d0);font:inherit;font-size:12px;line-height:17px;font-weight:600;white-space:nowrap;cursor:pointer;transition:color .2s ease}
+.dsm-workbuddy-xdpool-navtab:hover{color:var(--dsw-alias-label-primary,#e8e8ea)}
+.dsm-workbuddy-xdpool-navtab-on{color:var(--dsw-alias-label-primary,#e8e8ea)}
+.dsm-workbuddy-xdpool-navtabnum{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:6px;font-size:11px;line-height:16px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-tertiary,#8a90a0)}
+.dsm-workbuddy-xdpool-navtab-on .dsm-workbuddy-xdpool-navtabnum{color:var(--dsw-alias-label-primary,#e8e8ea)}
+.dsm-workbuddy-xdpool-body{display:flex;flex-direction:column;gap:calc(var(--gap)*1.4);min-width:0}
+/* Page hero: a raised panel with two soft highlights behind the title, the same
+   three-layer read the shell uses everywhere else. */
+.dsm-workbuddy-xdpool-hero{position:relative;display:flex;flex-direction:column;gap:14px;padding:22px 24px;border-radius:20px;overflow:hidden}
+.dsm-workbuddy-xdpool-hero::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:radial-gradient(120% 150% at 12% -20%, color-mix(in srgb, var(--dsw-alias-state-business-primary,#5686fe) 13%, transparent), transparent 58%), radial-gradient(90% 120% at 88% 130%, color-mix(in srgb, var(--dsw-alias-state-success-primary,#22a06b) 7%, transparent), transparent 60%)}
+.dsm-workbuddy-xdpool-hero > *{position:relative}
+.dsm-workbuddy-xdpool-pagehead{position:relative;display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}
+.dsm-workbuddy-xdpool-pagecopy{display:flex;flex-direction:column;gap:6px;min-width:0;flex:1 1 220px}
+.dsm-workbuddy-xdpool-pagetitle{margin:0;font-size:23px;line-height:1.2;font-weight:760;letter-spacing:-.6px;background:linear-gradient(120deg, var(--dsw-alias-label-primary,#e8e8ea) 20%, color-mix(in srgb, var(--dsw-alias-label-primary,#e8e8ea) 55%, var(--dsw-alias-state-business-primary,#5686fe)));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent}
+.dsm-workbuddy-xdpool-pagesub{margin:0;color:var(--dsw-alias-label-secondary,#c6c9d0);font-size:12.5px;line-height:1.55;max-width:70ch}
+.dsm-workbuddy-xdpool-pageactions{margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dsm-workbuddy-xdpool-pills{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto}
+/* One statistic above the usage tables: same surface language as a page
+   section, a smaller radius than the hero so a row of them does not compete
+   with the page title above it. */
+.dsm-workbuddy-xdpool-kpi{display:flex;flex-direction:column;gap:3px;padding:10px 12px;border-radius:12px;border:1px solid color-mix(in srgb, var(--dsw-alias-border-l1,#ffffff14) 100%, transparent);background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 78%, transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 4%)}
+.dsm-workbuddy-xdpool-kpi-label{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary,#8a90a0)}
+.dsm-workbuddy-xdpool-kpi-value{display:block;font-size:16px;line-height:23px;font-weight:700;letter-spacing:-.3px;color:var(--dsw-alias-label-primary,#e8e8ea);font-variant-numeric:tabular-nums}
+.dsm-workbuddy-xdpool-kpi-sub{font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary,#c6c9d0)}
+/* Generic status pill. Owned by the shell rather than by any one page, because
+   the hero's pill slot is shared and a second definition per page would let two
+   pages disagree about what "ok" looks like. */
+.dsm-workbuddy-xdpool-pill{display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;font-size:11px;line-height:17px;white-space:nowrap;border:1px solid var(--dsw-alias-border-l2,#36373b);color:var(--dsw-alias-label-secondary,#c6c9d0)}
+.dsm-workbuddy-xdpool-pill[data-tone="ok"]{border-color:color-mix(in oklab, var(--dsw-alias-state-success-primary,#22a06b) 45%, transparent);color:var(--dsw-alias-state-success-primary,#22a06b)}
+.dsm-workbuddy-xdpool-pill[data-tone="warn"]{border-color:color-mix(in oklab, var(--dsw-alias-state-warning-primary,#e8a33d) 45%, transparent);color:var(--dsw-alias-state-warning-primary,#e8a33d)}
+.dsm-workbuddy-xdpool-pill[data-tone="off"]{border-color:color-mix(in oklab, var(--dsw-alias-label-tertiary,#8a90a0) 40%, transparent);color:var(--dsw-alias-label-tertiary,#8a90a0)}
+
+`.trim()
+
+export const LEDGER_CARD_CSS = `
+
+/* The tables carry many columns; the wrapper scrolls rather than forcing the
+   settings section itself to, which would drag the whole card sideways. */
+/* A failed turn stays visible instead of being greyed into the background: the
+   point of a recent-calls table is being able to see the failures. */
+/* Long model ids and account emails get clipped rather than wrapped: a wrapped
+   number column breaks the alignment that makes it scannable. */
+
+`.trim()
+
+export const BILLION_CARD_CSS = `
+
+.dsm-workbuddy-xdpool-steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#c6c9d0)}
+.dsm-workbuddy-xdpool-steps code{font-family:var(--dsw-alias-font-mono,ui-monospace,Menlo,Consolas,monospace);font-size:11px;background:color-mix(in srgb, var(--dsw-alias-bg-layer-3,#26282e) 80%, transparent);border-radius:6px;padding:2px 6px}
+/* A session with requests still in flight. The dot is the only motion on this
+   page; nothing animates while idle, so a still dot means still idle. */
+.dsm-workbuddy-xdpool-live{display:inline-block;width:6px;height:6px;border-radius:50%;margin-left:6px;vertical-align:middle;background:var(--dsw-alias-state-success,#22c55e)}
+/* Section header that carries its own controls: title on the left, actions on
+   the right, both on one baseline. */
+.dsm-workbuddy-xdpool-sechead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.dsm-workbuddy-xdpool-sechead .dsm-workbuddy-xdpool-sectitle{margin:0}
+.dsm-workbuddy-xdpool-secbtns{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+/* A control that reads as a link-shaped button: it only navigates or reveals,
+   it never commits state, so it stays quiet until hovered. */
+.dsm-workbuddy-xdpool-secghost{appearance:none;display:inline-flex;align-items:center;font:inherit;font-size:11.5px;font-weight:560;line-height:17px;padding:3px 10px;border-radius:8px;border:1px solid color-mix(in srgb, var(--dsw-alias-border-l2,#36373b) 85%, transparent);background:color-mix(in srgb, var(--dsw-alias-bg-layer-3,#2a2c33) 70%, transparent);color:var(--dsw-alias-label-secondary,#c6c9d0);text-decoration:none;cursor:pointer;white-space:nowrap;transition:border-color .16s ease,color .16s ease,background .16s ease,transform .18s var(--ease-instrument)}
+.dsm-workbuddy-xdpool-secghost:hover{border-color:color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 66%, var(--dsw-alias-border-l2,#36373b));color:var(--dsw-alias-label-primary,#e8e8ea);transform:translateY(-1px)}
+.dsm-workbuddy-xdpool-secghost:focus-visible{outline:2px solid color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 78%, transparent);outline-offset:2px;box-shadow:0 0 0 4px color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 13%, transparent)}
+/* The session id itself. A deep link into another plugin's UI, so it has to
+   read as a link without pretending to be the pool's own navigation. */
+.dsm-workbuddy-xdpool-sesslink{color:color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 88%, var(--dsw-alias-label-primary,#e8e8ea));text-decoration:none;border-bottom:1px solid color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 30%, transparent);transition:color .16s ease,border-color .16s ease}
+.dsm-workbuddy-xdpool-sesslink:hover{color:var(--dsw-alias-brand-primary,#5686fe);border-bottom-color:color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 70%, transparent)}
+
+`.trim()
+
+export const ROUTING_CARD_CSS = `
+
+/* The page root. It had no rule while the three sibling pages all declared one,
+   so the routing page's cards sat flush against the hero with no gap. */
+.dsm-workbuddy-xdpool-rt{display:flex;flex-direction:column;gap:10px;min-width:0}
+.dsm-workbuddy-xdpool-rt-new{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.dsm-workbuddy-xdpool-rt-editor{display:flex;flex-direction:column;gap:12px;padding:16px;border-radius:16px;border:1px solid color-mix(in srgb, var(--dsw-alias-border-l2,#36373b) 88%, transparent);background:color-mix(in srgb, var(--dsw-alias-bg-layer-2,#1c1e22) 82%, transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 5%), 0 2px 6px rgb(0 0 0 / 4%)}
+.dsm-workbuddy-xdpool-rt-editorhead{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.dsm-workbuddy-xdpool-rt-edname{font-size:13px;line-height:19px;font-weight:600;color:var(--dsw-alias-label-primary,#e8e8ea)}
+.dsm-workbuddy-xdpool-rt-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:9px}
+.dsm-workbuddy-xdpool-rt-field{display:flex;flex-direction:column;gap:3px;min-width:0}
+.dsm-workbuddy-xdpool-rt-field span{color:var(--dsw-alias-label-tertiary,#8a90a0);font-size:11px;line-height:16px}
+.dsm-workbuddy-xdpool-rt-field input,.dsm-workbuddy-xdpool-rt-field select{padding:6px 10px;border-radius:9px;border:1px solid var(--dsw-alias-border-l2,#36373b);background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 78%, transparent);box-shadow:inset 0 1px 2px rgb(0 0 0 / 5%);color:var(--dsw-alias-label-primary,#e8e8ea);font:inherit;font-size:12px;transition:border-color .16s ease,box-shadow .16s ease}
+.dsm-workbuddy-xdpool-rt-field input:focus,.dsm-workbuddy-xdpool-rt-field select:focus{outline:none;border-color:var(--dsw-alias-brand-primary,#5686fe);box-shadow:0 0 0 3px color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 20%, transparent)}
+.dsm-workbuddy-xdpool-rt-hint{margin:0;color:var(--dsw-alias-label-tertiary,#8a90a0);font-size:11px;line-height:17px}
+/* Members render as an ordered, numbered list: order IS the semantics of a
+   chain, so a two-column tag cloud would throw away the thing that matters. */
+.dsm-workbuddy-xdpool-rt-members{display:flex;flex-direction:column;gap:5px;margin:0;padding:0;list-style:none}
+.dsm-workbuddy-xdpool-rt-member{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:9px;border:1px solid var(--dsw-alias-border-l2,#36373b);background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 72%, transparent)}
+.dsm-workbuddy-xdpool-rt-ord{flex:none;width:19px;height:19px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;line-height:19px;color:var(--dsw-alias-label-tertiary,#8a90a0);border:1px solid var(--dsw-alias-border-l2,#36373b);font-variant-numeric:tabular-nums}
+.dsm-workbuddy-xdpool-rt-mid{flex:1 1 auto;min-width:0;font-family:var(--dsw-alias-font-mono,ui-monospace,Menlo,Consolas,monospace);font-size:11px;line-height:17px;color:var(--dsw-alias-label-primary,#e8e8ea);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsm-workbuddy-xdpool-rt-mtag{flex:none}
+.dsm-workbuddy-xdpool-rt-drop{flex:none;appearance:none;font:inherit;font-size:10px;line-height:16px;padding:2px 9px;border-radius:8px;border:1px solid color-mix(in srgb, var(--dsw-alias-border-l2,#36373b) 85%, transparent);background:color-mix(in srgb, var(--dsw-alias-bg-layer-3,#2a2c33) 70%, transparent);color:var(--dsw-alias-label-secondary,#c6c9d0);cursor:pointer;transition:border-color .16s ease,color .16s ease}
+.dsm-workbuddy-xdpool-rt-drop:hover{border-color:var(--dsw-alias-state-error-primary,#ef4444);color:var(--dsw-alias-state-error-primary,#ef4444)}
+.dsm-workbuddy-xdpool-rt-addrow{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+/* The model-id picker wore ".rt-field", whose rules style ".rt-field input,
+   .rt-field select" - a DESCENDANT contract. This control IS the ".rt-field",
+   so it matched nothing at all and rendered as a bare browser dropdown while
+   every other control on the page was restyled, which is what the user
+   reported. It gets its own rule now.
+
+   The treatment is a recessed strip rather than a chrome dropdown, because the
+   member rows directly beneath it are recessed strips too and the picker belongs
+   to that row of controls: same 9px radius, same 72%-opacity layer-1 fill, same
+   hover deepening. The monospace family is deliberate - these are model ids, and
+   in a proportional face "deepseek-v4" and "deepseekv4" are near-identical
+   strings to the eye. */
+.dsm-workbuddy-xdpool-rt-pick{flex:1 1 220px;min-width:0;appearance:none;padding:6px 10px;border-radius:9px;border:1px solid var(--dsw-alias-border-l2,#36373b);background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 72%, transparent);box-shadow:inset 0 1px 2px rgb(0 0 0 / 5%);color:var(--dsw-alias-label-primary,#e8e8ea);font-family:var(--dsw-alias-font-mono,ui-monospace,Menlo,Consolas,monospace);font-size:11.5px;line-height:17px;cursor:pointer;transition:border-color .16s ease,box-shadow .16s ease,background .15s ease}
+.dsm-workbuddy-xdpool-rt-pick:hover{background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 88%, transparent);border-color:color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 50%, var(--dsw-alias-border-l2,#36373b))}
+.dsm-workbuddy-xdpool-rt-pick:focus-visible{outline:none;border-color:var(--dsw-alias-brand-primary,#5686fe);box-shadow:0 0 0 3px color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 20%, transparent)}
+/* The option list is painted by the OS, not by us, so the page's own tokens are
+   re-stated here or a dark page opens a white popup. The empty option is greyed
+   because a picker with nothing chosen must not read as a value. */
+.dsm-workbuddy-xdpool-rt-pick option{background:var(--dsw-alias-bg-layer-2,#1c1e22);color:var(--dsw-alias-label-primary,#e8e8ea)}
+.dsm-workbuddy-xdpool-rt-pick option[value=""]{color:var(--dsw-alias-label-tertiary,#8a90a0)}
+.dsm-workbuddy-xdpool-rt-list{display:flex;flex-direction:column;gap:8px;min-width:0}
+.dsm-workbuddy-xdpool-rt-row{display:flex;flex-direction:column;gap:8px;padding:12px 13px;border-radius:13px;border:1px solid var(--dsw-alias-border-l2,#36373b);background:color-mix(in srgb, var(--dsw-alias-bg-layer-3,#2a2c33) 80%, transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 6%), 0 1px 2px rgb(0 0 0 / 6%);transition:transform .2s cubic-bezier(.32,.72,0,1),box-shadow .24s ease,border-color .18s ease}
+.dsm-workbuddy-xdpool-rt-row:hover{transform:translateY(-2px);border-color:color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 66%, var(--dsw-alias-border-l2,#36373b));box-shadow:inset 0 1px 0 rgb(255 255 255 / 9%), 0 16px 34px color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 12%, transparent)}
+.dsm-workbuddy-xdpool-rt-row[data-off="true"]{opacity:.68}
+.dsm-workbuddy-xdpool-rt-rowhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dsm-workbuddy-xdpool-rt-name{font-size:13.5px;line-height:19px;font-weight:650;letter-spacing:-.1px;color:var(--dsw-alias-label-primary,#e8e8ea)}
+.dsm-workbuddy-xdpool-rt-cid{font-family:var(--dsw-alias-font-mono,ui-monospace,Menlo,Consolas,monospace);font-size:10px;line-height:16px;color:var(--dsw-alias-label-tertiary,#8a90a0)}
+.dsm-workbuddy-xdpool-rt-chain{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.dsm-workbuddy-xdpool-rt-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding-top:2px}
+/* A missing member is the one thing on this page that must not be quiet: the
+   user believes the chain they typed is the chain that answered. */
+.dsm-workbuddy-xdpool-rt-warn{margin:0;color:var(--dsw-alias-state-warning-primary,#e8a33d);font-size:11px;line-height:17px;word-break:break-word}
+.dsm-workbuddy-xdpool-rt-flash{margin:0;padding:5px 9px;border-radius:6px;background:color-mix(in srgb, var(--dsw-alias-label-primary,#e8e8ea) 5%, transparent);color:var(--dsw-alias-label-secondary,#c6c9d0);font-size:11px;line-height:17px}
+
+`.trim()
+
+export const GATEWAY_CARD_CSS = `
+
+.dsm-workbuddy-xdpool-gw{display:flex;flex-direction:column;gap:10px;min-width:0}
+.dsm-workbuddy-xdpool-gw-note{margin:0;color:var(--dsw-alias-label-tertiary,#8a90a0);font-size:11px;line-height:17px;word-break:break-word}
+.dsm-workbuddy-xdpool-gw-warn{margin:0;color:var(--dsw-alias-state-warning-primary,#e8a33d);font-size:11px;line-height:17px}
+.dsm-workbuddy-xdpool-gw-field{display:grid;grid-template-columns:minmax(0,132px) minmax(0,1fr);align-items:center;gap:8px}
+.dsm-workbuddy-xdpool-gw-field>span{color:var(--dsw-alias-label-secondary,#c6c9d0);font-size:12px;line-height:17px}
+.dsm-workbuddy-xdpool-gw-field>select,.dsm-workbuddy-xdpool-gw-field>input{appearance:none;font:inherit;font-size:12px;line-height:17px;padding:6px 10px;border-radius:9px;border:1px solid var(--dsw-alias-border-l2,#36373b);background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 78%, transparent);box-shadow:inset 0 1px 2px rgb(0 0 0 / 5%);color:var(--dsw-alias-label-primary,#e8e8ea);min-width:0}
+.dsm-workbuddy-xdpool-gw-field>select:focus-visible,.dsm-workbuddy-xdpool-gw-field>input:focus-visible{outline:none;border-color:var(--dsw-alias-brand-primary,#5686fe);box-shadow:0 0 0 3px color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 20%, transparent)}
+.dsm-workbuddy-xdpool-gw-key{margin:0;font-family:var(--dsw-alias-font-mono,ui-monospace,Menlo,Consolas,monospace);font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary,#e8e8ea);word-break:break-all;user-select:all}
+.dsm-workbuddy-xdpool-gw-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.dsm-workbuddy-xdpool-gw-flash{margin:0;padding:6px 10px;border-radius:9px;border:1px solid color-mix(in srgb, var(--dsw-alias-border-l1,#ffffff14) 70%, transparent);background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 72%, transparent);color:var(--dsw-alias-label-secondary,#c6c9d0);font-size:11px;line-height:17px;word-break:break-word}
+.dsm-workbuddy-xdpool-gw-btn{appearance:none;display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:11.5px;font-weight:560;line-height:17px;padding:4px 12px;border-radius:8px;border:1px solid color-mix(in srgb, var(--dsw-alias-border-l2,#36373b) 85%, transparent);background:color-mix(in srgb, var(--dsw-alias-bg-layer-3,#2a2c33) 70%, transparent);color:var(--dsw-alias-label-secondary,#c6c9d0);cursor:pointer;white-space:nowrap;transition:border-color .16s ease,color .16s ease,background .16s ease,transform .18s var(--ease-instrument,cubic-bezier(.16,1,.3,1))}
+.dsm-workbuddy-xdpool-gw-btn:hover:not(:disabled){transform:translateY(-1px);border-color:color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 55%, var(--dsw-alias-border-l2,#36373b));color:var(--dsw-alias-label-primary,#e8e8ea)}
+.dsm-workbuddy-xdpool-gw-btn:active:not(:disabled){transform:translateY(0);box-shadow:inset 0 2px 4px rgb(0 0 0 / 22%)}
+.dsm-workbuddy-xdpool-gw-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:2px}
+.dsm-workbuddy-xdpool-gw-btn[data-on="true"]{border-color:color-mix(in oklab, var(--dsw-alias-state-success-primary,#22a06b) 55%, transparent);background:color-mix(in oklab, var(--dsw-alias-state-success-primary,#22a06b) 14%, transparent);color:var(--dsw-alias-state-success-primary,#22a06b);font-weight:600}
+.dsm-workbuddy-xdpool-gw-btn[data-on="true"]:hover:not(:disabled){border-color:color-mix(in oklab, var(--dsw-alias-state-success-primary,#22a06b) 78%, transparent);color:var(--dsw-alias-state-success-primary,#22a06b)}
+.dsm-workbuddy-xdpool-gw-btn:disabled{opacity:.5;cursor:default;filter:saturate(.35);transform:none}
+
+`.trim()
+
+export const SHARED_CARD_CSS = `
+
+/* Per-model facts, shared by the sign-in page, the aggregate lane and the pool.
+   Declared here for the same reason the tile below is: three pages render one
+   component, and only the shared sheet reaches all three. The typography is
+   deliberately quieter than the model name it sits under — these are the facts
+   you check, not the thing you are choosing. */
+.dsm-workbuddy-xdpool-mfacts{display:flex;flex-direction:column;gap:4px;min-width:0;margin-top:5px}
+.dsm-workbuddy-xdpool-mfacts-note{font-size:11px;line-height:1.5;color:var(--dsw-alias-label-tertiary,#8a90a0)}
+.dsm-workbuddy-xdpool-mfacts-line{display:flex;align-items:baseline;gap:6px 13px;flex-wrap:wrap;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary,#8a90a0)}
+.dsm-workbuddy-xdpool-mfacts-fig{display:inline-flex;align-items:baseline;gap:4px;min-width:0}
+.dsm-workbuddy-xdpool-mfacts-fig-label{white-space:nowrap}
+.dsm-workbuddy-xdpool-mfacts-fig-value{color:var(--dsw-alias-label-secondary,#c3c7d4);font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
+/* The test-connection button sits at the end of the figures line so the row
+   reads left-to-right as "what it is" then "prove it". It is a plain text
+   affordance rather than a filled button because most rows never need it: it
+   only matters when a model stops answering, which is exactly when the user is
+   already looking closely. */
+.dsm-workbuddy-xdpool-mfacts-probe{flex:none;align-self:center;appearance:none;border:0;background:none;padding:1px 6px;margin-left:auto;border-radius:7px;font:inherit;font-size:11px;color:var(--dsw-alias-label-tertiary,#8a90a0);cursor:pointer;transition:color .16s ease,background-color .16s ease}
+.dsm-workbuddy-xdpool-mfacts-probe:hover:not(:disabled){color:var(--dsw-alias-label-secondary,#c3c7d4);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1,#191a1e) 70%,transparent)}
+.dsm-workbuddy-xdpool-mfacts-probe:active:not(:disabled){background:color-mix(in srgb,var(--dsw-alias-bg-layer-1,#191a1e) 90%,transparent)}
+.dsm-workbuddy-xdpool-mfacts-probe:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:1px}
+.dsm-workbuddy-xdpool-mfacts-probe:disabled{cursor:default;opacity:.45}
+/* The result line replaces the button in place rather than opening a dialog: a
+   connection test answers in under a second, and a dialog that flashes open and
+   shut is worse than the answer appearing where the button was. */
+.dsm-workbuddy-xdpool-mfacts-result{display:inline-flex;align-items:baseline;gap:4px;flex:none;margin-left:auto;font-size:11px;white-space:nowrap}
+.dsm-workbuddy-xdpool-mfacts-result[data-ok="true"]{color:var(--dsw-alias-state-success-primary,#22a06b)}
+.dsm-workbuddy-xdpool-mfacts-result[data-ok="false"]{color:var(--dsw-alias-state-error-primary,#e5484d)}
+.dsm-workbuddy-xdpool-mfacts-result-error{display:block;font-size:10.5px;line-height:1.4;color:var(--dsw-alias-state-error-primary,#e5484d);margin-top:2px;overflow-wrap:anywhere}
+
+/* The brand tile. Three pages render it — the login channels, the pool's region
+   cards and the aggregate rows — so it is declared here rather than in any one
+   page's sheet: a rule that lives in a page stylesheet has no effect on the
+   other two, and the symptom is a 40px hole where the vendor's logo should be.
+   brand-tile.tsx pushes the accent, the glyph mask and the artwork in as
+   custom properties; the three classes below are the three states it can ask
+   for. */
+.dsm-workbuddy-xdpool-tile{flex:none;display:inline-block;width:40px;height:40px;border-radius:13px;background:linear-gradient(145deg,color-mix(in srgb,var(--dsm-workbuddy-xdpool-tile-accent,#5686fe) 82%,#fff 18%),color-mix(in srgb,var(--dsm-workbuddy-xdpool-tile-accent,#5686fe) 88%,#000 12%));box-shadow:inset 0 1px 0 rgb(255 255 255 / 22%),inset 0 -1px 2px rgb(0 0 0 / 22%),0 2px 6px rgb(0 0 0 / 20%);position:relative;transition:transform .2s cubic-bezier(.32,.72,0,1),box-shadow .24s ease}
+.dsm-workbuddy-xdpool-tile::after{content:"";position:absolute;inset:0;background:#fff;-webkit-mask:var(--dsm-workbuddy-xdpool-tile-glyph,none) center / 21px 21px no-repeat;mask:var(--dsm-workbuddy-xdpool-tile-glyph,none) center / 21px 21px no-repeat;opacity:.94}
+/* A vendor that has real artwork wears it instead of the gradient and glyph.
+   The image IS the whole tile, so the gradient and the mask are both switched
+   off rather than layered under an opaque PNG. "contain" and a transparent
+   background keep a non-square logo from being cropped. */
+.dsm-workbuddy-xdpool-tile-art{background-color:transparent;background-image:var(--dsm-workbuddy-xdpool-tile-icon,none);background-repeat:no-repeat;background-position:center;background-size:contain;box-shadow:none}
+.dsm-workbuddy-xdpool-tile-art::after{content:none}
+/* Two letters drawn in white on the tile's own gradient, for the vendors that
+   ship no artwork anywhere. The gradient stays; only the glyph mask is switched
+   off (brand-tile.tsx sets the custom property to "none" when letters are
+   present), because otherwise the two marks stack and the tile turns to mud.
+   Grid plus place-items rather than a line-height nudge: the tile is aria-hidden
+   with one bare text node in it, and inline-block vertical centring lands a full
+   pixel low for this set of metrics. */
+.dsm-workbuddy-xdpool-tile-letters{display:grid;place-items:center;color:#fff;font-size:15px;line-height:1;font-weight:800;letter-spacing:-.4px;text-shadow:0 1px 2px rgb(0 0 0 / 28%);-webkit-user-select:none;user-select:none;pointer-events:none}
+.dsm-workbuddy-xdpool-tile-letters::after{content:none}
+.dsm-btn{appearance:none;font:inherit;cursor:pointer;border:1px solid transparent;border-radius:8px;padding:5px 14px;font-size:13px;line-height:1.5}
+.dsm-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:1px}
+.dsm-btn:disabled{opacity:.4;cursor:default;filter:saturate(.35);transform:none}
+.dsm-btn:disabled:hover{transform:none;background:transparent}
+.dsm-btn-outline{border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);background:transparent;font-weight:500}
+.dsm-btn-outline:hover:not(:disabled){color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-label-dimmed);background:rgba(255,255,255,.04)}
+.dsm-btn-primary{background:var(--dsw-alias-label-primary,#e6e6e6);color:var(--dsw-alias-bg-layer-3,#202126)}
+.dsm-btn-primary:hover:not(:disabled){opacity:.9}
+/* The borderless third of the button family: links out to a vendor's console
+   and the destructive "forget this key" action. It had no rule at all, so the
+   aggregate row's three links and the billion page's "open its dashboard"
+   rendered as bare browser buttons — which is how a secondary action ends up
+   looking like the primary one. */
+.dsm-btn-ghost{border-color:transparent;background:transparent;color:var(--dsw-alias-label-tertiary,#8a90a0)}
+.dsm-btn-ghost:hover:not(:disabled){border-color:var(--dsw-alias-border-l2,#36373b);color:var(--dsw-alias-label-primary,#e8e8ea);background:rgba(255,255,255,.04);text-decoration:none}
+.dsm-workbuddy-xdpool-panel-empty{color:var(--dsw-alias-label-tertiary,#999);font-size:14px;line-height:20px}
+.dsm-workbuddy-xdpool-panel-error{color:var(--dsw-alias-state-error-primary,#ef4444);font-size:12px;line-height:18px;word-break:break-word}
+.dsm-workbuddy-xdpool-note{margin:0;color:var(--dsw-alias-label-tertiary,#9aa0a8);font-size:13px;line-height:20px}
+.dsm-workbuddy-xdpool-agg-search{flex:1 1 220px;min-width:0;padding:6px 10px;border-radius:9px;border:1px solid var(--dsw-alias-border-l2,#36373b);background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 78%, transparent);box-shadow:inset 0 1px 2px rgb(0 0 0 / 5%);color:var(--dsw-alias-label-primary,#e8e8ea);font:inherit;font-size:12px}
+.dsm-workbuddy-xdpool-agg-search:focus{outline:none;border-color:var(--dsw-alias-brand-primary,#5686fe);box-shadow:0 0 0 3px color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 20%, transparent)}
+.dsm-workbuddy-xdpool-agg-cats{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.dsm-workbuddy-xdpool-agg-cat{appearance:none;font:inherit;font-size:11px;line-height:16px;padding:3px 10px;border-radius:999px;border:1px solid color-mix(in srgb, var(--dsw-alias-border-l1,#ffffff14) 70%, transparent);background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 72%, transparent);color:var(--dsw-alias-label-secondary,#c6c9d0);cursor:pointer;transition:border-color .16s ease,color .16s ease,background .16s ease}
+.dsm-workbuddy-xdpool-agg-cat:hover{border-color:color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 66%, var(--dsw-alias-border-l2,#36373b));color:var(--dsw-alias-label-primary,#e8e8ea)}
+.dsm-workbuddy-xdpool-agg-cat[data-on="true"]{border-color:color-mix(in srgb, currentColor 55%, transparent);background:color-mix(in srgb, var(--dsw-alias-bg-layer-2,#1c1e22) 70%, transparent)}
+.dsm-workbuddy-xdpool-agg-tags{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.dsm-workbuddy-xdpool-agg-tag{display:inline-flex;align-items:center;padding:1px 7px;border-radius:999px;font-size:10px;line-height:16px;white-space:nowrap;border:1px solid var(--dsw-alias-border-l2,#36373b);color:var(--dsw-alias-label-tertiary,#8a90a0)}
+.dsm-workbuddy-xdpool-agg-tag[data-tone="ok"]{border-color:color-mix(in oklab, var(--dsw-alias-state-success-primary,#22a06b) 45%, transparent);color:var(--dsw-alias-state-success-primary,#22a06b)}
+.dsm-workbuddy-xdpool-agg-tag[data-tone="busy"]{border-color:color-mix(in oklab, var(--dsw-alias-state-business-primary,#5686fe) 45%, transparent);color:var(--dsw-alias-state-business-primary,#5686fe)}
+.dsm-workbuddy-xdpool-agg-tag[data-tone="live"]{border-color:color-mix(in oklab, var(--dsw-alias-state-success-primary,#22a06b) 45%, transparent);color:var(--dsw-alias-state-success-primary,#22a06b);font-weight:600}
+.dsm-workbuddy-xdpool-switch{display:inline-flex;align-items:center;gap:9px;font-size:12.5px;line-height:18px;color:var(--dsw-alias-label-secondary,#c6c9d0);cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent}
+.dsm-workbuddy-xdpool-switch input{appearance:none;-webkit-appearance:none;position:relative;flex:none;width:36px;height:20px;margin:0;border-radius:999px;border:1px solid var(--dsw-alias-border-l2,#36373b);background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 70%, transparent);box-shadow:inset 0 1px 3px rgb(0 0 0 / 8%);cursor:pointer;transition:background .2s ease,border-color .2s ease,box-shadow .2s ease}
+.dsm-workbuddy-xdpool-switch input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--dsw-alias-label-secondary,#c6c9d0);box-shadow:0 1px 3px rgb(0 0 0 / 22%);transition:transform .26s cubic-bezier(.34,1.3,.64,1),background .2s ease}
+.dsm-workbuddy-xdpool-switch input:checked{background:var(--dsw-alias-state-business-primary,#5686fe);border-color:color-mix(in srgb, var(--dsw-alias-state-business-primary,#5686fe) 85%, #000);box-shadow:inset 0 1px 3px rgb(0 0 0 / 12%)}
+.dsm-workbuddy-xdpool-switch input:checked::after{transform:translateX(16px);background:#fff}
+.dsm-workbuddy-xdpool-switch input:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#5686fe);outline-offset:2px;box-shadow:0 0 0 4px color-mix(in srgb, var(--dsw-alias-state-business-primary,#5686fe) 13%, transparent)}
+.dsm-workbuddy-xdpool-switch input:disabled{opacity:.55;cursor:default}
+.dsm-workbuddy-xdpool-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:8px}
+.dsm-workbuddy-xdpool-sec{display:flex;flex-direction:column;gap:10px;padding:16px;border-radius:16px;border:1px solid color-mix(in srgb, var(--dsw-alias-border-l2,#36373b) 88%, transparent);background:color-mix(in srgb, var(--dsw-alias-bg-layer-2,#1c1e22) 82%, transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 5%), 0 2px 6px rgb(0 0 0 / 4%)}
+.dsm-workbuddy-xdpool-sectitle{margin:0;font-size:12px;font-weight:680;line-height:18px;letter-spacing:.2px;color:var(--dsw-alias-label-secondary,#c6c9d0);display:flex;align-items:center;gap:8px}
+.dsm-workbuddy-xdpool-tablewrap{overflow-x:auto;max-width:100%}
+.dsm-workbuddy-xdpool-table{width:100%;min-width:760px;border-collapse:collapse;font-size:11.5px;line-height:17px}
+.dsm-workbuddy-xdpool-table th{text-align:left;font-weight:560;font-size:10.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--dsw-alias-label-tertiary,#8a90a0);padding:0 10px 8px;border-bottom:1px solid color-mix(in srgb, var(--dsw-alias-border-l1,#ffffff14) 70%, transparent);white-space:nowrap}
+.dsm-workbuddy-xdpool-table td{padding:7px 10px;border-bottom:1px solid color-mix(in srgb, var(--dsw-alias-border-l1,#ffffff14) 62%, transparent);color:var(--dsw-alias-label-secondary,#c6c9d0);font-variant-numeric:tabular-nums}
+.dsm-workbuddy-xdpool-table tbody tr:last-child td{border-bottom:none}
+.dsm-workbuddy-xdpool-table tbody tr[data-ok="false"] td{color:var(--dsw-alias-state-error-primary,#ef4444)}
+.dsm-workbuddy-xdpool-num{text-align:right;font-variant-numeric:tabular-nums}
+.dsm-workbuddy-xdpool-ellipsis{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
 `.trim()

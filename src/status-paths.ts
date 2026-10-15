@@ -10,7 +10,6 @@
  *
  * @module dsh-workbuddy-xdpool/status-paths
  */
-
 /** Plugin-owned read-only pool status endpoint (account rows + models + shim). */
 export const POOL_STATUS_PATH = '/plugins/dsh-workbuddy-xdpool/status'
 /** Plugin-owned local account rescan endpoint (re-read desktop snapshots). */
@@ -31,10 +30,8 @@ export const POOL_RESET_COOLDOWN_PATH = '/plugins/dsh-workbuddy-xdpool/cooldowns
 export const POOL_CHECKIN_PATH = '/plugins/dsh-workbuddy-xdpool/checkin'
 /** Plugin-owned model-selection save endpoint (writes the settings section). */
 export const POOL_MODELS_SAVE_PATH = '/plugins/dsh-workbuddy-xdpool/models/save'
-
 /** Switch one account in or out of the pool (card toggle). */
 export const POOL_ACCOUNT_DISABLE_PATH = '/plugins/dsh-workbuddy-xdpool/accounts/disabled'
-
 /**
  * Throw one account out of the pool for good, or take it back.
  *
@@ -42,13 +39,502 @@ export const POOL_ACCOUNT_DISABLE_PATH = '/plugins/dsh-workbuddy-xdpool/accounts
  * rotation preference the account survives, ignoring survives the account.
  */
 export const POOL_ACCOUNT_IGNORE_PATH = '/plugins/dsh-workbuddy-xdpool/accounts/ignored'
-
 /** Run one automation job immediately, so the card can verify it on demand. */
 export const POOL_AUTOMATION_RUN_PATH = '/plugins/dsh-workbuddy-xdpool/automation/run'
-
 /** Set or clear one account's reserved-credit floor. */
 export const POOL_CREDIT_RESERVE_PATH = '/plugins/dsh-workbuddy-xdpool/accounts/credit-reserve'
-
+/**
+ * Name the account to try first, or hand the choice back to the strategy.
+ *
+ * A route rather than a settings write for the reason the ignore list is a file:
+ * the CLI has no settings service, so a card-only settings key could be written
+ * by the card and never by `dsh-workbuddy-xdpool prefer`. The route owns the
+ * write, pushes it into the pool immediately so the very next request sees it,
+ * and is the one path both halves share.
+ */
+export const POOL_ACCOUNT_PREFER_PATH = '/plugins/dsh-workbuddy-xdpool/accounts/preferred'
+/**
+ * Read the aggregate lane's state: every registry provider, its saved setting
+ * (never its key), and whether it can serve anything right now.
+ *
+ * Separate from {@link POOL_STATUS_PATH} because it answers a different
+ * question — "what can I configure" rather than "what is my pool doing" — and
+ * because its payload is the WHOLE roster. Folding 76 provider records into the
+ * status document would make every 30-second poll of the pool card carry a
+ * directory nobody reads most of the time.
+ */
+export const POOL_AGGREGATE_PATH = '/plugins/dsh-workbuddy-xdpool/aggregate'
+/**
+ * Save one aggregate provider's setting: its key, its on/off switch, its base-URL
+ * override, or the model ids a listing round discovered.
+ *
+ * POST only, and one provider per request — read-modify-write on the host side,
+ * so two tabs editing two providers cannot clobber each other.
+ */
+export const POOL_AGGREGATE_SAVE_PATH = '/plugins/dsh-workbuddy-xdpool/aggregate/save'
+/**
+ * Verify one provider's key with a cheap non-generating call, and report what
+ * its listing answered.
+ *
+ * Its own route because it is the only aggregate action that talks to the
+ * network: a probe must never run as a side effect of saving a setting, or
+ * "save" would silently spend the user's rate limit.
+ */
+export const POOL_AGGREGATE_TEST_PATH = '/plugins/dsh-workbuddy-xdpool/aggregate/test'
+/**
+ * Send one real streaming call to one model and report how it answered.
+ *
+ * Its own route, and POST-only, for the same reason the provider probe is: this
+ * is the one action in the plugin that spends the user's credits, so it must
+ * never be reachable by a prefetch, a GET, or any side effect of opening a
+ * settings page. A GET here would let a browser — or anything else that can
+ * reach a loopback port — fire unlimited billed calls by walking URLs.
+ *
+ * `provider` and `model` are resolved through the host's own adapter registry
+ * rather than through this plugin's lanes, because that registry is the only
+ * place that knows which credential and endpoint a given provider id serves.
+ */
+export const POOL_MODEL_PROBE_PATH = '/plugins/dsh-workbuddy-xdpool/model/test'
+/**
+ * POST-only: ask what models several login channels contribute right now.
+ *
+ * A route rather than more fields on {@link POOL_CHANNELS_PATH} because the
+ * answer changes as accounts come and go while the roster does not, and the
+ * login page polls only its own logins — folding live per-provider catalogues
+ * into the roster document would either go stale the moment someone signed in,
+ * or make every page refresh spend a round trip on thirteen providers.
+ *
+ * Read from the host rather than from the pack's own `model.list`, because the
+ * pack keeps only `id`, `name` and two flags and throws away exactly the fields
+ * this is for. The host's catalogue is the same one the model picker reads, so
+ * the two agree by construction instead of by luck.
+ */
+export const POOL_CHANNEL_MODELS_PATH = '/plugins/dsh-workbuddy-xdpool/channels/models'
+/** The body of {@link POOL_CHANNEL_MODELS_PATH}. */
+export interface PoolWebChannelModelsRequest {
+  providers: readonly string[]
+}
+/**
+ * One model's facts, exactly as the host's catalogue spells them.
+ *
+ * Every optional field is absent when the host does not know it, which is the
+ * common case: modalities are only reported by adapters that publish them, and a
+ * missing window is missing rather than a default.
+ */
+export interface PoolWebChannelModel {
+  id: string
+  name: string
+  contextWindow?: number
+  maxTokens?: number
+  inputModalities?: readonly string[]
+  description?: string
+}
+/**
+ * The answer, keyed by the provider ids that were asked about.
+ *
+ * A provider missing from the map was not answered for at all — not signed in,
+ * or no adapter under that id. An empty array is a provider that was asked and
+ * genuinely publishes nothing; the two are different and the page shows them
+ * differently.
+ */
+export interface PoolWebChannelModels {
+  models: Readonly<Record<string, readonly PoolWebChannelModel[]>>
+}
+/**
+ * Fetch one provider's live model list and write it back as its discovered set.
+ *
+ * Separate from the probe on purpose. The probe ANSWERS; this one COMMITS — it
+ * changes what the provider contributes to the picker — so it is its own route
+ * with its own confirmation, and a failed round keeps the previous roster.
+ */
+export const POOL_AGGREGATE_DISCOVER_PATH = '/plugins/dsh-workbuddy-xdpool/aggregate/discover'
+/**
+ * The thirteen login channels the vendored pack provides.
+ *
+ * Separate from the aggregate document for the same reason: the two lanes answer
+ * different questions. The aggregate roster is "what can I point a key at", the
+ * channel list is "what can I scan a QR code into", and mixing them in one poll
+ * would put a third-party directory on the critical path of the pool card.
+ */
+export const POOL_CHANNELS_PATH = '/plugins/dsh-workbuddy-xdpool/channels'
+/**
+ * The `reason` the channel document carries when the login-channel route is
+ * already owned by another plugin.
+ *
+ * The pack we vendor is byte-identical to the one the sibling login-channel
+ * build mounts, and both claim the same fetch route; the host has no query for
+ * what is already registered, so the loser of that race can only tell it lost.
+ * Both halves need the same string — the host to say it, the card to choose
+ * between "this host cannot run the channels" and "another plugin already runs
+ * them", which are opposite sentences — so it is declared with the other wire
+ * constants rather than in `channels.ts`, which the browser bundle may not
+ * import for value.
+ */
+export const ROUTE_OWNED_ELSEWHERE = 'already-mounted-elsewhere'
+/**
+ * The routing chains, and the whole model roster a member may name.
+ *
+ * One route for both because the editor cannot be drawn without the roster: a
+ * member is chosen from a list, and a list of ids with no names, windows or
+ * vendors is a list nobody can pick from. Reading two documents on one panel
+ * open would also mean the roster could be a second older than the chains.
+ */
+export const POOL_COMBOS_PATH = '/plugins/dsh-workbuddy-xdpool/combos'
+/**
+ * Replace the whole chain list in one write.
+ *
+ * A single table replace rather than a per-chain patch: the editor's unit of
+ * intent is "this is my routing table", and deleting one member is
+ * indistinguishable from deleting that member's chain once ids are equal — so a
+ * merge rule would have to guess, and a wrong guess silently resurrects a row the
+ * user deleted.
+ */
+export const POOL_COMBOS_SAVE_PATH = '/plugins/dsh-workbuddy-xdpool/combos/save'
+/**
+ * The LAN relay's own state, and the only way to change it.
+ *
+ * One GET and one POST rather than a separate settings surface, because the relay
+ * is a switch you have to be able to kill from the same card that turns it on —
+ * a relay left listening on a network interface is the one failure here that
+ * keeps mattering after the plugin is closed.
+ */
+export const POOL_RELAY_PATH = '/plugins/dsh-workbuddy-xdpool/relay'
+/**
+ * What the locally running billion-context proxy is doing, read-only.
+ *
+ * Its own route because the answer comes from ANOTHER plugin: billion-context
+ * runs its own loopback listener and publishes its own JSON, so this route only
+ * finds that listener and relays a filtered subset. Nothing here is folded into
+ * {@link POOL_STATUS_PATH}: the pool card polls that every 30 seconds, and a
+ * third-party proxy's session table is not something every pool poll should
+ * carry.
+ *
+ * The word "read-only" is load-bearing on both ends. This plugin sends GETs
+ * only — it never configures, restarts or writes to the proxy — and the payload
+ * it relays deliberately omits every field that could carry conversation
+ * material.
+ */
+export const POOL_BILLION_PATH = '/plugins/dsh-workbuddy-xdpool/billion'
+/**
+ * One billion-context session, reduced to what a dashboard may show.
+ *
+ * Counts, sizes and timestamps only. The proxy's own rows carry titles and
+ * first-block hints, which are the user's words; those stay on the machine that
+ * produced them and are not relayed.
+ */
+export interface PoolWebBillionSession {
+  /** The proxy's session id. Safe to show: it is a generated handle. */
+  id: string
+  /** Which wire the session speaks; `openai` is what DSH's shim uses. */
+  protocol: string
+  /** Whether a request hit this session in the last few seconds. */
+  live: boolean
+  requests: number
+  /** The compacted context size the proxy is holding, 0 when unknown. */
+  contextTokens: number
+  /** Which measurement the context size came from; `usage` is the honest one. */
+  contextTokensSource: string
+  /** Net tokens the proxy says compression saved. */
+  tokensSaved: number
+  inputTokens: number
+  cachedTokens: number
+  outputTokens: number
+  /** Cache hit rate 0-100, or -1 when no input tokens were ever counted. */
+  cacheHitPct: number
+  /** How many compressed blocks this session holds. */
+  blocks: number
+  /** The window the proxy believes the model has, 0 when unknown. */
+  contextWindow: number
+  /** ISO timestamp of the last request, or '' when the session never had one. */
+  lastSeen: string
+  /** The last model the session saw, or '' before the first request. */
+  lastModel: string
+}
+/** The document {@link POOL_BILLION_PATH} answers with. */
+export interface PoolWebBillionStatus {
+  /**
+   * Whether a proxy was found and answered.
+   *
+   * `missing` is a normal, expected state, not an error: billion-context is a
+   * separate plugin, and a machine without it must get a page that explains
+   * that rather than a 503 or a blank panel.
+   */
+  state: 'ready' | 'missing' | 'unreachable'
+  /** Human text for a non-ready state; absent when ready. */
+  reason?: string
+  /**
+   * The proxy's own loopback origin, absent only when none was recorded.
+   *
+   * The card needs this to hand the user a browser link: billion-context ships
+   * its own dashboard, including a per-session detail view, and duplicating
+   * those screens here would be a second and divergent copy of another
+   * plugin's interface. Linking out keeps one answer.
+   *
+   * This is a service address, not conversation material, and it is safe to
+   * publish for the same reason the route that carries it is loopback-only: a
+   * caller who can read this document can already reach that listener directly.
+   * It is present on `unreachable` too — a proxy that recorded its port and
+   * then went quiet is exactly the case where the URL is the only handle.
+   */
+  origin?: string
+  /** The proxy's version, from its own manifest. */
+  version?: string
+  /** When the proxy process started (epoch ms), 0 when unknown. */
+  startedAt?: number
+  /** Sessions newest-first, capped by the route. */
+  sessions: readonly PoolWebBillionSession[]
+  /** How many sessions the proxy holds in total, including capped-out ones. */
+  totalSessions: number
+}
+/**
+ * The pack's own management route, which the card posts to directly.
+ *
+ * Not a re-export of anything: the vendored bundle registers this path itself
+ * and speaks its own RPC envelope (`{type, rpcId, method, payload}` →
+ * `{type, rpcId, result}`). Proxying it through a second route would mean
+ * translating that envelope in one direction and back in the other, for no gain
+ * — the pack is on the same loopback origin as this card either way.
+ *
+ * Only three methods are ever sent: `account.create` to begin a login, `login.poll`
+ * to watch it finish, and `account.list` to show what is connected. `provider.status`
+ * was added so the account pool could mirror the login page's per-channel counts,
+ * and it left again with that section: the user removed the mirror ("在扫码登录页
+ * 登录过什么，这里就同步显示什么，这个不需要"), so nothing asks for counts now.
+ * The method still exists in the pack for anyone who wants it; it is simply not on
+ * this card's origin.
+ */
+export const CHANNEL_PACK_RPC_PATH = '/api/channel-pack'
+/**
+ * The only pack methods the card ever sends.
+ *
+ * The pack answers far more (credits.claim, opencode.*, model management);
+ * anything wider would put its whole surface on the card's loopback origin for
+ * no benefit. Three is what the login page needs: `account.create` to begin a
+ * login, `login.poll` to watch it finish, and `account.list` to show what is
+ * connected.
+ *
+ * A test asserts this set, so widening it is a deliberate edit rather than a
+ * quiet one.
+ */
+export const CHANNEL_PACK_METHODS: ReadonlySet<string> = new Set([
+  'account.create',
+  'account.list',
+  'login.poll',
+])
+/**
+ * Where a registry provider's key goes: `apiKey`, `baseUrl`, or `enabled`.
+ */
+export type PoolWebAggregatePatch =
+  | { kind: 'provider'; providerId: string; enabled?: boolean; apiKey?: string; baseUrl?: string }
+  /** Flip the lane's own master switch; `false` contributes no models at all. */
+  | { kind: 'lane'; enabled: boolean }
+  /** Forget one provider's stored setting entirely, key included. */
+  | { kind: 'clear'; providerId: string }
+/** One provider as the card renders it. Never carries the key itself. */
+export interface PoolWebAggregateProvider {
+  id: string
+  name: string
+  category: string
+  authKind: string
+  format: string
+  /** Where the user obtains a key, for the "get one" link. */
+  authUrl?: string
+  website?: string
+  /** True when this lane can serve the provider with a pasted key. */
+  supported: boolean
+  /** True when a key is present (or none is needed). */
+  configured: boolean
+  /**
+   * True when this vendor contributes models right now.
+   *
+   * Not simply "the user did not switch it off": with no explicit flag the
+   * answer follows the credential, so an unconfigured vendor reads as off. The
+   * roster is a directory to choose from, and a page that drew every one of the
+   * seventy-six with its switch already on could not show what was configured.
+   */
+  enabled: boolean
+  /**
+   * The vendor's own one-line description, from the registry.
+   *
+   * This is the row's small print. The registry carries no per-model blurb —
+   * `models[]` entries are id/name/contextWindow/vision/reasoning only — so the
+   * description belongs to the vendor, and the card must not imply otherwise.
+   */
+  notes?: string
+  /** A base-URL override the user typed, if any. */
+  baseUrl?: string
+  /** True when the provider declares a model listing this lane can read. */
+  hasListing: boolean
+  /** Model ids currently exposed: the chosen set, or the registry's own. */
+  models: readonly string[]
+  /** True when the exposed set came from a live listing rather than the registry. */
+  discovered: boolean
+  /** When the provider was first configured. */
+  addedAt?: string
+}
+/** The document {@link POOL_AGGREGATE_PATH} answers with. */
+export interface PoolWebAggregateStatus {
+  /** The lane's own master switch. */
+  enabled: boolean
+  /** How many providers hold a setting at all. */
+  configured: number
+  /** How many model rows the lane currently offers. */
+  modelCount: number
+  /** The rows, in provider-then-model order. */
+  models: readonly {
+    id: string
+    name: string
+    providerId: string
+    modelId: string
+    contextWindow: number
+    maxOutputTokens: number
+    supportsImages: boolean
+    source: 'static' | 'discovered'
+  }[]
+  /** The whole registry, in registry order. */
+  providers: readonly PoolWebAggregateProvider[]
+}
+/**
+ * One login channel as the card renders it.
+ *
+ * `loginKind` is presentation only: `browser` means "open a link and sign in
+ * there". The card never learns which protocol a channel speaks — that stays
+ * inside the pack, which hands back a `loginUrl` per sign-in attempt.
+ */
+export interface PoolWebChannel {
+  id: string
+  name: string
+  /** Who runs it. */
+  org: string
+  /**
+   * The vendor's published API host, when it publishes one.
+   *
+   * Absent for eleven of the thirteen: the pack names `apiDomain` only for the
+   * two WorkBuddy lanes, and everything else would be a host we guessed. The
+   * card falls back to `org` when this is missing, so the subtitle is never
+   * blank and never invented.
+   */
+  domain?: string
+  /** Accent colour, for the channel's chip. */
+  accent: string
+  /** One Chinese line on what the free allowance actually is. */
+  note: string
+  loginKind: 'browser'
+  /** True when this plugin's own account pool already serves this channel. */
+  ownedByPool: boolean
+}
+/** The document {@link POOL_CHANNELS_PATH} answers with. */
+export interface PoolWebChannelsStatus {
+  /** Whether the vendored pack mounted, and if not, why. */
+  state: 'pending' | 'ready' | 'unavailable'
+  /** Human text for a non-ready state; absent when ready. */
+  reason?: string
+  channels: readonly PoolWebChannel[]
+}
+/** One model a chain member may name, from either lane. */
+export interface PoolWebComboCandidate {
+  id: string
+  name: string
+  /** `workbuddy` for a pool model, the provider id for a third-party one. */
+  owner: string
+  /** True when a third-party model already has a usable key. */
+  usable: boolean
+  contextWindow: number
+  supportsImages: boolean
+}
+/** One chain, resolved against the live roster. */
+export interface PoolWebCombo {
+  /** `combo:<slug>`, always. */
+  id: string
+  name: string
+  /** Members that exist right now, in order. Empty means the chain is dead. */
+  models: readonly string[]
+  /** Members the user configured but which the roster no longer serves. */
+  missing: readonly string[]
+  strategy: 'fallback' | 'round-robin'
+  stickyLimit: number
+  enabled: boolean
+  contextWindow: number
+  supportsImages: boolean
+}
+/**
+ * The document {@link POOL_COMBOS_PATH} answers with.
+ *
+ * `candidates` is the whole roster rather than only what is chainable, because
+ * a chain that cannot add a new model is not an editor.
+ */
+export interface PoolWebCombosStatus {
+  combos: readonly PoolWebCombo[]
+  candidates: readonly PoolWebComboCandidate[]
+}
+/**
+ * What a relay patch can change.
+ *
+ * `key: ''` rotates rather than clears: the card sends an empty string when the
+ * user asks for a new key, and "no key" is not a state the relay can serve — a
+ * keyless relay would have to accept everyone.
+ */
+export interface PoolWebRelayPatch {
+  enabled?: boolean
+  host?: string
+  port?: number
+  key?: string
+}
+/**
+ * What {@link POOL_RELAY_PATH} answers with.
+ *
+ * `listening` is separate from `enabled` because "you turned it on and it could
+ * not bind" is a state the user has to be able to see. Collapsing the two would
+ * tell them to switch on something that is already on.
+ *
+ * `key` is the RELAY key, in full, on purpose: the card has to show it so it can
+ * be pasted into another device. It is the key the plugin minted for LAN
+ * clients — the shim's own per-process secret is never returned by any route.
+ *
+ * The type lives here rather than beside the listener because the client card
+ * renders it, and importing the listener's module would drag `node:http` into a
+ * browser bundle.
+ */
+export interface PoolWebRelayStatus {
+  enabled: boolean
+  listening: boolean
+  host: string
+  port: number
+  /** Where a client should point; '' until something is listening. */
+  endpoint: string
+  key: string
+  /** Why nothing is bound; '' when there is nothing to explain. */
+  error: string
+}
+/**
+ * What a key probe answered.
+ *
+ * `modelIds` is present only when the provider's listing was readable, and the
+ * "discover models" action turns it into a save. `committed` reports how many
+ * ids that action actually wrote — a listing that came back empty is a real
+ * answer (the provider serves nothing) and must not be reported as a failure.
+ */
+export interface PoolWebAggregateProbe {
+  ok: boolean
+  /** The provider's HTTP status, or 0 when it was never reached. */
+  status: number
+  message: string
+  modelCount?: number
+  /** Ids the provider listed, when it declared a listing and answered. */
+  modelIds?: readonly string[]
+  /** How many ids the discover action wrote back. Absent on a plain probe. */
+  committed?: number
+}
+/**
+ * Read the usage panel's aggregate.
+ *
+ * GET only, and token-free by construction: the recorder holds counts and
+ * timings, never a prompt. The document type is `UsageSummary` from
+ * `src/stats.ts` rather than a copy declared here, because that module stays
+ * Node-free precisely so the browser half can import the SAME declaration
+ * instead of a second one that could quietly drift.
+ */
+export const POOL_USAGE_PATH = '/plugins/dsh-workbuddy-xdpool/usage'
 /** Body of the reserve route: exactly one account per request. */
 export interface PoolWebCreditReserve {
   /** Pool account id, as reported in `PoolWebAccount.id`. */
@@ -56,7 +542,6 @@ export interface PoolWebCreditReserve {
   /** Credits to keep. 0 clears the reserve. */
   reserve: number
 }
-
 /** Body of the "run now" endpoint: exactly one job per request. */
 export interface PoolWebAutomationRun {
   /** Which job to run: checkin / report / tasks / streak. */
@@ -67,7 +552,6 @@ export interface PoolWebAutomationRun {
    */
   force?: boolean
 }
-
 /** Result of a manual run, echoing the job's refreshed state. */
 export interface PoolWebAutomationRunResult {
   ok: true
@@ -85,7 +569,6 @@ export interface PoolWebAutomationRunResult {
   /** One-line summary of the run. */
   message?: string
 }
-
 /** One account's row, token-free. */
 export interface PoolWebAccount {
   id: string
@@ -119,6 +602,15 @@ export interface PoolWebAccount {
    * serves a request, but it stays listed so the card can switch it back on.
    */
   disabled: boolean
+  /**
+   * Whether the user pinned this account to be tried first.
+   *
+   * Distinct from `disabled`, and the card has to tell them apart: a disabled
+   * account is skipped entirely, a preferred one is merely first in line. It
+   * stays `false` when nothing is pinned, so the row never borrows a mark that
+   * describes a global choice rather than this account.
+   */
+  preferred: boolean
   rateLimitHits: number
   /**
    * Credits the user asked to keep for this account. The pool stops picking the
@@ -152,7 +644,6 @@ export interface PoolWebAccount {
   checkin?: PoolWebCheckin
   checkinError?: string
 }
-
 /** One credit package (as surfaced by the pool's upstream client), node-free. */
 export interface PoolWebCreditPackage {
   packageName: string
@@ -165,7 +656,6 @@ export interface PoolWebCreditPackage {
   /** One-off expiry, ms. */
   expiresAtMs?: number
 }
-
 /** Aggregated credit answer the card renders under one account. */
 export interface PoolWebCredits {
   total?: number
@@ -175,7 +665,6 @@ export interface PoolWebCredits {
   /** When the nearest package expires, ms. */
   nearestExpiryMs?: number
 }
-
 /**
  * Daily check-in state the card renders under one account's credits. Mirrors
  * the upstream activity endpoint, minus anything the browser does not need.
@@ -198,14 +687,12 @@ export interface PoolWebCheckin {
   /** Bonus credits granted on a milestone day. */
   streakBonusCredit: number
 }
-
 /** Result of one claim, so the card can confirm what was collected. */
 export interface PoolWebCheckinClaim {
   credit: number
   streakDays: number
   isStreakDay: boolean
 }
-
 /** One model the pool exposes to DSH, with cost / free tags. */
 export interface PoolWebModel {
   id: string
@@ -227,7 +714,48 @@ export interface PoolWebModel {
   /** Whether this model is currently enabled in the picker. */
   enabled: boolean
 }
-
+/**
+ * Body of the model-probe route: one model to test.
+ *
+ * `provider` and `model` are both the ids the picker already shows, rather than
+ * a row id this plugin invented, so a probe cannot drift from what the user
+ * clicked. The host resolves the pair through its own adapter registry, which is
+ * the only place that knows which lane a given provider id actually serves.
+ */
+export interface PoolWebModelProbe {
+  /** Provider id, exactly as the row printed it. */
+  provider: string
+  /** Model id within that provider, exactly as the row printed it. */
+  model: string
+}
+/**
+ * What one connectivity probe measured.
+ *
+ * Deliberately three numbers and nothing else. The card asks "can this model
+ * answer at all", so a probe that reported token counts or a verdict about
+ * quality would be answering a question nobody asked, and one that reported
+ * "0 output tokens" for a refusal would be reporting a bug as a fact.
+ *
+ * `outputChars` is a character count, not a token count: this plugin cannot
+ * tokenize for a model it does not own, and a character count answers "did it
+ * say anything" without pretending to know more.
+ */
+export interface PoolWebModelProbeResult {
+  /** True when the model produced at least one character of output. */
+  ok: boolean
+  /** Milliseconds until the first output character arrived. Absent when none did. */
+  firstFrameMs?: number
+  /** Characters of output produced before the probe stopped reading. */
+  outputChars: number
+  /**
+   * Why the probe failed, when it did.
+   *
+   * Rendered verbatim, and it is a failure to SHOW rather than to hide: a
+   * connectivity test that swallows its error teaches the user the button is
+   * broken.
+   */
+  error?: string
+}
 /** The user's saved model selection, echoed back so the card can diff a draft. */
 /** Body of the account enable/disable route: exactly one account per request. */
 export interface PoolWebAccountToggle {
@@ -236,7 +764,6 @@ export interface PoolWebAccountToggle {
   /** `true` switches the account off; `false` puts it back in rotation. */
   disabled: boolean
 }
-
 /**
  * Body of the account ignore/unignore route: exactly one account per request.
  *
@@ -250,7 +777,17 @@ export interface PoolWebAccountIgnore {
   /** `true` ignores the account permanently; `false` takes it back. */
   ignored: boolean
 }
-
+/**
+ * Body of the prefer route: one account id, or `null` to hand the choice back
+ * to the distribution strategy.
+ *
+ * `null` rather than an empty string because "no preference" is a real state
+ * the user must be able to return to, and it is the only value that means it.
+ */
+export interface PoolWebAccountPrefer {
+  /** Pool account id, as reported in `PoolWebAccount.id`, or null to clear. */
+  accountId: string | null
+}
 /**
  * One account the user has thrown out of the pool.
  *
@@ -266,7 +803,6 @@ export interface PoolWebIgnoredAccount {
   /** ISO timestamp of when it was ignored. */
   ignoredAt: string
 }
-
 export interface PoolWebModelSelection {
   /** Absent = every model is enabled. */
   enabledModelIds?: readonly string[]
@@ -275,13 +811,21 @@ export interface PoolWebModelSelection {
   /** Per-model context-window cap, keyed by model id. */
   contextBudgets?: Readonly<Record<string, number | undefined>>
 }
-
 /** The JSON document the pool card renders. */
 export interface PoolWebStatus {
   ok: boolean
   accounts: readonly PoolWebAccount[]
   /** The next account the pool would use (rotation cursor). */
   activeAccountId?: string
+  /**
+   * The account the user pinned to be tried first, when one is pinned and it is
+   * still in the pool.
+   *
+   * Reported at document level rather than as a per-row flag because it is a
+   * single global choice, and omitting it when the pinned account has been
+   * scanned away keeps the card from drawing a "preferred" badge on nothing.
+   */
+  preferredAccountId?: string
   cooling: number
   models: readonly PoolWebModel[]
   /** The saved selection the card diffs its draft against. */
@@ -335,17 +879,14 @@ export interface PoolWebStatus {
    */
   skippedFiles?: readonly PoolWebSkippedFile[]
 }
-
 /** A credential file the pool could not read. */
 export interface PoolWebSkippedFile {
   /** Basename only; the full path lives in the desktop app's auth directory. */
   file: string
   reason: 'encrypted' | 'unreadable' | 'malformed'
 }
-
 /** How a region's model list was obtained. */
 export type PoolWebCatalogSource = 'live' | 'fallback'
-
 /** One automation job's last run, as shown on the card. */
 export interface PoolWebAutomationJob {
   /** `YYYY-MM-DD` of the last run in this process, if it has run. */
@@ -387,7 +928,6 @@ export interface PoolWebAutomationJob {
   /** A pending milestone worth naming, e.g. the next streak tier countdown. */
   progress?: string
 }
-
 /**
  * Automation block on the status document.
  *
@@ -427,7 +967,6 @@ export interface PoolWebAutomation {
    */
   earningsToday: Readonly<Record<string, PoolWebAutomationEarnings>>
 }
-
 /** Today's automation take for one account. */
 export interface PoolWebAutomationEarnings {
   /** Credits claimed from the task centre today. */
@@ -445,18 +984,14 @@ export interface PoolWebAutomationEarnings {
   /** Local date the counters belong to (YYYY-MM-DD). */
   date: string
 }
-
-
 /**
  * The two gateways, matching the provider ids the host registers. `cn` is the
  * domestic gateway (`copilot.tencent.com` / `codebuddy.cn`); `global` is the
  * international one (`workbuddy.ai`).
  */
 export type PoolRegion = 'cn' | 'global'
-
 /** How the pool spreads requests across its accounts. */
 export type PoolDistribution = 'priority' | 'round-robin' | 'balanced' | 'sticky' | 'expiry'
-
 /**
  * The schedule every automation job falls back to.
  *
@@ -481,7 +1016,5 @@ export const DEFAULT_AUTOMATION_HOURS = {
   // out at a single pass of the day would sit there until tomorrow.
   travel: [9, 21],
 } as const satisfies Record<string, readonly number[]>
-
 /** One automation job kind, matching the scheduler's `AUTOMATION_JOB_KINDS`. */
 export type PoolWebAutomationKind = keyof typeof DEFAULT_AUTOMATION_HOURS
-

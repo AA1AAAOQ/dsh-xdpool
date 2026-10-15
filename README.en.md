@@ -19,6 +19,18 @@ An account gets rate-limited or runs out of credits? The request just moves to t
 
 ## Screenshots
 
+**Account pool (the card's home page: brand bar plus seven page tabs, usage right at the top)**
+
+![Account pool: the brand bar shows XD Pool with its version, seven page tabs, the usage panel sits at the very top, and below it the WorkBuddy CN account card with its connected badge](assets/account-pool.png)
+
+**Login channels (thirteen vendors that sign in by web or QR — sign in once and their free models are yours)**
+
+![Login channels: the thirteen-vendor list, with CodeArts Huawei Cloud and WorkBuddy CN/global each carrying their own description and sign-in button](assets/login-channels.png)
+
+**Aggregate channels (every vendor's free quota wired into one model pool, 76 vendors filterable by category)**
+
+![Aggregate channels: the aggregate switch, a search box, and the category filters — all 76 / API key 60 / free 1 / has free quota 10 / local 3 / needs authorization 2](assets/aggregate-channels.png)
+
 **The plugin card (Settings → Plugins → DSH WorkBuddy XD Pool)**
 
 ![WorkBuddy pool card: CN/global tabs, pool health, account panels with credit packages, per-account check-in, the points-automation panel, and the model directory](assets/settings-card.png)

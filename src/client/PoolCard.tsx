@@ -13,38 +13,58 @@
  *
  * @module dsh-workbuddy-xdpool/client/PoolCard
  */
-
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { createElement as h } from 'react'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import {
   POOL_ACCOUNT_DISABLE_PATH,
   POOL_ACCOUNT_IGNORE_PATH,
+  POOL_ACCOUNT_PREFER_PATH,
   POOL_AUTOMATION_RUN_PATH,
   POOL_CATALOG_REFRESH_PATH,
   POOL_CREDIT_RESERVE_PATH,
   POOL_CHECKIN_PATH,
+  POOL_MODELS_SAVE_PATH,
+  POOL_MODEL_PROBE_PATH,
   POOL_RESET_COOLDOWN_PATH,
   POOL_RESCAN_PATH,
   POOL_STATUS_PATH,
+  POOL_USAGE_PATH,
   type PoolWebAccount,
   type PoolWebAutomationJob,
+  type PoolWebChannel,
   type PoolWebModel,
+  type PoolWebModelProbeResult,
   type PoolWebStatus,
   type PoolRegion,
   type PoolWebCreditPackage,
   type PoolDistribution,
 } from '../status-paths.ts'
 import { DEFAULT_AUTOMATION_HOURS } from '../status-paths.ts'
-import { POOL_PLUGIN_ICON } from './icon.ts'
 import { POOL_CARD_CSS } from './styles.ts'
+import { POOL_CARD_AVATAR } from './avatar.ts'
+import { PoolShell, PageHero, initialShellTab, rememberedShellTab } from './shell.tsx'
+import { LedgerPage } from './LedgerPage.tsx'
+import { AggregatePage } from './AggregatePage.tsx'
+import { ChannelsPage } from './ChannelsPage.tsx'
+import { BillionPage } from './BillionPage.tsx'
+import { RoutingPage } from './RoutingPage.tsx'
+import { GatewayPage } from './GatewayPage.tsx'
+import { RegionCardPane, RegionCardTile, RegionCardTrigger, regionCardStyle } from './region-card.tsx'
+import type { RegionCardState } from './region-card.tsx'
+import { REGION_CHANNEL_BY_REGION } from './region-card.tsx'
+import { POOL_CHANNELS_PATH } from '../status-paths.ts'
 import { isFreeNow, promoStatusFor } from '../promo.ts'
 import { badgeLabels, freeBadgeKind } from '../badges.ts'
 import { paidAlternativeFor } from '../siblings.ts'
 import type { PaidSibling } from '../siblings.ts'
+import { ModelFactsRow } from './model-facts-row.tsx'
+import type { ModelProbeReading } from './model-facts.ts'
+import type { UsageSummary } from '../stats.ts'
+import { POOL_VERSION } from '../version.ts'
 import type { WorkBuddyPoolSettingsKey } from './locales.ts'
-
 /** Localized copy injected by the browser-plugin registration. */
 export interface PoolCardInjected {
   t: (key: WorkBuddyPoolSettingsKey, params?: Record<string, unknown>) => string
@@ -55,7 +75,6 @@ export interface PoolCardInjected {
    */
   settingsScope: PoolCardSettingsScope
 }
-
 /** The settings scope the slot hands the card, narrowed to what it uses. */
 export interface PoolCardSettingsScope {
   getSnapshot(): { writable?: boolean; value?: unknown }
@@ -63,7 +82,6 @@ export interface PoolCardSettingsScope {
   /** Write one field of the plugin settings section. */
   set?(field: string, value: unknown): Promise<void> | void
 }
-
 /** Props delivered by the Plugin configuration item slot. */
 /**
  * Props delivered by the Plugin configuration item slot.
@@ -76,16 +94,13 @@ export interface PoolCardSettingsScope {
 export type PoolCardProps = PropsRuntime<'settings.plugin.item'>
   & Partial<PoolCardInjected>
   & { settingsScope?: PoolCardSettingsScope }
-
 /**
  * Default context window the card offers as the "capped" choice, in tokens.
  * Mirrors the host-side DEFAULT_CONTEXT_BUDGET; declared here rather than
  * imported, because the browser bundle must not pull in the host entry.
  */
 const DEFAULT_CONTEXT_BUDGET = 200_000
-
 const POLL_INTERVAL_MS = 30_000
-
 /** Inject or refresh the shared card CSS for the current client bundle. */
 if (typeof document !== 'undefined') {
   const cssId = 'dsh-workbuddy-xdpool/client.css'
@@ -100,18 +115,15 @@ if (typeof document !== 'undefined') {
     document.head.appendChild(styleTag)
   }
 }
-
 function formatNumber(value: number | undefined): string {
   if (value === undefined) return '–'
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(value)
 }
-
 function formatTime(value: number): string {
   return new Intl.DateTimeFormat(undefined, {
     month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
   }).format(new Date(value))
 }
-
 function formatDateTime(value: string | undefined): string {
   if (value === undefined) return ''
   const ms = Date.parse(value)
@@ -120,7 +132,6 @@ function formatDateTime(value: string | undefined): string {
     month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
   }).format(new Date(ms))
 }
-
 /**
  * The automation jobs, in the order they run.
  *
@@ -138,14 +149,11 @@ function formatDateTime(value: string | undefined): string {
  */
 const AUTOMATION_POLL_MS = 2000
 const AUTOMATION_POLL_ATTEMPTS = 90
-
 // The card renders one row per kind, and the list must match the scheduler's
 // `AUTOMATION_JOB_KINDS` exactly — they are two hand-written lists that have to
 // agree, and a kind missing here is invisible (the job runs, nothing shows it).
 export const AUTOMATION_JOBS = ['checkin', 'report', 'tasks', 'streak', 'travel'] as const
-
 export type AutomationJobKind = typeof AUTOMATION_JOBS[number]
-
 /**
  * The hour list to save for one job: what the card holds, or the default.
  *
@@ -157,7 +165,6 @@ export type AutomationJobKind = typeof AUTOMATION_JOBS[number]
 function hoursOrDefault(configured: readonly number[] | undefined, fallback: readonly number[]): number[] {
   return configured !== undefined && configured.length > 0 ? [...configured] : [...fallback]
 }
-
 /** Read one job's configured hours off the status document. */
 function automationHours(status: PoolWebStatus, kind: AutomationJobKind): readonly number[] {
   const automation = status.automation
@@ -170,12 +177,10 @@ function automationHours(status: PoolWebStatus, kind: AutomationJobKind): readon
     case 'travel': return automation.travelHours
   }
 }
-
 /** Read one job's last-run record off the status document. */
 function automationJob(status: PoolWebStatus, kind: AutomationJobKind): PoolWebAutomationJob | undefined {
   return status.automation?.jobs[kind]
 }
-
 function dotColor(status: 'ok' | 'error' | 'idle'): string {
   return status === 'ok'
     ? 'var(--dsw-alias-state-success-primary, #22a06b)'
@@ -183,14 +188,12 @@ function dotColor(status: 'ok' | 'error' | 'idle'): string {
       ? 'var(--dsw-alias-state-error-primary, #ef4444)'
       : 'var(--dsw-alias-label-dimmed, #9aa0a6)'
 }
-
 function formatCapacity(value: number | undefined): string {
   if (value === undefined) return ''
   if (value >= 1_000_000 && value % 1_000_000 === 0) return `${value / 1_000_000}M`
   if (value >= 1_000 && value % 1_000 === 0) return `${value / 1_000}K`
   return String(value)
 }
-
 /**
  * The five ways the pool can hand out accounts.
  *
@@ -199,9 +202,125 @@ function formatCapacity(value: number | undefined): string {
  * laid out one chip per mode, so this list length is also the column count.
  */
 const DIST_OPTIONS = ['sticky', 'priority', 'balanced', 'round-robin', 'expiry'] as const
-
+/**
+ * The two supplier cards, in the order they are shown.
+ *
+ * Both are always rendered, so an empty side reads as "not signed in here
+ * yet" rather than the card appearing only after the user has already signed
+ * in. Keeping the list here (rather than a literal pair in the JSX) is what lets
+ * the poll loop fetch every card without a second source of truth.
+ */
+const REGION_CARDS = ['cn', 'global'] as const
+/** The settings key holding each region's model selection. */
+const MODEL_SELECTION_KEY = { cn: 'modelSelectionCn', global: 'modelSelectionGlobal' } as const
+/**
+ * Everything one region card renders, derived from that region's own slice.
+ *
+ * Bundled into one object so a card cannot accidentally read a value belonging
+ * to the other lane: every field here is computed from `statusOf(region)`, and
+ * the card's markup only ever sees its own bundle.
+ */
+interface RegionCardModel {
+  readonly region: PoolRegion
+  readonly status: PoolWebStatus | undefined
+  readonly accountCount: number
+  readonly cooling: number
+  readonly idle: boolean
+  readonly hasHealthy: boolean
+  readonly state: 'ok' | 'error' | 'idle'
+  /** Human name of the lane, used in headings and empty-state copy. */
+  readonly regionLabel: string
+  /**
+   * The vendor's own brand name and where it lives.
+   *
+   * This used to be the tab label — "CN" / "Global" — which is our word for the
+   * lane, not the vendor's. The user compared this card with the login page's
+   * card and asked for the same one, and on the login page the name is the
+   * vendor's ("WorkBuddy 国内版") with the vendor's own host underneath
+   * ("腾讯 · copilot.tencent.com"). Naming the region instead meant the same
+   * supplier appeared under two different names on two pages of the same
+   * settings dialog, which is the kind of thing that makes a user check whether
+   * they signed in twice.
+   */
+  readonly brandName: string
+  readonly brandSub: string
+  /**
+   * One line of prose about the vendor's free allowance, in Chinese.
+   *
+   * It replaced a sentence that printed the loopback port this plugin serves
+   * the lane on. The port was never actionable for the user, and it crowded out
+   * the one line on the card they could act on.
+   */
+  readonly brandNote: string
+  /** The pill text. Distinct from `cardState`, which only carries the colour. */
+  readonly stateLabel: string
+  readonly models: readonly PoolWebModel[]
+  readonly modelState: {
+    readonly draft: Record<string, ModelDraftEntry>
+    readonly editable: boolean
+    readonly dirty: boolean
+    readonly enabled: number
+  }
+  readonly activeAccount: PoolWebAccount | undefined
+  /**
+   * CN only: the international gateway has no growth system at all, so the
+   * automation pane there would be a switch that can never do anything. That is
+   * also why the whole field is typed optional — "not applicable" is a real
+   * answer here, not a missing value.
+   */
+  readonly automation?: PoolWebStatus['automation'] | undefined
+  readonly automationTotals: AutomationTotals
+  readonly cardState: RegionCardState
+}
+/** Today's automation take, summed across accounts. */
+interface AutomationTotals {
+  readonly credit: number
+  readonly energy: number
+  readonly claimed: number
+  readonly checkinCredit: number
+  readonly bonusCredit: number
+  readonly travelCredit: number
+}
+/**
+ * Sum one region's daily automation earnings.
+ *
+ * Summed from the per-account counters rather than kept separately, so the
+ * panel total and the per-account lines can never disagree. Takes the status
+ * document as an argument rather than closing over one, because each card sums
+ * its own accounts.
+ */
+function automationTotalsOf(status: PoolWebStatus | undefined): AutomationTotals {
+  return Object.values(status?.automation?.earningsToday ?? {})
+    .reduce((sum, entry) => ({
+      credit: sum.credit + entry.credit,
+      energy: sum.energy + entry.energy,
+      claimed: sum.claimed + entry.claimed,
+      checkinCredit: sum.checkinCredit + entry.checkinCredit,
+      bonusCredit: sum.bonusCredit + entry.bonusCredit,
+      travelCredit: sum.travelCredit + entry.travelCredit,
+    }), { credit: 0, energy: 0, claimed: 0, checkinCredit: 0, bonusCredit: 0, travelCredit: 0 })
+}
+/**
+ * How much credit is left in this lane, already formatted.
+ *
+ * Three states, never collapsed into two:
+ *  - `undefined` when nothing has reported a balance yet, rendered as an em
+ *    dash. A zero here would be a claim nobody made.
+ *  - `'0'` when the gateway answered and the answer was zero. That IS a fact.
+ *  - a formatted number when a balance came back.
+ *
+ * The read is best-effort per account: one dead credential must not make the
+ * whole lane read as "no credit", so accounts whose balance failed to load are
+ * skipped and only the ones that actually answered are summed. When none
+ * answered, the result is `undefined` rather than a confident zero.
+ */
+function creditLeftOf(status: PoolWebStatus | undefined): string | undefined {
+  const reported = (status?.accounts ?? [])
+    .map(account => account.credits?.total)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+  return reported.length === 0 ? undefined : formatNumber(reported.reduce((sum, value) => sum + value, 0))
+}
 type DistTranslator = PoolCardInjected['t'] | undefined
-
 /** Localized name of one distribution mode. */
 function distLabel(option: PoolDistribution, t: DistTranslator): string {
   if (option === 'sticky') return t?.('row.distSticky') ?? 'Per conversation'
@@ -210,7 +329,6 @@ function distLabel(option: PoolDistribution, t: DistTranslator): string {
   if (option === 'expiry') return t?.('row.distExpiry') ?? 'Expiring first'
   return t?.('row.distRoundRobin') ?? 'Round-robin'
 }
-
 /** One-line explanation of what a mode does to caching and spend. */
 function distHint(option: PoolDistribution, t: DistTranslator): string {
   if (option === 'sticky') return t?.('row.distStickyHint') ?? ''
@@ -219,7 +337,6 @@ function distHint(option: PoolDistribution, t: DistTranslator): string {
   if (option === 'expiry') return t?.('row.distExpiryHint') ?? ''
   return t?.('row.distRoundRobinHint') ?? ''
 }
-
 /** Pick the right promotion chip for a model. */
 /** One model's draft state while the card holds unsaved edits. */
 interface ModelDraftEntry {
@@ -228,7 +345,6 @@ interface ModelDraftEntry {
   /** Context budget, or undefined to follow the model's native window. */
   budget?: number
 }
-
 /** Build the draft from the server's selection + catalog flags. */
 function draftFromStatus(status: PoolWebStatus): Record<string, ModelDraftEntry> {
   const selection = status.selection
@@ -247,7 +363,6 @@ function draftFromStatus(status: PoolWebStatus): Record<string, ModelDraftEntry>
   }
   return out
 }
-
 /** True when the draft differs from what the server last reported. */
 function draftIsDirty(status: PoolWebStatus, draft: Record<string, ModelDraftEntry>): boolean {
   const selection = status.selection
@@ -267,7 +382,6 @@ function draftIsDirty(status: PoolWebStatus, draft: Record<string, ModelDraftEnt
   }
   return false
 }
-
 /** Absolute expiry with the time of day: the upstream grants one-off packages at
  *  arbitrary clock times, so "expires 09/19 15:36" is what the user needs — a
  *  date alone would read as if it lapsed at midnight. */
@@ -277,20 +391,17 @@ function formatExpiry(ms: number | undefined): string {
     month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
   }).format(new Date(ms))
 }
-
 /** Whole days until `ms`, floored at 0; undefined when there is no deadline. */
 function daysUntil(ms: number | undefined): number | undefined {
   if (ms === undefined || !Number.isFinite(ms)) return undefined
   return Math.max(0, Math.floor((ms - Date.now()) / 86_400_000))
 }
-
 /** True when a one-off package lapses inside the "expiring soon" window. */
 function isExpiringSoon(pack: PoolWebCreditPackage): boolean {
   if (pack.monthly === true) return false
   const days = daysUntil(pack.expiresAtMs)
   return days !== undefined && days <= 3
 }
-
 /**
  * The promo badge for one model, or undefined when it has none.
  *
@@ -336,7 +447,6 @@ function tagFor(
   if (badgeLabels(tags).length > 0) return 'badge'
   return undefined
 }
-
 /** Render pool health, per-account credits/cooldown, and the model directory. */
 export function PoolCard({ t, settingsScope }: PoolCardProps) {
   // The slot tells us whether the settings document is writable; a
@@ -352,32 +462,80 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
   const [statusByRegion, setStatusByRegion] = useState<
     Partial<Record<PoolRegion, PoolWebStatus>>
   >({})
-
-  /** The document for the tab on screen; undefined until its first answer. */
-  const status = statusByRegion[activeRegion]
   /**
-   * Today's automation take, summed across accounts.
+   * Which disclosure panes are open, keyed by pane id.
    *
-   * Summed from the per-account counters rather than kept separately, so the
-   * panel total and the per-account lines can never disagree.
+   * A map rather than one boolean per pane because there are four per lane and
+   * they are independent: opening the domestic account list must not close the
+   * international model list, and the ids are already unique per lane.
+   *
+   * All panes start closed. A card that arrives with a 200-row account list
+   * already expanded is a wall of text where the user asked for a summary, and
+   * the disclosure is one click away.
    */
-  const automationTotals = Object.values(status?.automation?.earningsToday ?? {})
-    .reduce((sum, entry) => ({
-      credit: sum.credit + entry.credit,
-      energy: sum.energy + entry.energy,
-      claimed: sum.claimed + entry.claimed,
-      checkinCredit: sum.checkinCredit + entry.checkinCredit,
-      bonusCredit: sum.bonusCredit + entry.bonusCredit,
-      travelCredit: sum.travelCredit + entry.travelCredit,
-    }), { credit: 0, energy: 0, claimed: 0, checkinCredit: 0, bonusCredit: 0, travelCredit: 0 })
+  const [openedPanes, setOpenedPanes] = useState<Record<string, boolean>>({})
+  const setPane = (paneId: string, open: boolean): void => {
+    setOpenedPanes(prev => (prev[paneId] === open ? prev : { ...prev, [paneId]: open }))
+  }
   const [error, setError] = useState<string | undefined>(undefined)
-  const [busy, setBusy] = useState(false)
-  const [cooldownBusy, setCooldownBusy] = useState(false)
+  /**
+   * The scan-login roster, read only for the two lanes' own branding.
+   *
+   * Both pool lanes ARE two of the thirteen scan-login channels, so the pool
+   * page asks the login page's roster who its vendors are instead of keeping a
+   * second copy of their names. Nothing else is read from it: the user removed
+   * the mirrored channel list ("在扫码登录页登录过什么，这里就同步显示什么，这个不需要"),
+   * and a roster with no per-account state behind it could only ever have shown
+   * thirteen rows of zero. What a channel actually has stays where it is
+   * earned — on the login page, and in the counts the pack reports there.
+   */
+  const [channels, setChannels] = useState<PoolWebChannel[]>([])
+  /**
+   * Which page is showing.
+   *
+   * `pool` is the WorkBuddy account pool this page has always shown.
+   * `aggregate` and `channels` are sibling views, not sections inside the pool
+   * body: they read different documents and have their own fetch lifecycles, so
+   * switching pages must not leave the pool's poll feeding a hidden view, and
+   * neither may be re-mounted by a pool refresh.
+   *
+   * The initial value comes from `localStorage`. Reading it during the initial
+   * render (rather than in an effect) means the card never paints the pool
+   * page and then swaps to another one, which on a slow paint is a visible
+   * flash of the wrong page's content.
+   */
+  const shellTabs = [
+    { id: 'pool', label: t?.('shell.tabPool') ?? 'Account pool' },
+    { id: 'channels', label: t?.('shell.tabChannels') ?? 'Login channels' },
+    { id: 'aggregate', label: t?.('shell.tabAggregate') ?? 'Providers' },
+    { id: 'ledger', label: t?.('shell.tabLedger') ?? 'Dashboard' },
+    { id: 'billion', label: t?.('shell.tabBillion') ?? 'billion-context' },
+    { id: 'routing', label: t?.('shell.tabRouting') ?? 'Routing' },
+    { id: 'gateway', label: t?.('shell.tabGateway') ?? 'Gateway' },
+  ] as const
+  const [page, setPage] = useState<string>(
+    () => initialShellTab(rememberedShellTab(), shellTabs),
+  )
+  /**
+   * Which side an in-flight action belongs to.
+   *
+   * Both region cards are on screen at once now, so a single boolean would let
+   * a click on the CN card paint "Detecting…" on the international card too.
+   * The flag carries the region it belongs to: the pane that owns it shows the
+   * progress wording, and BOTH panes stay disabled while it runs so a second
+   * click cannot fire the same request twice.
+   */
+  const [busyRegion, setBusyRegion] = useState<PoolRegion | undefined>(undefined)
+  const [cooldownBusyRegion, setCooldownBusyRegion] = useState<PoolRegion | undefined>(undefined)
   /** Model-catalog refresh in flight (separate from the account rescan). */
-  const [catalogBusy, setCatalogBusy] = useState(false)
-  const [automationBusy, setAutomationBusy] = useState(false)
+  const [catalogBusyRegion, setCatalogBusyRegion] = useState<PoolRegion | undefined>(undefined)
+  const [automationBusyRegion, setAutomationBusyRegion] = useState<PoolRegion | undefined>(undefined)
   /** The automation job currently running from the card, if any. */
   const [automationRun, setAutomationRun] = useState<AutomationJobKind | 'all' | undefined>(undefined)
+  /** The region whose automation run was started, so only that card spins. */
+  const [automationRunRegion, setAutomationRunRegion] = useState<PoolRegion | undefined>(undefined)
+  /** Region whose model draft is being written, for the same reason. */
+  const [savingModelsRegion, setSavingModelsRegion] = useState<PoolRegion | undefined>(undefined)
   /** Account id whose reserved-credit floor is being saved, if any. */
   const [reserveBusy, setReserveBusy] = useState<string | undefined>(undefined)
   const [flash, setFlash] = useState<string | undefined>(undefined)
@@ -386,28 +544,102 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
   /** Account id whose enable/disable switch is in flight, if any. */
   const [accountBusyId, setAccountBusyId] = useState<string | undefined>(undefined)
   /**
+   * The usage aggregate, or undefined until its first answer.
+   *
+   * Deliberately NOT filed per region, unlike `statusByRegion`: one recorder
+   * backs both gateways and every row carries its own region, so filtering
+   * here would hide half the calls and leave the panel total disagreeing with
+   * the number the recorder actually reports.
+   */
+  const [usage, setUsage] = useState<UsageSummary | undefined>(undefined)
+  /**
    * Draft model selection. `undefined` means "no local edits"; once a checkbox
    * is touched the draft takes over and is what the Save button posts. Discard
    * drops it back to the copy the server last reported.
    */
   const [draftByRegion, setDraftByRegion] = useState<Partial<Record<PoolRegion, Record<string, ModelDraftEntry>>>>({})
   /**
-   * The draft for the tab on screen. Keyed by region: the two gateways have
-   * different rosters, so edits made on one tab must not leak into the other
-   * when the user switches tabs (or saves).
+   * The draft one region card is holding, if it holds any.
+   *
+   * Keyed by region rather than "whatever tab is in front": the two gateways
+   * have different rosters, so edits made on the CN card must not leak into
+   * the international list when the user works on both at once.
    */
-  const draft = draftByRegion[activeRegion]
-  const setDraft = (next: Record<string, ModelDraftEntry> | undefined): void => {
-    setDraftByRegion(prev => ({ ...prev, [activeRegion]: next }))
+  const setDraftFor = (region: PoolRegion, next: Record<string, ModelDraftEntry> | undefined): void => {
+    setDraftByRegion(prev => ({ ...prev, [region]: next }))
   }
-  const [savingModels, setSavingModels] = useState(false)
   const mounted = useRef(true)
-
   useEffect(() => {
     mounted.current = true
     return () => { mounted.current = false }
   }, [])
-
+  /**
+   * Connectivity readings, keyed by the row's model id.
+   *
+   * Kept as a map rather than one slot because the user will click a second row
+   * while the first answer is still arriving, and a single slot would make the
+   * first row's result vanish behind the second row's.
+   *
+   * A reading is NEVER recomputed by the 5-second poll. That poll exists to keep
+   * account state fresh; if it also refreshed probe results, a model that had
+   * stopped answering would keep showing its last good answer forever, and the
+   * button would read as broken. Measurements therefore live until the user
+   * clicks again — which is also the only honest lifetime for a number that
+   * describes a moment in time.
+   */
+  const [probes, setProbes] = useState<Readonly<Record<string, ModelProbeReading>>>({})
+  /** The model whose probe is in flight, if any. */
+  const [probingModel, setProbingModel] = useState<string | undefined>(undefined)
+  /**
+   * Send one real request to one model and record what came back.
+   *
+   * One probe at a time on purpose. Every call spends the user's credits, so a
+   * user holding down a row must not be able to queue ten of them by accident;
+   * and a single in-flight marker keeps the button disabled exactly where the
+   * user is looking instead of greying out the whole list.
+   */
+  const testModel = useCallback(async (provider: string, model: string): Promise<void> => {
+    if (probingModel !== undefined) return
+    setProbingModel(model)
+    try {
+      const response = await fetch(POOL_MODEL_PROBE_PATH, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ provider, model }),
+      })
+      const body = await response.json() as PoolWebModelProbeResult | { error?: unknown }
+      // A non-200 is reported as a failed probe carrying the route's own
+      // message, not as a thrown error: the button's job is to say what is
+      // wrong, and an exception would say "this build is broken" instead.
+      const reading: ModelProbeReading = 'ok' in body
+        ? {
+            ok: body.ok,
+            outputChars: typeof body.outputChars === 'number' ? body.outputChars : 0,
+            ...typeof body.firstFrameMs === 'number' ? { firstFrameMs: body.firstFrameMs } : {},
+            ...typeof body.error === 'string' ? { error: body.error } : {},
+          }
+        : {
+            ok: false,
+            outputChars: 0,
+            error: typeof (body as { error?: unknown }).error === 'string'
+              ? (body as { error: string }).error
+              : `HTTP ${response.status}`,
+          }
+      setProbes(prev => ({ ...prev, [model]: reading }))
+    } catch (error: unknown) {
+      setProbes(prev => ({
+        ...prev,
+        [model]: {
+          ok: false,
+          outputChars: 0,
+          error: error instanceof Error && error.message !== '' ? error.message : 'the probe could not be sent',
+        },
+      }))
+    } finally {
+      setProbingModel(undefined)
+    }
+  }, [probingModel])
   /**
    * Fetch one region's status. `region` is a parameter rather than a closure
    * read so the callback identity does not change with the tab: the polling
@@ -437,19 +669,118 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
       return undefined
     }
   }, [])
-
+  /**
+   * Read the scan-login roster, for the two lanes' vendor names and nothing else.
+   *
+   * Called once on mount rather than on the poll timer: the roster this plugin
+   * publishes is static for the life of the process, so a timer would only
+   * re-read a document that cannot have changed. A failure is swallowed for the
+   * same reason the usage panel's is — `brandOf` falls back to the tab label,
+   * which is thin but true, and a lane that refuses to draw because a second
+   * document did not arrive would be a worse answer than the one it has.
+   */
+  const refreshChannels = useCallback(async (signal?: AbortSignal): Promise<void> => {
+    try {
+      const response = await fetch(POOL_CHANNELS_PATH, {
+        headers: { accept: 'application/json' },
+        credentials: 'same-origin',
+        ...signal === undefined ? {} : { signal },
+      })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const body: unknown = await response.json().catch(() => undefined)
+      const roster = (body as { channels?: unknown } | undefined)?.channels
+      if (mounted.current && signal?.aborted !== true && Array.isArray(roster)) {
+        setChannels(roster as PoolWebChannel[])
+      }
+    } catch {
+      // Kept quiet; see above.
+    }
+  }, [])
+  /**
+   * Poll every region card that is on screen.
+   *
+   * Both cards render at once now, so the old single-region tick would have
+   * left the other card's numbers frozen while the user read them. The card
+   * the user is looking at is fetched first so a slow second answer cannot
+   * delay it.
+   *
+   * `activeRegion` stays in the dependency list on purpose: it is what orders
+   * the fetch, so switching which card is in front re-issues immediately
+   * instead of waiting for the next tick.
+   */
   useEffect(() => {
     const controller = new AbortController()
-    void refresh(activeRegion, controller.signal)
-    const timer = window.setInterval(() => { void refresh(activeRegion, controller.signal) }, POLL_INTERVAL_MS)
+    const poll = (): void => {
+      for (const region of [activeRegion, ...REGION_CARDS.filter(other => other !== activeRegion)]) {
+        void refresh(region, controller.signal)
+      }
+    }
+    poll()
+    const timer = window.setInterval(poll, POLL_INTERVAL_MS)
     return () => {
       window.clearInterval(timer)
       controller.abort()
     }
   }, [refresh, activeRegion])
-
-  const rescan = async (): Promise<void> => {
-    setBusy(true)
+  /**
+   * Read the scan-login roster once, and again whenever the user comes back to
+   * this page.
+   *
+   * Re-reading on return is cheap and keeps the lane's vendor name honest. The
+   * roster is a local document that cannot change while the process lives, so
+   * this is about the user coming BACK to a card they had left on another page —
+   * not about polling something that moves.
+   */
+  useEffect(() => {
+    if (page !== 'pool') return
+    const controller = new AbortController()
+    void refreshChannels(controller.signal)
+    return () => { controller.abort() }
+  }, [page, refreshChannels])
+  /**
+   * Fetch the usage aggregate.
+   *
+   * A failure is swallowed on purpose. The panel failing to read its numbers
+   * must not blank the card or raise the shared error banner: the pool still
+   * serves conversations perfectly well, and the next poll tries again. Keeping
+   * the previous answer is also the honest rendering of "I could not refresh
+   * this", where clearing would claim "there has been no usage at all".
+   */
+  const refreshUsage = useCallback(async (signal?: AbortSignal): Promise<void> => {
+    try {
+      const response = await fetch(POOL_USAGE_PATH, {
+        headers: { accept: 'application/json' },
+        credentials: 'same-origin',
+        ...signal === undefined ? {} : { signal },
+      })
+      const value: unknown = await response.json().catch(() => undefined)
+      // 503 means this build has no recorder; that is an absence of a panel,
+      // not an error worth showing, so leave the state undefined and stop.
+      if (!response.ok) return
+      if (mounted.current && signal?.aborted !== true) setUsage(value as UsageSummary)
+    } catch {
+      // Kept quiet; see above.
+    }
+  }, [])
+  useEffect(() => {
+    const controller = new AbortController()
+    void refreshUsage(controller.signal)
+    const timer = window.setInterval(() => { void refreshUsage(controller.signal) }, POLL_INTERVAL_MS)
+    return () => {
+      window.clearInterval(timer)
+      controller.abort()
+    }
+  }, [refreshUsage])
+  /**
+   * Re-scan the credential folders for one region.
+   *
+   * Takes the region explicitly now that both cards are on screen: a click on
+   * the CN card must re-read the CN folders, and the flash it reports belongs to
+   * that card. The button beside it ("clear all cooldowns") stays available on
+   * both sides, so the argument is what tells them apart.
+   */
+  const rescan = async (region: PoolRegion): Promise<void> => {
+    setBusyRegion(region)
     setFlash(undefined)
     try {
       const response = await fetch(POOL_RESCAN_PATH, {
@@ -457,15 +788,14 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
       })
       const body = await response.json() as { accounts?: number; error?: string }
       if (!response.ok) throw new Error(body.error ?? `HTTP ${response.status}`)
-      await refresh(activeRegion)
+      await refresh(region)
       if (mounted.current) setFlash(t?.('row.accountsRescanned', { count: body.accounts ?? 0 }) ?? '')
     } catch (cause: unknown) {
       if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      if (mounted.current) setBusy(false)
+      if (mounted.current) setBusyRegion(undefined)
     }
   }
-
   /**
    * Re-fetch the upstream model catalog for both regions.
    *
@@ -474,9 +804,13 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
    * shorter built-in list and "detect accounts again" left it untouched, so the
    * only recovery was restarting DSH. Users reasonably assumed the button
    * covered both.
+   *
+   * The route itself still refreshes BOTH regions (that is the recovery being
+   * offered), but the report and the flash are filed under the region whose
+   * button was pressed, so the number quoted is the one that card is showing.
    */
-  const refreshCatalog = async (): Promise<void> => {
-    setCatalogBusy(true)
+  const refreshCatalog = async (region: PoolRegion): Promise<void> => {
+    setCatalogBusyRegion(region)
     setFlash(undefined)
     try {
       const response = await fetch(POOL_CATALOG_REFRESH_PATH, {
@@ -487,8 +821,8 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
         error?: string
       }
       if (!response.ok) throw new Error(body.error ?? `HTTP ${response.status}`)
-      await refresh(activeRegion)
-      const here = body.regions?.[activeRegion]
+      for (const other of REGION_CARDS) await refresh(other)
+      const here = body.regions?.[region]
       if (mounted.current) {
         setFlash(here?.source === 'live'
           ? (t?.('row.catalogRefreshed', { count: here.models ?? 0 }) ?? '')
@@ -497,34 +831,32 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
     } catch (cause: unknown) {
       if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      if (mounted.current) setCatalogBusy(false)
+      if (mounted.current) setCatalogBusyRegion(undefined)
     }
   }
-
-  const resetCooldowns = async (): Promise<void> => {
-    setCooldownBusy(true)
+  const resetCooldowns = async (region: PoolRegion): Promise<void> => {
+    setCooldownBusyRegion(region)
     setFlash(undefined)
     try {
       const response = await fetch(POOL_RESET_COOLDOWN_PATH, {
         method: 'POST', headers: { accept: 'application/json' }, credentials: 'same-origin',
       })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
-      await refresh(activeRegion)
+      await refresh(region)
       if (mounted.current) setFlash(t?.('row.resetCooldownsDone') ?? '')
     } catch (cause: unknown) {
       if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      if (mounted.current) setCooldownBusy(false)
+      if (mounted.current) setCooldownBusyRegion(undefined)
     }
   }
-
   /**
    * Claim one account's daily check-in. The account id travels in the body so
    * the Host can never guess: a click on account B's button can only ever
    * collect account B's reward. The status is re-read afterwards so the card
    * reflects the new streak / total without waiting for the next poll.
    */
-  const claimCheckin = async (accountId: string): Promise<void> => {
+  const claimCheckin = async (region: PoolRegion, accountId: string): Promise<void> => {
     setCheckinBusyId(accountId)
     setFlash(undefined)
     try {
@@ -538,7 +870,7 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
         | { claim?: { credit?: number }; error?: string }
         | undefined
       if (!response.ok) throw new Error(body?.error ?? `HTTP ${response.status}`)
-      await refresh(activeRegion)
+      await refresh(region)
       const credit = body?.claim?.credit ?? 0
       if (mounted.current) {
         setFlash(t?.('row.checkinClaimedReward', { credit: formatNumber(credit) })
@@ -550,7 +882,6 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
       if (mounted.current) setCheckinBusyId(undefined)
     }
   }
-
   /**
    * Switch one account in or out of the pool.
    *
@@ -560,7 +891,16 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
    * and the change is saved through the settings section, so it survives a
    * restart and is re-applied after every re-scan.
    */
-  const toggleAccountDisabled = async (accountId: string, disabled: boolean): Promise<void> => {
+  /**
+   * The status of one region, or undefined until its first answer.
+   *
+   * Per region because both cards render at once: a click on the CN card must
+   * read CN accounts, and a write derived from "the accounts this card shows"
+   * has to come from the same slice or it would file a CN account id into the
+   * international list.
+   */
+  const statusOf = (region: PoolRegion): PoolWebStatus | undefined => statusByRegion[region]
+  const toggleAccountDisabled = async (region: PoolRegion, accountId: string, disabled: boolean): Promise<void> => {
     const write = settingsScope?.set
     if (write === undefined) {
       setError(t?.('row.modelsSaveError', { message: 'settings scope is read-only' })
@@ -570,16 +910,16 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
     setAccountBusyId(accountId)
     setFlash(undefined)
     try {
-      // Derived from the status the card already holds, so the write is a
+      // Derived from the status THIS card holds, so the write is a
       // read-modify-write of the full list and two clicks cannot clobber.
-      const current = (status?.accounts ?? [])
+      const current = (statusOf(region)?.accounts ?? [])
         .filter(account => account.disabled === true)
         .map(account => account.id)
       const next = disabled
         ? (current.includes(accountId) ? current : [...current, accountId])
         : current.filter(id => id !== accountId)
       await write.call(settingsScope, 'disabledAccountIds', next)
-      await refresh(activeRegion)
+      await refresh(region)
     } catch (cause: unknown) {
       const message = cause instanceof Error ? cause.message : String(cause)
       if (mounted.current) {
@@ -589,7 +929,6 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
       if (mounted.current) setAccountBusyId(undefined)
     }
   }
-
   /**
    * Throw one account out of the pool for good, or take it back.
    *
@@ -597,7 +936,7 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
    * scope is involved, which is also why it keeps working on a profile whose
    * settings section is read-only.
    */
-  const setAccountIgnored = async (accountId: string, ignored: boolean): Promise<void> => {
+  const setAccountIgnored = async (region: PoolRegion, accountId: string, ignored: boolean): Promise<void> => {
     setAccountBusyId(accountId)
     setFlash(undefined)
     try {
@@ -610,7 +949,7 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
         const detail = await response.json().catch(() => ({})) as { error?: string }
         throw new Error(detail.error ?? `HTTP ${response.status}`)
       }
-      await refresh(activeRegion)
+      await refresh(region)
     } catch (cause: unknown) {
       const message = cause instanceof Error ? cause.message : String(cause)
       if (mounted.current) {
@@ -620,17 +959,71 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
       if (mounted.current) setAccountBusyId(undefined)
     }
   }
-
-  /** Keep the draft in step with the server copy while nothing is dirty. */
-  const modelDraft = draft ?? (status === undefined ? {} : draftFromStatus(status))
-  /** Model edits need a writable settings scope; otherwise the rows are read-only. */
-  const modelsEditable = settingsWritable
-  const modelsDirty = draft !== undefined && status !== undefined && draftIsDirty(status, draft)
-  const enabledCount = Object.values(modelDraft).filter(entry => entry.enabled).length
   /**
-   * One clock reading per render, shared by the sort and every row.
+   * Pin one account to be tried first, or clear the pin.
    *
-   * Taken once so the list cannot disagree with itself: calling `new Date()`
+   * A plain route call, for the same reason as {@link setAccountIgnored}: the pin
+   * lives in a plugin-owned file the CLI also writes, so there is no settings
+   * section to write and the button keeps working on a read-only profile.
+   *
+   * `null` clears rather than naming a sentinel: "no preference" is a real state
+   * the user has to be able to return to, and the host owns the decision about
+   * whether a given id is still usable — the card cannot see accounts that a
+   * scan has not returned yet.
+   */
+  const setPreferredAccount = async (region: PoolRegion, accountId: string | null): Promise<void> => {
+    setAccountBusyId(accountId ?? 'none')
+    setFlash(undefined)
+    try {
+      const response = await fetch(POOL_ACCOUNT_PREFER_PATH, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accountId }),
+      })
+      if (!response.ok) {
+        const detail = await response.json().catch(() => ({})) as { error?: string }
+        throw new Error(detail.error ?? `HTTP ${response.status}`)
+      }
+      // Both cards re-read: the pin is one global choice, so leaving the other
+      // region's rows showing a stale "preferred" mark would be a lie.
+      await Promise.all(REGION_CARDS.map(other => refresh(other)))
+    } catch (cause: unknown) {
+      const message = cause instanceof Error ? cause.message : String(cause)
+      if (mounted.current) {
+        setError(t?.('row.accountPreferError', { message }) ?? 'Could not set the preferred account: ' + message)
+      }
+    } finally {
+      if (mounted.current) setAccountBusyId(undefined)
+    }
+  }
+  /**
+   * The model rows one region card shows, plus whether they can be edited.
+   *
+   * Derived per region instead of once for the focused tab: both cards list
+   * models at the same time now, and their rosters differ, so a single
+   * `modelDraft` would have made the CN card render the international model
+   * list the moment the user clicked a checkbox on the other side.
+   */
+  const modelStateOf = (region: PoolRegion): {
+    draft: Record<string, ModelDraftEntry>
+    editable: boolean
+    dirty: boolean
+    enabled: number
+  } => {
+    const here = statusOf(region)
+    const local = draftByRegion[region]
+    const rows = local ?? (here === undefined ? {} : draftFromStatus(here))
+    return {
+      draft: rows,
+      editable: settingsWritable,
+      dirty: local !== undefined && here !== undefined && draftIsDirty(here, local),
+      enabled: Object.values(rows).filter(entry => entry.enabled).length,
+    }
+  }
+  /**
+   * One clock reading per render, shared by every card's sort and rows.
+   *
+   * Taken once so a list cannot disagree with itself: calling `new Date()`
    * per row would let a model be "free" for the badge and "not free" for the
    * sort if the window boundary happened to fall between two rows.
    *
@@ -638,59 +1031,107 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
    * own poll, which is frequent enough for a badge that changes twice a day.
    */
   const now = new Date()
-
-  const toggleModel = (id: string): void => {
-    if (status === undefined) return
-    const base = draft ?? draftFromStatus(status)
+  const toggleModel = (region: PoolRegion, id: string): void => {
+    const here = statusOf(region)
+    if (here === undefined) return
+    const local = draftByRegion[region]
+    const base = local ?? draftFromStatus(here)
     const entry = base[id]
     if (entry === undefined) return
-    setDraft({ ...base, [id]: { ...entry, enabled: !entry.enabled } })
+    setDraftFor(region, { ...base, [id]: { ...entry, enabled: !entry.enabled } })
   }
-
-  const toggleModelImage = (id: string): void => {
-    if (status === undefined) return
-    const base = draft ?? draftFromStatus(status)
+  const toggleModelImage = (region: PoolRegion, id: string): void => {
+    const here = statusOf(region)
+    if (here === undefined) return
+    const local = draftByRegion[region]
+    const base = local ?? draftFromStatus(here)
     const entry = base[id]
     if (entry === undefined) return
-    setDraft({ ...base, [id]: { ...entry, images: !entry.images } })
+    setDraftFor(region, { ...base, [id]: { ...entry, images: !entry.images } })
   }
-
-  const setModelBudget = (id: string, budget: number): void => {
-    if (status === undefined) return
-    const base = draft ?? draftFromStatus(status)
+  const setModelBudget = (region: PoolRegion, id: string, budget: number): void => {
+    const here = statusOf(region)
+    if (here === undefined) return
+    const local = draftByRegion[region]
+    const base = local ?? draftFromStatus(here)
     const entry = base[id]
     if (entry === undefined) return
-    setDraft({ ...base, [id]: { ...entry, budget } })
+    setDraftFor(region, { ...base, [id]: { ...entry, budget } })
   }
-
-  const discardModels = (): void => {
-    setDraft(undefined)
+  /**
+   * Throw one region's model edits away.
+   *
+   * Scoped to that card: discarding the international draft while looking at the
+   * CN card would silently undo work the user did on the other side.
+   */
+  const discardModels = (region: PoolRegion): void => {
+    setDraftFor(region, undefined)
     setFlash(undefined)
   }
-
   /**
-   * Persist the draft. The route validates the payload again on the host side,
-   * so a malformed draft is rejected there rather than silently stored. The
-   * card refuses to save an empty enable-list: that would leave the picker
-   * with nothing to offer and no obvious way back.
-   */
-  /**
-   * Persist the draft into the plugin settings section.
+   * Persist one region's model draft.
    *
    * The write goes through `settingsScope` rather than a bespoke route: that is
    * the same document the model picker reads, so one save covers every account
    * and survives account rotation — the selection is a property of the pool,
    * not of whichever account happens to be serving right now.
    *
-   * The card refuses an empty enable-list: saving one would leave the picker
-   * with nothing to offer and no obvious way back.
+   * One settings key per region (`MODEL_SELECTION_KEY`) because the two
+   * gateways publish different rosters: saving the CN list must never rewrite
+   * the international one. The card refuses an empty enable-list, because
+   * saving one would leave the picker with nothing to offer and no obvious way
+   * back.
    */
+  const saveModels = async (region: PoolRegion): Promise<void> => {
+    const local = draftByRegion[region]
+    if (local === undefined || statusOf(region) === undefined) return
+    if (Object.values(local).every(entry => !entry.enabled)) {
+      setError(t?.('row.modelsEmpty') ?? 'No model enabled')
+      return
+    }
+    const write = settingsScope?.set
+    if (write === undefined) {
+      setError(t?.('row.modelsSaveError', { message: 'settings scope is read-only' })
+        ?? 'settings scope is read-only')
+      return
+    }
+    setSavingModelsRegion(region)
+    setFlash(undefined)
+    try {
+      // Every id the catalog knows about, so a model added upstream while the
+      // card sat open is not silently dropped by an unrelated save.
+      const enabledModelIds = Object.entries(local).filter(([, e]) => e.enabled).map(([id]) => id)
+      const imageModelIds = Object.entries(local).filter(([, e]) => e.images).map(([id]) => id)
+      const contextBudgets: Record<string, number> = {}
+      for (const [id, entry] of Object.entries(local)) {
+        if (entry.budget !== undefined) contextBudgets[id] = entry.budget
+      }
+      await write.call(settingsScope, MODEL_SELECTION_KEY[region], { enabledModelIds, imageModelIds, contextBudgets })
+      setDraftFor(region, undefined)
+      if (mounted.current) setFlash(t?.('row.modelsSaved') ?? 'Saved')
+    } catch (cause: unknown) {
+      if (mounted.current) {
+        setError(t?.('row.modelsSaveError', { message: cause instanceof Error ? cause.message : String(cause) })
+          ?? String(cause))
+      }
+    } finally {
+      if (mounted.current) setSavingModelsRegion(undefined)
+    }
+  }
   /**
-   * Switch how the pool spreads requests. Written straight through the
-   * settings scope (that is where the host keeps the pool options), so the
-   * change lands without a restart and survives the next card refresh.
+   * Choose how the pool spends its accounts.
+   *
+   * Not per region, and that is a host fact rather than a shortcut: the
+   * settings schema holds ONE `distribution` key, `applyConfigFromSource` reads
+   * it into the single pool instance, and both region providers draw accounts
+   * from that one pool. A `distributionCn` / `distributionGlobal` pair would
+   * have looked tidier and been silently dropped by the schema, so the mode
+   * stays shared and the choice is written from the card that shows it.
+   *
+   * Both regions are refreshed afterwards so the mode is echoed in both cards
+   * at once rather than one updating and the other going quietly stale.
    */
-  const setDistribution = async (next: PoolDistribution): Promise<void> => {
+  const setDistribution = async (region: PoolRegion, next: PoolDistribution): Promise<void> => {
     const write = settingsScope?.set
     if (write === undefined) {
       setError(t?.('row.modelsSaveError', { message: 'settings scope is read-only' })
@@ -700,28 +1141,32 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
     setFlash(undefined)
     try {
       await write.call(settingsScope, 'distribution', next)
-      await refresh(activeRegion)
+      for (const other of REGION_CARDS) await refresh(other)
     } catch (cause: unknown) {
       if (mounted.current) setError(String(cause))
     }
   }
-
   /**
    * Switch the daily-points automation on or off.
    *
    * The whole `automation` object is written as one key, because that is how the
    * settings document stores it: the schedule fields must be carried along, or a
    * save would drop the hour lists the scheduler is running on.
+   *
+   * The schedule is CN-only (the international gateway has no growth system at
+   * all), so this is written from the CN card and both keys are refreshed: the
+   * scheduler is one shared process, and a stale CN number showing under the
+   * international card would be a lie.
    */
-  const setAutomationEnabled = async (enabled: boolean): Promise<void> => {
+  const setAutomationEnabled = async (region: PoolRegion, enabled: boolean): Promise<void> => {
     const write = settingsScope?.set
     if (write === undefined) {
       setError(t?.('row.modelsSaveError', { message: 'settings scope is read-only' })
         ?? 'settings scope is read-only')
       return
     }
-    const existing = status?.automation
-    setAutomationBusy(true)
+    const existing = statusOf(region)?.automation
+    setAutomationBusyRegion(region)
     setFlash(undefined)
     try {
       // Every schedule field is carried along, `travelHours` included: it used
@@ -741,15 +1186,13 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
         travelHours: hoursOrDefault(existing?.travelHours, DEFAULT_AUTOMATION_HOURS.travel),
         enabled,
       })
-      await refresh(activeRegion)
+      for (const other of REGION_CARDS) await refresh(other)
     } catch (cause: unknown) {
       if (mounted.current) setError(String(cause))
     } finally {
-      if (mounted.current) setAutomationBusy(false)
+      if (mounted.current) setAutomationBusyRegion(undefined)
     }
   }
-
-  /**
   /**
    * Run the whole automation pass now.
    *
@@ -758,8 +1201,9 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
    * the run settles, so the panel can show "running" honestly and report the
    * result when it lands.
    */
-  const runAutomationJob = async (): Promise<void> => {
+  const runAutomationJob = async (region: PoolRegion): Promise<void> => {
     setAutomationRun('all')
+    setAutomationRunRegion(region)
     setFlash(undefined)
     try {
       const response = await fetch(POOL_AUTOMATION_RUN_PATH, {
@@ -774,17 +1218,18 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
         // A run is already going; the status poll below reports its outcome.
         if (mounted.current) setFlash(t?.('row.autoAlreadyRunning') ?? 'A run is already in progress')
       }
-
       // Poll until the scheduler reports the run finished. Bounded so a wedged
-      // run cannot leave the button spinning forever.
+      // run cannot leave the button spinning forever. One scheduler serves both
+      // regions, so its state is read from the CN slice — the only one that
+      // carries an automation block at all.
       let settled = false
       for (let attempt = 0; attempt < AUTOMATION_POLL_ATTEMPTS; attempt += 1) {
         await new Promise(resolve => setTimeout(resolve, AUTOMATION_POLL_MS))
         if (!mounted.current) return
-        const fresh = await refresh(activeRegion)
+        const fresh = await refresh(region)
         if (fresh?.automation?.runInProgress === false) { settled = true; break }
       }
-      await refresh(activeRegion)
+      await refresh(region)
       if (mounted.current) {
         setFlash(settled
           ? (t?.('row.autoRunDone') ?? 'Automation pass finished')
@@ -793,29 +1238,29 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
     } catch (cause: unknown) {
       if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      if (mounted.current) setAutomationRun(undefined)
+      if (mounted.current) {
+        setAutomationRun(undefined)
+        setAutomationRunRegion(undefined)
+      }
     }
   }
-
   /**
    * Save one account reserved-credit floor.
    *
    * A reserve only protects credits if the pool knows the balance, so this
    * also refreshes the account list afterwards: the reserve badge appears
    * as soon as the reading crosses the floor.
-   */
-  /**
-   * Save one account reserved-credit floor.
    *
-   * A reserve only protects credits if the pool knows the balance, so this also
-   * refreshes the account list afterwards: the reserve badge appears as soon as
-   * the reading crosses the floor.
+   * The key is NOT per region, and does not need to be: `creditReserves` is a
+   * flat document keyed by account id, and account ids are unique across both
+   * gateways, so the write cannot land in the wrong place. The region argument
+   * only decides which card re-reads itself.
    *
    * Returns whether the host CONFIRMED the write. The card keys its inline
    * "saved / not saved" note off this, so a failure is shown where the user is
    * looking instead of only in the card-level notice line.
    */
-  const saveCreditReserve = async (accountId: string, reserve: number): Promise<boolean> => {
+  const saveCreditReserve = async (region: PoolRegion, accountId: string, reserve: number): Promise<boolean> => {
     setReserveBusy(accountId)
     setFlash(undefined)
     try {
@@ -827,7 +1272,7 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
       })
       const body = await response.json() as { error?: string }
       if (!response.ok) throw new Error(body.error ?? `HTTP ${response.status}`)
-      await refresh(activeRegion)
+      await refresh(region)
       if (mounted.current) {
         setFlash(reserve > 0
           ? (t?.('row.reserveSaved', { credits: reserve }) ?? `Keeping ${reserve} credits`)
@@ -843,574 +1288,695 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
       if (mounted.current) setReserveBusy(undefined)
     }
   }
-
-  const saveModels = async (): Promise<void> => {
-    if (draft === undefined || status === undefined) return
-    if (enabledCount === 0) {
-      setError(t?.('row.modelsEmpty') ?? 'No model enabled')
-      return
+  const title = t?.('row.title') ?? 'XD Pool'
+  const description = t?.('row.desc') ?? ''
+  /**
+   * The vendor behind one lane, as the login page describes it.
+   *
+   * Both pool lanes ARE two of the thirteen scan-login channels — the pack
+   * registers adapters for `buddy` and `workbuddy` too, and this plugin wins
+   * that registration. So the pool page does not need its own copy of the
+   * vendor's name: it reads the same roster the login page reads and looks the
+   * lane up by its channel id.
+   *
+   * Falling back to the tab label is honest rather than decorative. Before the
+   * roster has loaded — or if the channels document could not be read — the lane
+   * still has to be nameable, and "国内版" is true while it is thin.
+   */
+  const brandOf = (region: PoolRegion): {
+    name: string
+    sub: string
+    note: string
+  } => {
+    const fallbackName = region === 'cn'
+      ? (t?.('row.tabCn') ?? 'CN')
+      : (t?.('row.tabGlobal') ?? 'Global')
+    const found = channels.find(channel => channel.id === REGION_CHANNEL_BY_REGION[region])
+    if (found === undefined) {
+      return { name: fallbackName, sub: '', note: t?.('row.regionWaiting') ?? '' }
     }
-    const write = settingsScope?.set
-    if (write === undefined) {
-      setError(t?.('row.modelsSaveError', { message: 'settings scope is read-only' })
-        ?? 'settings scope is read-only')
-      return
-    }
-    setSavingModels(true)
-    setFlash(undefined)
-    try {
-      // Every id the catalog knows about, so a model added upstream while the
-      // card sat open is not silently dropped by an unrelated save.
-      const enabledModelIds = Object.entries(draft).filter(([, e]) => e.enabled).map(([id]) => id)
-      const imageModelIds = Object.entries(draft).filter(([, e]) => e.images).map(([id]) => id)
-      const contextBudgets: Record<string, number> = {}
-      for (const [id, entry] of Object.entries(draft)) {
-        if (entry.budget !== undefined) contextBudgets[id] = entry.budget
-      }
-      // One key per region: saving this tab must not rewrite the other tab's list.
-      const key = activeRegion === 'cn' ? 'modelSelectionCn' : 'modelSelectionGlobal'
-      await write.call(settingsScope, key, { enabledModelIds, imageModelIds, contextBudgets })
-      setDraft(undefined)
-      if (mounted.current) setFlash(t?.('row.modelsSaved') ?? 'Saved')
-    } catch (cause: unknown) {
-      if (mounted.current) {
-        setError(t?.('row.modelsSaveError', { message: cause instanceof Error ? cause.message : String(cause) })
-          ?? String(cause))
-      }
-    } finally {
-      if (mounted.current) setSavingModels(false)
+    return {
+      name: found.name,
+      sub: found.domain === undefined ? found.org : `${found.org} · ${found.domain}`,
+      note: found.note,
     }
   }
-
-  const title = t?.('row.title') ?? 'WorkBuddy XD Pool'
-  const description = t?.('row.desc') ?? ''
-  const accountCount = status?.accounts.length ?? 0
-  const cooling = status?.cooling ?? 0
-  const idle = status === undefined && error === undefined
-  const hasHealthy = accountCount > 0 && cooling < accountCount
-  const state: 'ok' | 'error' | 'idle' = error !== undefined
-    ? 'error'
-    : (idle ? 'idle' : (hasHealthy ? 'ok' : 'idle'))
-  /** Human label for the active tab, used inside the empty-state copy. */
-  const regionLabel = activeRegion === 'cn'
-    ? (t?.('row.tabCn') ?? 'CN')
-    : (t?.('row.tabGlobal') ?? 'Global')
-
-  const stateLabel = error !== undefined
-    ? (t?.('row.requestFailed') ?? 'Request failed')
-    : accountCount === 0
-      ? (t?.('row.regionEmpty') ?? t?.('row.poolEmpty') ?? 'No account yet')
-      : state === 'ok'
-        ? (t?.('row.ok') ?? 'Healthy')
-        : (t?.('row.allCooling') ?? 'All cooling')
-  const shimRunning = status?.shim.running === true
-  const shimHint = status === undefined
-    ? null
-    : shimRunning
-      ? `${t?.('row.shimRunning') ?? 'Provider listening'}${status.shim.baseUrl === undefined ? '' : ` · ${status.shim.baseUrl}`}`
-      : (t?.('row.shimStopped') ?? 'Provider loopback not running')
-
+  /**
+   * Per-card derived state, computed once per card from its own slice of the
+   * status document.
+   *
+   * Every one of these used to be a single value read from the focused tab,
+   * which was fine when only one card existed. With both cards on screen a
+   * shared `accountCount` would have let the international card render the
+   * domestic account total, so each of them is now computed from the card's own
+   * region and the card reads only its own.
+   */
+  const cardOf = (region: PoolRegion): RegionCardModel => {
+    const here = statusOf(region)
+    const accountCount = here?.accounts.length ?? 0
+    const cooling = here?.cooling ?? 0
+    const idle = here === undefined && error === undefined
+    const hasHealthy = accountCount > 0 && cooling < accountCount
+    const state: 'ok' | 'error' | 'idle' = error !== undefined
+      ? 'error'
+      : (idle ? 'idle' : (hasHealthy ? 'ok' : 'idle'))
+    const models = here?.models ?? []
+    const modelState = modelStateOf(region)
+    const brand = brandOf(region)
+    const activeAccount = here?.activeAccountId === undefined
+      ? undefined
+      : (here.accounts.find(account => account.id === here.activeAccountId))
+    return {
+      region,
+      status: here,
+      accountCount,
+      cooling,
+      idle,
+      hasHealthy,
+      state,
+      regionLabel: region === 'cn'
+        ? (t?.('row.tabCn') ?? 'CN')
+        : (t?.('row.tabGlobal') ?? 'Global'),
+      brandName: brand.name,
+      brandSub: brand.sub,
+      brandNote: brand.note,
+      stateLabel: error !== undefined
+        ? (t?.('row.requestFailed') ?? 'Request failed')
+        : accountCount === 0
+          ? (t?.('row.regionEmpty') ?? t?.('row.poolEmpty') ?? 'No account yet')
+          : state === 'ok'
+            ? (t?.('row.ok') ?? 'Healthy')
+            : (t?.('row.allCooling') ?? 'All cooling'),
+      models,
+      modelState,
+      activeAccount,
+      automation: region === 'cn' ? here?.automation : undefined,      automationTotals: automationTotalsOf(here),
+      /** 'ok' also covers "no accounts yet": a lane with nothing to serve is
+          healthy as a lane, it simply has no roster. Only an unreadable
+          document is an error, so the pill never claims a fault that is really
+          just an empty sign-in list. */
+      cardState: error !== undefined
+        ? 'error'
+        : (accountCount > 0 && cooling < accountCount ? 'ok' : 'cooling'),
+    }
+  }
+  /*
+   * The pool page's own header. The pages that read a different document
+   * (channels, providers) render theirs, because each has its own actions and
+   * its own reason to be empty.
+   *
+   * The per-region actions moved DOWN into the region cards: a page-level
+   * rescan button cannot say which lane it will scan, and with both cards on
+   * screen "Detect accounts again" at the top of the page was a question with
+   * no answer. Every action here targets exactly one lane, so the header is
+   * left without buttons rather than given one that has to guess.
+   */
+  const poolHero = (
+    <PageHero title={title} sub={description} />
+  )
   return (
-    <section className="dsm-workbuddy-xdpool-page">
-      <header className="dsm-workbuddy-xdpool-page-head">
-        <img className="dsm-workbuddy-xdpool-page-icon" src={POOL_PLUGIN_ICON} alt="" />
-        <span className="dsm-workbuddy-xdpool-page-copy">
-          <h2 className="dsm-workbuddy-xdpool-page-title">{title}</h2>
-          <p className="dsm-workbuddy-xdpool-page-desc">{description}</p>
-        </span>
-        <div className="dsm-workbuddy-xdpool-page-actions">
-          <button
-            type="button"
-            className="dsm-btn dsm-btn-outline"
-            disabled={busy}
-            onClick={() => { void rescan() }}
-          >
-            {busy
-              ? (t?.('row.accountsScanning') ?? 'Detecting…')
-              : (t?.('row.accountsRescan') ?? 'Detect accounts again')}
-          </button>
-          {cooling > 0
-            ? <button
-                type="button"
-                className="dsm-btn dsm-btn-outline"
-                disabled={cooldownBusy}
-                onClick={() => { void resetCooldowns() }}
-              >
-                {cooldownBusy
-                  ? (t?.('row.resetCooldownsBusy') ?? 'Clearing…')
-                  : (t?.('row.resetCooldowns') ?? 'Clear all cooldowns')}
-              </button>
-            : null}
-        </div>
-      </header>
-              {/* Region tabs: one supplier per tab. Both are always offered, so an
-                  empty side reads as "not signed in here yet" rather than the tab
-                  appearing only after the user has already signed in. */}
-              <section className="dsm-workbuddy-xdpool-card dsm-workbuddy-xdpool-status">
-              <div className="dsm-workbuddy-xdpool-tabs" role="tablist">
-                    {status?.regions.map(region => (
-                      <button
-                        key={region}
-                        type="button"
-                        role="tab"
-                        aria-selected={region === activeRegion}
-                        className={`dsm-workbuddy-xdpool-tab${region === activeRegion ? ' dsm-workbuddy-xdpool-tab-active' : ''}`}
-                        onClick={() => { setActiveRegion(region) }}
-                      >
-                        <span className="dsm-workbuddy-xdpool-tab-dot" data-state={state} />
-                        {region === 'cn'
-                          ? (t?.('row.tabCn') ?? 'CN')
-                          : (t?.('row.tabGlobal') ?? 'Global')}
-                      </button>
-                    ))}
-                  </div>
-              <div className="dsm-workbuddy-xdpool-usage-head">
-                <div className="dsm-workbuddy-xdpool-usage-copy" role="status">
-                  <div className="dsm-workbuddy-xdpool-usage-status">
-                    <span
-                      aria-hidden="true"
-                      className="dsm-workbuddy-xdpool-usage-dot"
-                      style={{ background: dotColor(state) }}
-                    />
-                    <span>{stateLabel}</span>
-                  </div>
-                  {accountCount > 0
-                    ? <p className="dsm-workbuddy-xdpool-usage-hint">
-                        {t?.('row.accountsSummary', { count: accountCount, cooling })
-                          ?? `${accountCount} account(s) · ${cooling} cooling`}
+    <PoolShell
+      t={t}
+      version={POOL_VERSION}
+      avatar={POOL_CARD_AVATAR}
+      tabs={shellTabs}
+      active={page}
+      onSelect={setPage}
+      hero={page === 'pool' ? poolHero : undefined}
+    >
+      {page === 'aggregate' ? <AggregatePage t={t} />
+        : page === 'channels' ? <ChannelsPage t={t} />
+          : page === 'ledger' ? <LedgerPage t={t} usage={usage} />
+            : page === 'billion' ? <BillionPage t={t} />
+              : page === 'routing' ? <RoutingPage t={t} />
+                : page === 'gateway' ? <GatewayPage t={t} />
+                  : <>
+              <style>{POOL_CARD_CSS}</style>
+              {usage === undefined
+                ? null
+                : <section className="dsm-workbuddy-xdpool-card dsm-workbuddy-xdpool-usage" aria-label={t?.('row.usageTitle') ?? 'Usage'}>
+                    <div className="dsm-workbuddy-xdpool-usage-head">
+                      <h3 className="dsm-workbuddy-xdpool-usage-title">
+                        {t?.('row.usageTitle') ?? 'Usage'}
+                      </h3>
+                      {/* Turns and calls are printed as two numbers, never as
+                          one. A turn that rotated three accounts is ONE thing
+                          the user asked for and THREE upstream round trips;
+                          collapsing them is what makes a panel disagree with
+                          the person reading it. */}
+                      <p className="dsm-workbuddy-xdpool-usage-summary">
+                        {t?.('row.usageTurns', {
+                          turns: usage.turns,
+                          calls: usage.calls,
+                          failed: usage.failedTurns,
+                          recovered: usage.recoveredTurns,
+                        }) ?? `${usage.turns} turn(s) / ${usage.calls} call(s)`}
                       </p>
-                    : null}
-                  {shimHint === null ? null
-                    : <p className="dsm-workbuddy-xdpool-usage-hint">{shimHint}</p>}
-                  {/* How the pool spends: one account at a time, or spread evenly. */}
-                  {status === undefined ? null
-                    : <div className="dsm-workbuddy-xdpool-dist" role="radiogroup"
-                        aria-label={t?.('row.distTitle') ?? 'Account usage'}>
-                        <div className="dsm-workbuddy-xdpool-dist-head">
-                          <span className="dsm-workbuddy-xdpool-dist-title">
-                            {t?.('row.distTitle') ?? 'Account usage'}
-                          </span>
-                          {/* The active mode repeated as a badge in the header:
-                              the answer to "which one is on?" without reading
-                              four cards for the highlighted one. */}
-                          <span className="dsm-workbuddy-xdpool-dist-now">
-                            {distLabel(status.distribution ?? 'priority', t)}
+                    </div>
+                    {usage.calls === 0
+                      ? <p className="dsm-workbuddy-xdpool-usage-note">{t?.('row.usageEmpty') ?? 'No calls recorded yet.'}</p>
+                      : null}
+                    {/* "Reported no tokens" and "used no tokens" are different
+                        facts, and only `usageReported` tells them apart. Printing
+                        a confident zero about a gateway that simply declined to
+                        answer would be the one number a usage panel must never
+                        invent. */}
+                    {usage.usageReported
+                      ? null
+                      : <p className="dsm-workbuddy-xdpool-usage-note">{t?.('row.usageNotReported') ?? 'The gateway reported no token counts.'}</p>}
+                    <div className="dsm-workbuddy-xdpool-usage-rows">
+                      {usage.rows.map(row => (
+                        <div className="dsm-workbuddy-xdpool-usage-row" key={`${row.region}:${row.model}`}>
+                          <span className="dsm-workbuddy-xdpool-usage-model">{row.model}</span>
+                          <span className="dsm-workbuddy-xdpool-usage-numbers">
+                            {t?.('row.usageTokens', {
+                              input: formatNumber(row.inputTokens),
+                              output: formatNumber(row.outputTokens),
+                            }) ?? `${formatNumber(row.inputTokens)} in / ${formatNumber(row.outputTokens)} out`}
+                            {row.cachedTokens > 0
+                              ? ` · ${t?.('row.usageCached', { count: formatNumber(row.cachedTokens) }) ?? `${formatNumber(row.cachedTokens)} cached`}`
+                              : ''}
+                            {row.tps === null
+                              ? ''
+                              : ` · ${t?.('row.usageSpeed', { tps: formatNumber(row.tps) }) ?? `${formatNumber(row.tps)} tok/s`}`}
+                            {row.avgTtftMs === null
+                              ? ''
+                              : ` · ${t?.('row.usageTtft', { ms: formatNumber(row.avgTtftMs) }) ?? `ttft ${formatNumber(row.avgTtftMs)}ms`}`}
+                            {row.failed > 0
+                              ? ` · ${t?.('row.usageRowFailed', { count: row.failed }) ?? `${row.failed} failed`}`
+                              : ''}
                           </span>
                         </div>
-                        <div className="dsm-workbuddy-xdpool-dist-options">
-                        {DIST_OPTIONS.map(option => {
-                          const active = (status.distribution ?? 'priority') === option
-                          const label = distLabel(option, t)
-                          const hint = distHint(option, t)
-                          const cls = 'dsm-workbuddy-xdpool-dist-option'
-                            + (active ? ' dsm-workbuddy-xdpool-dist-option-active' : '')
-                          return (
+                      ))}
+                    </div>
+                    {/* Stated rather than hidden: the window lives in memory, so
+                        a restart empties it. A user who reads these as a
+                        permanent record will one day be wrong about them. */}
+                    <p className="dsm-workbuddy-xdpool-usage-note">
+                      {t?.('row.usageWindow', { samples: usage.samples }) ?? 'Last {samples} call(s) held in memory; restarting clears them.'}
+                    </p>
+                  </section>}
+              
+              {/* Two region cards side by side, one per supplier lane.
+                  Both are always rendered, so a lane with no accounts reads as
+                  "not signed in here yet" rather than a tab that only appears
+                  after the user has already signed in somewhere else. */}
+              <section className="dsm-workbuddy-xdpool-regions">
+              <div className="dsm-workbuddy-xdpool-region-grid">
+                {REGION_CARDS.map(region => {
+                  const card = cardOf(region)
+                  const accountsPaneId = `dsm-xdpool-${region}-accounts`
+                  const modelsPaneId = `dsm-xdpool-${region}-models`
+                  const distPaneId = `dsm-xdpool-${region}-dist`
+                  const autoPaneId = `dsm-xdpool-${region}-auto`
+                  const accountsOpen = openedPanes[accountsPaneId] === true
+                  const modelsOpen = openedPanes[modelsPaneId] === true
+                  const distOpen = openedPanes[distPaneId] === true
+                  const autoOpen = openedPanes[autoPaneId] === true
+                  const models = card.models
+                  const creditLeft = creditLeftOf(card.status)
+                  /*
+                   * Narrowed into locals instead of read off `card` in the JSX
+                   * below. TypeScript's control-flow analysis tracks a `const`
+                   * but forgets a property, so `card.automation.enabled` inside
+                   * an onClick closure would still be "possibly undefined" even
+                   * three levels below a guard that proved it.
+                   */
+                  const automation = card.automation
+                  const here = card.status
+                  return (
+                    <article
+                      key={region}
+                      className="dsm-workbuddy-xdpool-region dsm-workbuddy-xdpool-region-in"
+                      data-region={region}
+                      data-state={card.cardState}
+                      style={regionCardStyle(region) as Record<string, string>}
+                    >
+                      <div className="dsm-workbuddy-xdpool-region-head">
+                        <RegionCardTile region={region} />
+                        <div className="dsm-workbuddy-xdpool-region-titles">
+                          <h3 className="dsm-workbuddy-xdpool-region-title">{card.brandName}</h3>
+                          <p className="dsm-workbuddy-xdpool-region-sub">{card.brandSub}</p>
+                        </div>
+                        <span className="dsm-workbuddy-xdpool-region-state">{card.stateLabel}</span>
+                      </div>
+                      <p className="dsm-workbuddy-xdpool-region-note">{card.brandNote}</p>
+                      {/*
+                        * Numbers first, label after — the order the reference
+                        * build reads them in, and the order a user compares two
+                        * lanes in. These were three sunken tiles until this row
+                        * went inline: three boxes to say three numbers made the
+                        * card taller than the thing it was describing, and the
+                        * numbers were the smallest text on it.
+                        */}
+                      <div className="dsm-workbuddy-xdpool-region-stats">
+                        <span className="dsm-workbuddy-xdpool-region-stat">
+                          <span className="dsm-workbuddy-xdpool-region-label">
+                            {t?.('row.regionStatAccounts') ?? 'accounts'}
+                          </span>{' '}
+                          <b className="dsm-workbuddy-xdpool-region-num">{card.accountCount === 0 ? '–' : String(card.accountCount)}</b>
+                        </span>
+                        <span className="dsm-workbuddy-xdpool-region-stat">
+                          <span className="dsm-workbuddy-xdpool-region-label">
+                            {t?.('row.regionStatModels') ?? 'models'}
+                          </span>{' '}
+                          <b className="dsm-workbuddy-xdpool-region-num">{models.length === 0 ? '–' : `${card.modelState.enabled}/${models.length}`}</b>
+                        </span>
+                        <span className="dsm-workbuddy-xdpool-region-stat">
+                          <span className="dsm-workbuddy-xdpool-region-label">
+                            {t?.('row.regionStatCredit') ?? 'credit left'}
+                          </span>{' '}
+                          <b className="dsm-workbuddy-xdpool-region-num" data-tone="quiet">
+                            {creditLeft ?? '–'}
+                          </b>
+                        </span>
+                      </div>
+                      <div className="dsm-workbuddy-xdpool-region-actions">
+                        <div className="dsm-workbuddy-xdpool-region-btns">
+                          <button
+                            type="button"
+                            className="dsm-btn dsm-btn-outline dsm-workbuddy-xdpool-region-btn"
+                            disabled={busyRegion !== undefined}
+                            aria-busy={busyRegion === region}
+                            onClick={() => { void rescan(region) }}
+                          >
+                            {busyRegion === region
+                              ? (t?.('row.accountsScanning') ?? 'Detecting…')
+                              : (t?.('row.accountsRescan') ?? 'Detect accounts again')}
+                          </button>
+                          <button
+                            type="button"
+                            className="dsm-btn dsm-btn-outline dsm-workbuddy-xdpool-region-btn"
+                            disabled={cooldownBusyRegion !== undefined || card.cooling === 0}
+                            aria-busy={cooldownBusyRegion === region}
+                            onClick={() => { void resetCooldowns(region) }}
+                          >
+                            {cooldownBusyRegion === region
+                              ? (t?.('row.resetCooldownsBusy') ?? 'Clearing…')
+                              : (t?.('row.resetCooldowns') ?? 'Clear all cooldowns')}
+                          </button>
+                          <button
+                            type="button"
+                            className="dsm-btn dsm-btn-outline dsm-workbuddy-xdpool-region-btn"
+                            disabled={catalogBusyRegion !== undefined}
+                            aria-busy={catalogBusyRegion === region}
+                            onClick={() => { void refreshCatalog(region) }}
+                            title={t?.('row.catalogRefreshHint') ?? 'Fetch the model list again from WorkBuddy'}
+                          >
+                            {catalogBusyRegion === region
+                              ? (t?.('row.catalogRefreshing') ?? 'Fetching…')
+                              : (t?.('row.catalogRefresh') ?? 'Refresh models')}
+                          </button>
+                        </div>
+                        <div className="dsm-workbuddy-xdpool-region-seg">
+                          <RegionCardTrigger
+                            controls={accountsPaneId}
+                            open={accountsOpen}
+                            label={t?.('row.regionOpenAccounts') ?? `Open the ${card.regionLabel} account list`}
+                            glyph="▶"
+                            text={t?.('row.accountsTitle') ?? 'Accounts'}
+                            count={card.accountCount === 0 ? undefined : String(card.accountCount)}
+                            onToggle={() => { setPane(accountsPaneId, !accountsOpen) }}
+                          />
+                          <RegionCardTrigger
+                            controls={modelsPaneId}
+                            open={modelsOpen}
+                            label={t?.('row.regionOpenModels') ?? `Open the ${card.regionLabel} model list`}
+                            glyph="▸"
+                            text={t?.('row.modelsTitle') ?? 'Models'}
+                            count={models.length === 0 ? undefined : String(models.length)}
+                            onToggle={() => { setPane(modelsPaneId, !modelsOpen) }}
+                          />
+                        </div>
+                      </div>
+                      {region === 'cn'
+                        ? <div className="dsm-workbuddy-xdpool-region-cntools">
                             <button
-                              key={option}
                               type="button"
-                              role="radio"
-                              aria-checked={active}
-                              title={hint}
-                              disabled={!modelsEditable}
-                              className={cls}
-                              onClick={() => { void setDistribution(option) }}
+                              className="dsm-workbuddy-xdpool-region-tool"
+                              aria-expanded={distOpen}
+                              aria-controls={distPaneId}
+                              onClick={() => { setPane(distPaneId, !distOpen) }}
                             >
-                              <span className="dsm-workbuddy-xdpool-dist-option-top">
-                                <span className="dsm-workbuddy-xdpool-dist-option-name">{label}</span>
-                                {option === 'sticky'
-                                  ? <span className="dsm-workbuddy-xdpool-dist-option-badge">
-                                      {t?.('row.distRecommended') ?? 'Recommended'}
-                                    </span>
-                                  : null}
+                              <span className="dsm-workbuddy-xdpool-region-tool-caret" aria-hidden="true">▸</span>
+                              <span>{t?.('row.distTitle') ?? 'Account usage'}</span>
+                              <span className="dsm-workbuddy-xdpool-region-tool-value">
+                                {distLabel(card.status?.distribution ?? 'priority', t)}
                               </span>
                             </button>
-                          )
-                        })}
-                        </div>
-                        {/* One sentence for the mode that is actually on. Five
-                            chips carrying five sentences each is five paragraphs;
-                            this keeps the row a row and still explains the choice. */}
-                        <p className="dsm-workbuddy-xdpool-dist-hint">
-                          {distHint(status.distribution ?? 'priority', t)}
-                        </p>
-                      </div>}
-                </div>
-                <div className="dsm-workbuddy-xdpool-usage-actions">
-                  <button
-                    type="button"
-                    className="dsm-btn dsm-btn-outline"
-                    disabled={busy}
-                    onClick={() => { void rescan() }}
-                  >
-                    {busy
-                      ? (t?.('row.accountsScanning') ?? 'Detecting…')
-                      : (t?.('row.accountsRescan') ?? 'Detect accounts again')}
-                  </button>
-                  {cooling > 0
-                    ? <button
-                        type="button"
-                        className="dsm-btn dsm-btn-outline"
-                        disabled={cooldownBusy}
-                        onClick={() => { void resetCooldowns() }}
-                      >
-                        {cooldownBusy
-                          ? (t?.('row.resetCooldownsBusy') ?? 'Clearing…')
-                          : (t?.('row.resetCooldowns') ?? 'Clear all cooldowns')}
-                      </button>
-                    : null}
-                </div>
+                            <button
+                              type="button"
+                              className="dsm-workbuddy-xdpool-region-tool"
+                              aria-expanded={autoOpen}
+                              aria-controls={autoPaneId}
+                              onClick={() => { setPane(autoPaneId, !autoOpen) }}
+                            >
+                              <span className="dsm-workbuddy-xdpool-region-tool-caret" aria-hidden="true">▸</span>
+                              <span>{t?.('row.autoTitle') ?? 'Automation'}</span>
+                              <span className="dsm-workbuddy-xdpool-region-tool-value">
+                                {card.automation === undefined
+                                  ? '–'
+                                  : card.automation.enabled
+                                    ? (t?.('row.autoOn') ?? 'On')
+                                    : (t?.('row.autoOff') ?? 'Off')}
+                              </span>
+                            </button>
+                          </div>
+                        : null}
+                      <RegionCardPane id={accountsPaneId} open={accountsOpen}>
+                        {card.accountCount === 0 && card.status !== undefined
+                          ? <div className="dsm-workbuddy-xdpool-region-empty">
+                              <p className="dsm-workbuddy-xdpool-empty-title">
+                                {t?.('row.regionEmptyTitle', { region: card.regionLabel })
+                                  ?? t?.('row.regionEmpty') ?? 'No account yet'}
+                              </p>
+                              <div className="dsm-workbuddy-xdpool-empty-steps">
+                                <p className="dsm-workbuddy-xdpool-empty-steps-title">
+                                  {t?.('row.regionHowToTitle', { region: card.regionLabel })
+                                    ?? `How to sign in to the ${card.regionLabel} version`}
+                                </p>
+                                <ol className="dsm-workbuddy-xdpool-empty-list">
+                                  <li>{t?.('row.regionHowTo1') ?? ''}</li>
+                                  <li>{t?.('row.regionHowTo2') ?? ''}</li>
+                                  <li>{t?.('row.regionHowTo3') ?? ''}</li>
+                                  <li>{t?.('row.regionHowTo4') ?? ''}</li>
+                                </ol>
+                              </div>
+                              <p className="dsm-workbuddy-xdpool-empty-note">
+                                {t?.('row.regionHowToNote') ?? ''}
+                              </p>
+                            </div>
+                          : card.accountCount === 0
+                            ? null
+                            : <>
+                                {/*
+                                  Which account is serving used to be its own green
+                                  strip above the list — a fact about one row, drawn
+                                  where a summary of all of them would go, so the
+                                  eye had to hunt for the row it belonged to. The
+                                  marker now sits on the serving row itself.
+                                */}
+                                {card.status?.accounts.map(account => (
+                                  <AccountBlock
+                                    key={account.id}
+                                    account={account}
+                                    serving={card.activeAccount?.id === account.id}
+                                    models={card.models}
+                                    {...checkinBusyId === undefined ? {} : { checkinBusyId }}
+                                    onClaimCheckin={(accountId) => { void claimCheckin(region, accountId) }}
+                                    onSaveCreditReserve={(accountId, reserve) => saveCreditReserve(region, accountId, reserve)}
+                                    onToggleDisabled={(accountId, disabled) => { void toggleAccountDisabled(region, accountId, disabled) }}
+                                    onIgnoreAccount={(accountId) => { void setAccountIgnored(region, accountId, true) }}
+                                    onPreferAccount={(accountId) => { void setPreferredAccount(region, accountId) }}
+                                    {...accountBusyId === undefined ? {} : { accountBusyId }}
+                                    t={t}
+                                  />
+                                ))}
+                              </>}
+                        {card.status?.skippedFiles === undefined || card.status.skippedFiles.length === 0
+                          ? null
+                          : <div className="dsm-workbuddy-xdpool-skipped">
+                              <p className="dsm-workbuddy-xdpool-skipped-summary">
+                                {t?.('row.skippedFiles', { count: card.status.skippedFiles.length })
+                                  ?? `${card.status.skippedFiles.length} credential file(s) could not be read`}
+                              </p>
+                              {card.status.skippedFiles.slice(0, 4).map(entry => (
+                                <p key={entry.file} className="dsm-workbuddy-xdpool-skipped-row">
+                                  <span className="dsm-workbuddy-xdpool-skipped-file">{entry.file}</span>
+                                  <span className="dsm-workbuddy-xdpool-skipped-reason">
+                                    {entry.reason === 'encrypted'
+                                      ? (t?.('row.skippedEncrypted') ?? 'encrypted — start WorkBuddy once')
+                                      : entry.reason === 'unreadable'
+                                        ? (t?.('row.skippedUnreadable') ?? 'file could not be read')
+                                        : (t?.('row.skippedMalformed') ?? 'not a credential file')}
+                                  </span>
+                                </p>
+                              ))}
+                            </div>}
+                        {(card.status?.ignored.length ?? 0) > 0
+                          ? <div className="dsm-workbuddy-xdpool-ignored">
+                              <p className="dsm-workbuddy-xdpool-ignored-summary">
+                                {t?.('row.ignoredSummary', { count: card.status?.ignored.length ?? 0 })
+                                  ?? `${card.status?.ignored.length ?? 0} account(s) no longer in the pool`}
+                              </p>
+                              {card.status?.ignored.map(entry => (
+                                <div key={entry.id} className="dsm-workbuddy-xdpool-ignored-row">
+                                  <span className="dsm-workbuddy-xdpool-ignored-label">{entry.label}</span>
+                                  <button
+                                    type="button"
+                                    className="dsm-workbuddy-xdpool-ignored-restore"
+                                    title={t?.('row.ignoredRestoreHint') ?? 'Put this account back into the pool'}
+                                    disabled={accountBusyId === entry.id}
+                                    onClick={() => { void setAccountIgnored(region, entry.id, false) }}
+                                  >
+                                    {t?.('row.ignoredRestore') ?? 'Restore'}
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          : null}
+                      </RegionCardPane>
+                      <RegionCardPane id={modelsPaneId} open={modelsOpen}>
+                        {models.length === 0
+                          ? <p className="dsm-workbuddy-xdpool-region-empty">
+                              {t?.('row.regionNoModels') ?? 'No model published by this gateway yet.'}
+                            </p>
+                          : <>
+                              <div className="dsm-workbuddy-xdpool-region-pane-head">
+                                <span className="dsm-workbuddy-xdpool-region-pane-title">
+                                  {t?.('row.modelsEnabledCount', {
+                                    enabled: card.modelState.enabled,
+                                    total: models.length,
+                                  }) ?? `${card.modelState.enabled} / ${models.length} enabled`}
+                                </span>
+                                <div className="dsm-workbuddy-xdpool-models-actions">
+                                  {card.status?.catalogSource !== 'fallback'
+                                    ? null
+                                    : <span
+                                        className="dsm-workbuddy-xdpool-catalog-offline"
+                                        title={card.status.catalogError ?? undefined}
+                                      >
+                                        {t?.('row.catalogOffline') ?? 'built-in list (offline)'}
+                                      </span>}
+                                  <button
+                                    type="button"
+                                    className="dsm-btn dsm-btn-outline"
+                                    disabled={!card.modelState.dirty}
+                                    onClick={() => { discardModels(region) }}
+                                  >
+                                    {t?.('row.modelsDiscard') ?? 'Discard'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="dsm-btn dsm-btn-primary"
+                                    disabled={!card.modelState.dirty || card.modelState.enabled === 0}
+                                    onClick={() => { void saveModels(region) }}
+                                  >
+                                    {savingModelsRegion === region
+                                      ? (t?.('row.modelsSaving') ?? 'Saving…')
+                                      : (t?.('row.modelsSave') ?? 'Save')}
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="dsm-workbuddy-xdpool-model-list">
+                                {[...models]
+                                  .sort((a, b) => Number(isFreeNow(b, now, region)) - Number(isFreeNow(a, now, region)))
+                                  .map(model => (
+                                    <ModelRow
+                                      key={model.id}
+                                      model={model}
+                                      region={region}
+                                      paidTwin={paidAlternativeFor(model, models)}
+                                      t={t}
+                                      draft={card.modelState.draft[model.id] ?? { enabled: model.enabled, images: model.supportsImages }}
+                                      editable={card.modelState.editable}
+                                      onToggle={(id) => { toggleModel(region, id) }}
+                                      onToggleImage={(id) => { toggleModelImage(region, id) }}
+                                      onBudget={(id, budget) => { setModelBudget(region, id, budget) }}
+                                      onTest={() => { void testModel(WORKBUDDY_REGION_PROVIDER[region], model.id) }}
+                                      probe={probes[model.id]}
+                                      probing={probingModel === model.id}
+                                    />
+                                  ))}
+                              </div>
+                            </>}
+                      </RegionCardPane>
+                      <RegionCardPane id={distPaneId} open={distOpen}>
+                        {card.status === undefined ? null
+                          : <div className="dsm-workbuddy-xdpool-dist" role="radiogroup"
+                              aria-label={t?.('row.distTitle') ?? 'Account usage'}>
+                              <div className="dsm-workbuddy-xdpool-dist-head">
+                                <span className="dsm-workbuddy-xdpool-dist-title">
+                                  {t?.('row.distTitle') ?? 'Account usage'}
+                                </span>
+                                <span className="dsm-workbuddy-xdpool-dist-now">
+                                  {distLabel(card.status.distribution ?? 'priority', t)}
+                                </span>
+                              </div>
+                              <div className="dsm-workbuddy-xdpool-dist-options">
+                                {DIST_OPTIONS.map(option => {
+                                  const active = (card.status?.distribution ?? 'priority') === option
+                                  const cls = 'dsm-workbuddy-xdpool-dist-option'
+                                    + (active ? ' dsm-workbuddy-xdpool-dist-option-active' : '')
+                                  return (
+                                    <button
+                                      key={option}
+                                      type="button"
+                                      role="radio"
+                                      aria-checked={active}
+                                      title={distHint(option, t)}
+                                      disabled={!card.modelState.editable}
+                                      className={cls}
+                                      onClick={() => { void setDistribution(region, option) }}
+                                    >
+                                      <span className="dsm-workbuddy-xdpool-dist-option-top">
+                                        <span className="dsm-workbuddy-xdpool-dist-option-name">{distLabel(option, t)}</span>
+                                        {option === 'sticky'
+                                          ? <span className="dsm-workbuddy-xdpool-dist-option-badge">
+                                              {t?.('row.distRecommended') ?? 'Recommended'}
+                                            </span>
+                                          : null}
+                                      </span>
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                              <p className="dsm-workbuddy-xdpool-dist-hint">
+                                {distHint(card.status?.distribution ?? 'priority', t)}
+                              </p>
+                            </div>}
+                      </RegionCardPane>
+                      <RegionCardPane id={autoPaneId} open={autoOpen}>
+                        {automation === undefined
+                          ? <p className="dsm-workbuddy-xdpool-region-empty">
+                              {t?.('row.autoUnavailable') ?? 'This lane has no daily-points system.'}
+                            </p>
+                          : here === undefined
+                            ? null
+                            : <div className="dsm-workbuddy-xdpool-auto">
+                              <div className="dsm-workbuddy-xdpool-auto-head">
+                                <span className="dsm-workbuddy-xdpool-auto-title">
+                                  {t?.('row.autoTitle') ?? 'Automation'}
+                                </span>
+                                {automation.enabled
+                                  ? <button
+                                      type="button"
+                                      className="dsm-btn dsm-btn-outline dsm-workbuddy-xdpool-auto-run"
+                                      disabled={automationRun !== undefined}
+                                      onClick={() => { void runAutomationJob(region) }}
+                                    >
+                                      {automationRun !== undefined
+                                        ? (t?.('row.autoRunning') ?? 'Running…')
+                                        : (t?.('row.autoRunAll') ?? 'Run all now')}
+                                    </button>
+                                  : null}
+                                <button
+                                  type="button"
+                                  role="switch"
+                                  aria-checked={automation.enabled}
+                                  disabled={!settingsWritable || automationBusyRegion !== undefined}
+                                  className={`dsm-workbuddy-xdpool-auto-switch${automation.enabled ? ' dsm-workbuddy-xdpool-auto-switch-on' : ''}`}
+                                  onClick={() => { void setAutomationEnabled(region, !automation.enabled) }}
+                                >
+                                  {automationBusyRegion === region
+                                    ? (t?.('row.autoBusy') ?? 'Saving…')
+                                    : automation.enabled
+                                      ? (t?.('row.autoOn') ?? 'On')
+                                      : (t?.('row.autoOff') ?? 'Off')}
+                                </button>
+                              </div>
+                              <p className="dsm-workbuddy-xdpool-auto-hint">
+                                {automation.enabled
+                                  ? (t?.('row.autoHintOn') ?? 'Reports activity, claims task rewards and checks in once a day.')
+                                  : (t?.('row.autoHintOff') ?? 'Off: no background requests are made for you.')}
+                              </p>
+                              {card.automationTotals.credit === 0 && card.automationTotals.checkinCredit === 0
+                                && card.automationTotals.bonusCredit === 0 && card.automationTotals.travelCredit === 0
+                                ? null
+                                : <div className="dsm-workbuddy-xdpool-auto-total">
+                                    <span className="dsm-workbuddy-xdpool-auto-total-label">
+                                      {t?.('row.autoToday') ?? 'Today'}
+                                    </span>
+                                    <span className="dsm-workbuddy-xdpool-auto-total-list">
+                                      {card.automationTotals.credit > 0
+                                        ? <span className="dsm-workbuddy-xdpool-auto-total-row">
+                                            {t?.('row.autoFromTasks', {
+                                              credit: card.automationTotals.credit,
+                                              energy: card.automationTotals.energy,
+                                              count: card.automationTotals.claimed,
+                                            }) ?? `Tasks +${card.automationTotals.credit}`}
+                                          </span>
+                                        : null}
+                                      {card.automationTotals.checkinCredit > 0
+                                        ? <span className="dsm-workbuddy-xdpool-auto-total-row">
+                                            {t?.('row.autoFromCheckin', { credit: card.automationTotals.checkinCredit })
+                                              ?? `Check-in +${card.automationTotals.checkinCredit}`}
+                                          </span>
+                                        : null}
+                                      {card.automationTotals.bonusCredit > 0
+                                        ? <span className="dsm-workbuddy-xdpool-auto-total-row">
+                                            {t?.('row.autoFromBonus', { credit: card.automationTotals.bonusCredit })
+                                              ?? `Streak +${card.automationTotals.bonusCredit}`}
+                                          </span>
+                                        : null}
+                                      {card.automationTotals.travelCredit > 0
+                                        ? <span className="dsm-workbuddy-xdpool-auto-total-row">
+                                            {t?.('row.autoFromTravel', { credit: card.automationTotals.travelCredit })
+                                              ?? `Buddy +${card.automationTotals.travelCredit}`}
+                                          </span>
+                                        : null}
+                                    </span>
+                                  </div>}
+                              {automation.enabled
+                                ? <div className="dsm-workbuddy-xdpool-auto-jobs">
+                                    {AUTOMATION_JOBS.map(kind => {
+                                      const job = automationJob(here, kind)
+                                      const hours = automationHours(here, kind)
+                                      const label = t?.(`row.autoJob_${kind}`) ?? kind
+                                      return (
+                                        <div key={kind} className="dsm-workbuddy-xdpool-auto-job">
+                                          <span className="dsm-workbuddy-xdpool-auto-job-name">{label}</span>
+                                          <span className="dsm-workbuddy-xdpool-auto-job-when">
+                                            {hours.length === 0
+                                              ? (t?.('row.autoHourNone') ?? 'not scheduled')
+                                              : hours.map(hour => `${String(hour).padStart(2, '0')}:00`).join(' · ')}
+                                          </span>
+                                          <span className="dsm-workbuddy-xdpool-auto-job-last">
+                                            {job?.lastRunAtMs === undefined
+                                              ? (t?.('row.autoNever') ?? 'not run yet')
+                                              : `${formatTime(job.lastRunAtMs)} · ${job.ok}${job.failed > 0 ? `/${job.failed}` : ''}`}
+                                          </span>
+                                          {job?.progress === undefined
+                                            ? null
+                                            : <span className="dsm-workbuddy-xdpool-auto-job-note">{job.progress}</span>}
+                                          {job?.detail === undefined || job.detail.length === 0
+                                            ? null
+                                            : <span className="dsm-workbuddy-xdpool-auto-job-detail">
+                                                {job.detail.join(' · ')}
+                                              </span>}
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                : null}
+                            </div>}
+                      </RegionCardPane>
+                    </article>
+                  )
+                })}
               </div>
               </section>
-
-              {/* Daily-points automation: the schedule and each job's last run.
-                  Off by default, so the panel leads with the switch and only
-                  spells out the schedule once it is on. */}
-              {/* Automation is CN-only: the international gateway has no growth/task
-                  system at all, so showing the panel there would offer a switch that
-                  can never do anything. */}
-              {activeRegion !== 'cn' || status?.automation === undefined ? null
-                : <section className="dsm-workbuddy-xdpool-card dsm-workbuddy-xdpool-auto" aria-label={t?.('row.autoTitle') ?? 'Automation'}>
-                    <div className="dsm-workbuddy-xdpool-auto-head">
-                      <span className="dsm-workbuddy-xdpool-auto-title">
-                        {t?.('row.autoTitle') ?? 'Automation'}
-                      </span>
-                        {/* One button for the whole pass rather than one per job:
-                            the jobs are ordered and share accounts, so running them
-                            one by one is never what the user means. */}
-                        {!status.automation.enabled ? null
-                          : <button
-                              type="button"
-                              className="dsm-btn dsm-btn-outline dsm-workbuddy-xdpool-auto-run"
-                              disabled={automationRun !== undefined}
-                              onClick={() => { void runAutomationJob() }}
-                            >
-                              {automationRun !== undefined
-                                ? (t?.('row.autoRunning') ?? 'Running…')
-                                : (t?.('row.autoRunAll') ?? 'Run all now')}
-                            </button>}
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={status.automation.enabled}
-                        disabled={!settingsWritable || automationBusy}
-                        className={`dsm-workbuddy-xdpool-auto-switch${status.automation.enabled ? ' dsm-workbuddy-xdpool-auto-switch-on' : ''}`}
-                        onClick={() => { void setAutomationEnabled(!status.automation.enabled) }}
-                      >
-                        {automationBusy
-                          ? (t?.('row.autoBusy') ?? 'Saving…')
-                          : status.automation.enabled
-                            ? (t?.('row.autoOn') ?? 'On')
-                            : (t?.('row.autoOff') ?? 'Off')}
-                      </button>
-                    </div>
-                    <p className="dsm-workbuddy-xdpool-auto-hint">
-                      {status.automation.enabled
-                        ? (t?.('row.autoHintOn') ?? 'Reports activity, claims task rewards and checks in once a day.')
-                        : (t?.('row.autoHintOff') ?? 'Off: no background requests are made for you.')}
-                    </p>
-                      {/* Today's take, split by source: "we claimed tasks" and "we
-                          checked in" are different achievements, so one merged number
-                          would hide which of them actually ran. */}
-                      {automationTotals.credit === 0 && automationTotals.checkinCredit === 0
-                        && automationTotals.bonusCredit === 0 && automationTotals.travelCredit === 0
-                        ? null
-                        : <div className="dsm-workbuddy-xdpool-auto-total">
-                            <span className="dsm-workbuddy-xdpool-auto-total-label">
-                              {t?.('row.autoToday') ?? 'Today'}
-                            </span>
-                            <span className="dsm-workbuddy-xdpool-auto-total-list">
-                              {automationTotals.credit > 0
-                                ? <span className="dsm-workbuddy-xdpool-auto-total-row">
-                                    {t?.('row.autoFromTasks', { credit: automationTotals.credit, energy: automationTotals.energy, count: automationTotals.claimed })
-                                      ?? `Tasks +${automationTotals.credit}`}
-                                  </span>
-                                : null}
-                              {automationTotals.checkinCredit > 0
-                                ? <span className="dsm-workbuddy-xdpool-auto-total-row">
-                                    {t?.('row.autoFromCheckin', { credit: automationTotals.checkinCredit })
-                                      ?? `Check-in +${automationTotals.checkinCredit}`}
-                                  </span>
-                                : null}
-                              {automationTotals.bonusCredit > 0
-                                ? <span className="dsm-workbuddy-xdpool-auto-total-row">
-                                    {t?.('row.autoFromBonus', { credit: automationTotals.bonusCredit })
-                                      ?? `Streak +${automationTotals.bonusCredit}`}
-                                  </span>
-                                : null}
-                              {automationTotals.travelCredit > 0
-                                ? <span className="dsm-workbuddy-xdpool-auto-total-row">
-                                    {t?.('row.autoFromTravel', { credit: automationTotals.travelCredit })
-                                      ?? `Buddy +${automationTotals.travelCredit}`}
-                                  </span>
-                                : null}
-                            </span>
-                          </div>}
-                    {status.automation.enabled
-                      ? <div className="dsm-workbuddy-xdpool-auto-jobs">
-                          {AUTOMATION_JOBS.map(kind => {
-                            const job = automationJob(status, kind)
-                            const hours = automationHours(status, kind)
-                            const label = t?.(`row.autoJob_${kind}`) ?? kind
-                            return (
-                                <div key={kind} className="dsm-workbuddy-xdpool-auto-job">
-                                  <span className="dsm-workbuddy-xdpool-auto-job-name">{label}</span>
-                                  <span className="dsm-workbuddy-xdpool-auto-job-when">
-                                    {hours.length === 0
-                                      ? (t?.('row.autoHourNone') ?? 'not scheduled')
-                                      : hours.map(hour => `${String(hour).padStart(2, '0')}:00`).join(' · ')}
-                                  </span>
-                                  <span className="dsm-workbuddy-xdpool-auto-job-last">
-                                    {/* The TIME, not just the date. A date-only
-                                        stamp cannot answer "did this run once
-                                        today or eight times" — every repeat
-                                        rendered as the same `2026-09-28 · 2`,
-                                        which is exactly why the runaway
-                                        re-run defect stayed invisible on the
-                                        card and had to be found in the logs. */}
-                                    {job?.lastRunAtMs === undefined
-                                      ? (t?.('row.autoNever') ?? 'not run yet')
-                                      : `${formatTime(job.lastRunAtMs)} · ${job.ok}${job.failed > 0 ? `/${job.failed}` : ''}`}
-                                  </span>
-                                  {job?.progress === undefined ? null
-                                    : <span className="dsm-workbuddy-xdpool-auto-job-note">{job.progress}</span>}
-                                  {job?.detail === undefined || job.detail.length === 0 ? null
-                                    : <span className="dsm-workbuddy-xdpool-auto-job-detail">
-                                        {job.detail.join(' · ')}
-                                      </span>}
-                                </div>
-                            )
-                          })}
-                        </div>
-                      : null}
-                  </section>}
               {flash === undefined ? null
                 : <p className="dsm-workbuddy-xdpool-note">{flash}</p>}
               {error === undefined ? null
                 : <p className="dsm-workbuddy-xdpool-error">
                     {t?.('row.error', { message: error }) ?? `Pool status unavailable: ${error}`}
                   </p>}
-
-              {accountCount === 0 && error === undefined
-                ? <section className="dsm-workbuddy-xdpool-card dsm-workbuddy-xdpool-empty">
-                    <p className="dsm-workbuddy-xdpool-empty-title">
-                      {t?.('row.regionEmptyTitle', { region: regionLabel })
-                        ?? t?.('row.regionEmpty') ?? 'No account yet'}
-                    </p>
-                    <div className="dsm-workbuddy-xdpool-empty-steps">
-                      <p className="dsm-workbuddy-xdpool-empty-steps-title">
-                        {t?.('row.regionHowToTitle', { region: regionLabel })
-                          ?? `How to sign in to the ${regionLabel} version`}
-                      </p>
-                      <ol className="dsm-workbuddy-xdpool-empty-list">
-                        <li>{t?.('row.regionHowTo1') ?? ''}</li>
-                        <li>{t?.('row.regionHowTo2') ?? ''}</li>
-                        <li>{t?.('row.regionHowTo3') ?? ''}</li>
-                        <li>{t?.('row.regionHowTo4') ?? ''}</li>
-                      </ol>
-                    </div>
-                    <p className="dsm-workbuddy-xdpool-empty-note">
-                      {t?.('row.regionHowToNote') ?? ''}
-                    </p>
-                  </section>
-                : null}
-
-              {accountCount > 0
-                ? <section className="dsm-workbuddy-xdpool-card dsm-workbuddy-xdpool-accounts" aria-label={t?.('row.accountsTitle') ?? 'Accounts'}>
-                    <div className="dsm-workbuddy-xdpool-accounts-head">
-                      <h3 className="dsm-workbuddy-xdpool-accounts-title">
-                        {t?.('row.accountsTitle') ?? 'Accounts in the pool'}
-                      </h3>
-                      <p className="dsm-workbuddy-xdpool-accounts-summary">
-                        {t?.('row.accountsSummary', { count: accountCount, cooling })
-                          ?? `${accountCount} account(s) · ${cooling} cooling`}
-                      </p>
-                    </div>
-                    {/* Files on disk that did not become accounts. Shown because
-                        a pool of 2 next to 4 credential files otherwise reads as
-                        "2 accounts were deleted" — this says which files could
-                        not be opened and why, so the number is trustworthy. */}
-                    {status?.skippedFiles === undefined || status.skippedFiles.length === 0 ? null
-                      : <div className="dsm-workbuddy-xdpool-skipped">
-                          <p className="dsm-workbuddy-xdpool-skipped-summary">
-                            {t?.('row.skippedFiles', { count: status.skippedFiles.length })
-                              ?? `${status.skippedFiles.length} credential file(s) could not be read`}
-                          </p>
-                          {status.skippedFiles.slice(0, 4).map(entry => (
-                            <p key={entry.file} className="dsm-workbuddy-xdpool-skipped-row">
-                              <span className="dsm-workbuddy-xdpool-skipped-file">{entry.file}</span>
-                              <span className="dsm-workbuddy-xdpool-skipped-reason">
-                                {entry.reason === 'encrypted'
-                                  ? (t?.('row.skippedEncrypted') ?? 'encrypted — start WorkBuddy once')
-                                  : entry.reason === 'unreadable'
-                                    ? (t?.('row.skippedUnreadable') ?? 'file could not be read')
-                                    : (t?.('row.skippedMalformed') ?? 'not a credential file')}
-                              </span>
-                            </p>
-                          ))}
-                        </div>}
-                    {(() => {
-                      // "In use now": the account that actually served the last request.
-                      // It is recorded on success only, so it answers "which account am I
-                      // using?" rather than "which one would be tried next".
-                      const active = status?.activeAccountId === undefined
-                        ? undefined
-                        : status.accounts.find(account => account.id === status.activeAccountId)
-                      if (active === undefined) return null
-                      return (
-                        <div className="dsm-workbuddy-xdpool-current">
-                          <span className="dsm-workbuddy-xdpool-current-dot" />
-                          <span className="dsm-workbuddy-xdpool-current-label">
-                            {t?.('row.currentAccount') ?? 'In use now'}
-                          </span>
-                          <span className="dsm-workbuddy-xdpool-current-name">{active.label}</span>
-                          {active.disabled === true
-                            ? <span className="dsm-workbuddy-xdpool-current-note">
-                                {t?.('row.currentAccountDisabled') ?? 'disabled — will switch on the next request'}
-                              </span>
-                            : null}
-                        </div>
-                      )
-                    })()}
-                    {status?.accounts.map(account => (
-                      <AccountBlock
-                        key={account.id}
-                        account={account}
-                        models={status?.models ?? []}
-                        {...checkinBusyId === undefined ? {} : { checkinBusyId }}
-                        onClaimCheckin={(accountId) => { void claimCheckin(accountId) }}
-                        onSaveCreditReserve={(accountId, reserve) => saveCreditReserve(accountId, reserve)}
-                          onToggleDisabled={(accountId, disabled) => { void toggleAccountDisabled(accountId, disabled) }}
-                          onIgnoreAccount={(accountId) => { void setAccountIgnored(accountId, true) }}
-                          {...accountBusyId === undefined ? {} : { accountBusyId }}
-                        t={t}
-                      />
-                    ))}
-                  </section>
-                : null}
-
-              {/* The ignored accounts, shown so "remove" is not a one-way door.
-                  Each row can be restored, which is what makes the feature safe
-                  to use on an account the user is merely unsure about. */}
-              {(status?.ignored.length ?? 0) > 0
-                ? <section className="dsm-workbuddy-xdpool-card dsm-workbuddy-xdpool-ignored" aria-label={t?.('row.ignoredTitle') ?? 'Removed accounts'}>
-                    <div className="dsm-workbuddy-xdpool-ignored-head">
-                      <h3 className="dsm-workbuddy-xdpool-ignored-title">
-                        {t?.('row.ignoredTitle') ?? 'Removed accounts'}
-                      </h3>
-                      <p className="dsm-workbuddy-xdpool-ignored-summary">
-                        {t?.('row.ignoredSummary', { count: status?.ignored.length ?? 0 })
-                          ?? `${status?.ignored.length ?? 0} account(s) no longer in the pool`}
-                      </p>
-                    </div>
-                    <div className="dsm-workbuddy-xdpool-ignored-list">
-                      {(status?.ignored ?? []).map(entry => (
-                        <div key={entry.id} className="dsm-workbuddy-xdpool-ignored-row">
-                          <span className="dsm-workbuddy-xdpool-ignored-label">{entry.label}</span>
-                          <button
-                            type="button"
-                            className="dsm-workbuddy-xdpool-ignored-restore"
-                            title={t?.('row.ignoredRestoreHint') ?? 'Put this account back into the pool'}
-                            disabled={accountBusyId === entry.id}
-                            onClick={() => { void setAccountIgnored(entry.id, false) }}
-                          >
-                            {t?.('row.ignoredRestore') ?? 'Restore'}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
-                : null}
-
-              {(status?.models.length ?? 0) > 0
-                ? <section className="dsm-workbuddy-xdpool-card dsm-workbuddy-xdpool-models" aria-label={t?.('row.modelsTitle') ?? 'Models'}>
-                    <div className="dsm-workbuddy-xdpool-models-head">
-                      <div className="dsm-workbuddy-xdpool-models-heading">
-                        <h3 className="dsm-workbuddy-xdpool-models-title">
-                          {t?.('row.modelsTitle') ?? 'Models'}
-                        </h3>
-                        <p className="dsm-workbuddy-xdpool-models-summary">
-                          {t?.('row.modelsEnabledCount', {
-                            enabled: enabledCount,
-                            total: status?.models.length ?? 0,
-                          }) ?? `${enabledCount} / ${status?.models.length ?? 0} enabled`}
-                        </p>
-                      </div>
-                      <div className="dsm-workbuddy-xdpool-models-actions">
-                        {/* The offline notice sits with the buttons, not in a
-                            tooltip: the failure it reports is "you are looking
-                            at a SHORTER list than the gateway offers", and a
-                            user who cannot see that will file it as a bug about
-                            missing models. */}
-                        {status?.catalogSource !== 'fallback' ? null
-                          : <span
-                              className="dsm-workbuddy-xdpool-catalog-offline"
-                              title={status.catalogError ?? undefined}
-                            >
-                              {t?.('row.catalogOffline') ?? 'built-in list (offline)'}
-                            </span>}
-                        <button
-                          type="button"
-                          className="dsm-btn dsm-btn-outline"
-                          disabled={catalogBusy}
-                          onClick={() => { void refreshCatalog() }}
-                          title={t?.('row.catalogRefreshHint') ?? 'Fetch the model list again from WorkBuddy'}
-                        >
-                          {catalogBusy
-                            ? (t?.('row.catalogRefreshing') ?? 'Fetching…')
-                            : (t?.('row.catalogRefresh') ?? 'Refresh models')}
-                        </button>
-                        <button
-                          type="button"
-                          className="dsm-btn dsm-btn-outline"
-                          disabled={!modelsDirty || savingModels}
-                          onClick={discardModels}
-                        >
-                          {t?.('row.modelsDiscard') ?? 'Discard'}
-                        </button>
-                        <button
-                          type="button"
-                          className="dsm-btn dsm-btn-primary"
-                          disabled={!modelsDirty || savingModels || enabledCount === 0}
-                          onClick={() => { void saveModels() }}
-                        >
-                          {savingModels
-                            ? (t?.('row.modelsSaving') ?? 'Saving…')
-                            : (t?.('row.modelsSave') ?? 'Save')}
-                        </button>
-                      </div>
-                    </div>
-                    <div className="dsm-workbuddy-xdpool-model-list">
-                      {/* Free models first, so "what costs me nothing right
-                          now" is the first thing the eye lands on. The sort is
-                          STABLE within each group (Array.prototype.sort is
-                          stable in modern V8), so the gateway's own ordering
-                          survives inside the free and paid blocks alike.
-                          Only CURRENTLY-free models float up: a model whose
-                          night window is closed still costs credits, and
-                          promoting it would misrepresent the list. */}
-                      {[...(status?.models ?? [])]
-                        .sort((a, b) => Number(isFreeNow(b, now, activeRegion)) - Number(isFreeNow(a, now, activeRegion)))
-                        .map(model => (
-                        <ModelRow
-                          key={model.id}
-                          model={model}
-                          region={activeRegion}
-                          paidTwin={paidAlternativeFor(model, status?.models ?? [])}
-                          t={t}
-                          draft={modelDraft[model.id] ?? { enabled: model.enabled, images: model.supportsImages }}
-                          editable={modelsEditable}
-                          onToggle={toggleModel}
-                          onToggleImage={toggleModelImage}
-                          onBudget={setModelBudget}
-                        />
-                      ))}
-                    </div>
-                  </section>
-                : null}
-    </section>
+          </>
+      }
+    </PoolShell>
   )
 }
-
 /** One account block: label + status tag + meta + optional credit panels. */
 function AccountBlock({
   account,
@@ -1421,8 +1987,10 @@ function AccountBlock({
   accountBusyId,
   onToggleDisabled,
   onIgnoreAccount,
+  onPreferAccount,
   onSaveCreditReserve,
   reserveBusyId,
+  serving,
 }: {
   account: PoolWebAccount
   /**
@@ -1440,16 +2008,33 @@ function AccountBlock({
   onToggleDisabled: (accountId: string, disabled: boolean) => void
   /** Throw this account out of the pool for good. */
   onIgnoreAccount: (accountId: string) => void
-    onSaveCreditReserve: (accountId: string, reserve: number) => Promise<boolean>
-    /** Account id whose reserve is being saved, if any. */
-    reserveBusyId?: string
+  /**
+   * Pin this account to be tried first, or clear the pin with `null`.
+   *
+   * Not "make this the only account": the pool falls back to the distribution
+   * strategy whenever the pinned account fails a gate, which is what makes the
+   * control safe to leave set.
+   */
+  onPreferAccount: (accountId: string | null) => void
+  onSaveCreditReserve: (accountId: string, reserve: number) => Promise<boolean>
+  /** Account id whose reserve is being saved, if any. */
+  reserveBusyId?: string
+  /**
+   * Is this the account the pool served its last request with?
+   *
+   * Deliberately drawn ON this row instead of in a banner above the list. Which
+   * account is "current" is a property of one row: under `balanced` the next
+   * request may not even use it, and under `round-robin` the answer changes every
+   * turn. A strip above the list claimed more than the pool knows.
+   */
+  serving?: boolean
 }) {
   const isDisabled = account.disabled === true
+  const isPreferred = account.preferred === true
   const isCooling = account.cooling === true
   const isDead = account.credentialDead === true
   const cooldownUntil = account.cooldownUntil !== undefined ? Date.parse(account.cooldownUntil) : undefined
   const modelCooldowns = account.modelCooldowns ?? []
-
   // Only a whole-account cooldown gets a tag. Per-model cooldowns do NOT mark
   // the account cooling (its other models still serve) — they render as
   // per-model chips below instead, e.g. "hy4-preview cooling to 10:14".
@@ -1466,12 +2051,42 @@ function AccountBlock({
     : isCooling
       ? { text: t?.('row.cooling') ?? 'Cooling', cls: 'dsm-workbuddy-xdpool-account-tag dsm-workbuddy-xdpool-account-tag-cooling' }
       : null
-
   return (
-    <div className={isDisabled ? 'dsm-workbuddy-xdpool-account dsm-workbuddy-xdpool-account-off' : 'dsm-workbuddy-xdpool-account'}>
+    <div className={isDisabled ? 'dsm-workbuddy-xdpool-account dsm-workbuddy-xdpool-account-off' : 'dsm-workbuddy-xdpool-account'}
+         data-serving={serving === true ? 'true' : undefined}
+    >
       <div className="dsm-workbuddy-xdpool-account-head">
         <span className="dsm-workbuddy-xdpool-account-label">{account.label}</span>
+        {serving === true
+          ? <span className="dsm-workbuddy-xdpool-current">
+              <span className="dsm-workbuddy-xdpool-current-dot" />
+              <span className="dsm-workbuddy-xdpool-current-label">
+                {t?.('row.currentAccount') ?? 'In use now'}
+              </span>
+            </span>
+          : null}
         {tag === null ? null : <span className={tag.cls}>{tag.text}</span>}
+        {/* Pin this account to be tried first. A third control, not a fourth
+            state of the switch above: "use this one first" and "only use this
+            one" are different promises, and the pool only ever makes the first.
+            Clicking it again clears the pin, which is why the pinned state is
+            its own label rather than a pressed look — a user who cannot see
+            how to undo a choice will simply pin a different account instead. */}
+        <button
+          type="button"
+          className={isPreferred
+            ? 'dsm-workbuddy-xdpool-account-prefer dsm-workbuddy-xdpool-account-prefer-on'
+            : 'dsm-workbuddy-xdpool-account-prefer'}
+          aria-pressed={isPreferred}
+          title={isPreferred
+            ? (t?.('row.accountPreferClearHint') ?? 'Stop preferring this account; the distribution strategy decides again')
+            : (t?.('row.accountPreferHint') ?? 'Try this account first while it stays healthy')}
+          disabled={accountBusyId === account.id || accountBusyId === 'none'}
+          onClick={() => { onPreferAccount(isPreferred ? null : account.id) }}
+        >
+          <span className="dsm-workbuddy-xdpool-account-prefer-star" aria-hidden="true">★</span>
+          {isPreferred ? (t?.('row.accountPreferOn') ?? 'Preferred') : (t?.('row.accountPrefer') ?? 'Prefer')}
+        </button>
         <button
           type="button"
           role="switch"
@@ -1602,7 +2217,6 @@ function AccountBlock({
     </div>
   )
 }
-
 /**
  * Daily check-in block: streak summary plus one claim button for this account.
  * Every account in the pool gets its own button, so a multi-account user can
@@ -1654,7 +2268,6 @@ function CreditReserveRow({
   // waiting for the next poll: a save that worked must be visibly reflected.
   const [settled, setSettled] = useState<number>(saved)
   const [note, setNote] = useState<'saved' | 'failed' | undefined>(undefined)
-
   // Follow the host document when it changes underneath us (another tab, or a
   // refresh after this card saved). Never during an edit: that would overwrite
   // what the user is typing.
@@ -1662,13 +2275,11 @@ function CreditReserveRow({
     setSettled(saved)
     setDraft(current => (current === String(saved) ? current : String(saved)))
   }, [saved])
-
   const parsed = Number.parseInt(draft, 10)
   const next = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 0
   // "Dirty" compares against the settled value, not the possibly-stale prop, so
   // the button stays disabled right after a successful save.
   const dirty = next !== settled
-
   const commit = async (): Promise<void> => {
     if (busy || !dirty) return
     setNote(undefined)
@@ -1681,7 +2292,6 @@ function CreditReserveRow({
       setNote('failed')
     }
   }
-
   return (
     <div className="dsm-workbuddy-xdpool-reserve">
       <span className="dsm-workbuddy-xdpool-reserve-label">
@@ -1736,7 +2346,6 @@ function CreditReserveRow({
     </div>
   )
 }
-
 function AccountStats({
   account,
   t,
@@ -1753,40 +2362,106 @@ function AccountStats({
   const hasCredits = credits !== undefined || account.creditsError !== undefined
   const hasCheckin = checkin !== undefined || account.checkinError !== undefined
   if (!hasCredits && !hasCheckin) return null
-
   const packages = (credits?.packages ?? [])
     .filter(p => (p.size ?? 0) > 0)
     .slice(0, 6)
-
   return (
+    /*
+     * One line of figures, in the order the eye should read them: what this
+     * account is worth, then the one thing it can still be made to earn today,
+     * then the breakdown behind the number.
+     *
+     * It used to be a two-column grid — packages on the left, a boxed total with
+     * the check-in button underneath it on the right — inside a card that the
+     * lane's own width already forces down to a single column. So the grid never
+     * did its job: the "right" column dropped below the packages and each half
+     * ended up a tall box holding one number. One wrapping line of figures keeps
+     * the balance, the action and the breakdown in reading order at any width,
+     * and stops a routine balance from being set in 28px type.
+     */
     <div className="dsm-workbuddy-xdpool-stats">
-      <section className="dsm-workbuddy-xdpool-panel dsm-workbuddy-xdpool-panel-packages">
+      <span className="dsm-workbuddy-xdpool-panel dsm-workbuddy-xdpool-panel-total">
         <span className="dsm-workbuddy-xdpool-panel-title">
-          {t?.('row.creditsPackages') ?? 'Credit packages'}
+          {t?.('row.creditsTotal') ?? 'Total'}
         </span>
-        {account.creditsError !== undefined
-          // The upstream error is a full English paragraph (it explains HOW to
-          // recover). Printed inline it blew the panel up to several lines and
-          // pushed "Total" off screen, so the panel shows a short marker and the
-          // full text lives in the tooltip / title attribute.
-          ? <span
-              className={`dsm-workbuddy-xdpool-panel-error${account.credentialDead === true ? ' dsm-workbuddy-xdpool-panel-error-dead' : ''}`}
-              title={account.creditsError}
-            >
-              {account.credentialDead === true
-                ? t?.('row.credentialDead') ?? 'Sign-in rejected'
-                : t?.('row.creditsError') ?? 'credits unavailable'}
-            </span>
-          : packages.length === 0
-            ? <span className="dsm-workbuddy-xdpool-panel-empty">–</span>
-            : <ul className="dsm-workbuddy-xdpool-packages">
-                {packages.map((pack, index) => {
+        <span className="dsm-workbuddy-xdpool-total-value">
+          {formatNumber(credits?.total)}
+        </span>
+      </span>
+      {hasCheckin
+        ? <div className="dsm-workbuddy-xdpool-checkin">
+            {account.checkinError !== undefined
+              /* Folded to a marker with the full text in the tooltip. A gateway
+                 rejection is a whole paragraph; printed inline it buries the
+                 figures it belongs to. */
+              ? <span className="dsm-workbuddy-xdpool-checkin-error" title={account.checkinError}>
+                  {t?.('row.checkinUnavailable') ?? 'check-in unavailable'}
+                </span>
+              : checkin === undefined
+                ? null
+                : <>
+                    <div className="dsm-workbuddy-xdpool-checkin-meta">
+                      <span className="dsm-workbuddy-xdpool-checkin-streak">
+                        {t?.('row.checkinStreak', { days: checkin.streakDays })
+                          ?? `${checkin.streakDays}-day streak`}
+                      </span>
+                      {checkin.dailyCredit > 0
+                        ? <span className="dsm-workbuddy-xdpool-checkin-daily">
+                            {t?.('row.checkinDaily', { credit: formatNumber(checkin.dailyCredit) })
+                              ?? `+${formatNumber(checkin.dailyCredit)}/day`}
+                          </span>
+                        : null}
+                    </div>
+                    {checkin.isStreakDay && checkin.streakBonusCredit > 0
+                      ? <span className="dsm-workbuddy-xdpool-checkin-bonus">
+                          {t?.('row.checkinStreakBonus', {
+                            days: formatNumber(checkin.nextStreakDay),
+                            credit: formatNumber(checkin.streakBonusCredit),
+                          }) ?? `bonus +${formatNumber(checkin.streakBonusCredit)}`}
+                        </span>
+                      : null}
+                    <button
+                      type="button"
+                      className="dsm-workbuddy-xdpool-checkin-btn"
+                      disabled={!checkin.active || checkin.todayCheckedIn || checkinBusy}
+                      onClick={() => { onClaim(account.id) }}
+                    >
+                      {!checkin.active
+                        ? (t?.('row.checkinInactive') ?? 'Unavailable')
+                        : checkin.todayCheckedIn
+                          ? (t?.('row.checkinClaimed') ?? 'Checked in')
+                          : checkinBusy
+                            ? (t?.('row.checkinClaiming') ?? 'Checking in…')
+                            : (t?.('row.checkinClaim') ?? 'Check in')}
+                    </button>
+                  </>}
+          </div>
+        : null}
+      {hasCredits
+        ? <ul className="dsm-workbuddy-xdpool-panel-packages dsm-workbuddy-xdpool-packages">
+            {account.creditsError !== undefined
+              // The upstream error is a full English paragraph (it explains HOW
+              // to recover). Printed inline it would blow the line up to several
+              // lines, so it becomes a short marker with the text in the tooltip.
+              ? <li>
+                  <span
+                    className={`dsm-workbuddy-xdpool-panel-error${account.credentialDead === true ? ' dsm-workbuddy-xdpool-panel-error-dead' : ''}`}
+                    title={account.creditsError}
+                  >
+                    {account.credentialDead === true
+                      ? t?.('row.credentialDead') ?? 'Sign-in rejected'
+                      : t?.('row.creditsError') ?? 'credits unavailable'}
+                  </span>
+                </li>
+              : packages.length === 0
+                ? <li className="dsm-workbuddy-xdpool-panel-empty">–</li>
+                : packages.map((pack, index) => {
                   const expiry = formatExpiry(pack.expiresAtMs)
                   const refresh = formatExpiry(pack.cycleRefreshMs)
                   const soon = isExpiringSoon(pack)
                   // Monthly packs refresh on a cycle; one-off packs expire. Either
-                  // way the deadline is what the user needs, and a pack that declares
-                  // neither simply omits the line (the grid keeps the columns aligned).
+                  // way the deadline is what the user needs, and a pack that
+                  // declares neither simply omits it.
                   const when = pack.monthly === true
                     ? (refresh === '' ? null : (t?.('row.creditsRefreshAt', { time: refresh }) ?? `Refreshes ${refresh}`))
                     : (expiry === '' ? null : (t?.('row.creditsExpiresAt', { time: expiry }) ?? `Expires ${expiry}`))
@@ -1807,76 +2482,18 @@ function AccountStats({
                     </li>
                   )
                 })}
-              </ul>}
-        {credits?.expiringSoon !== undefined && credits.expiringSoon > 0
-          ? <div className="dsm-workbuddy-xdpool-panel-foot">
-              <span>{t?.('row.creditsSoon') ?? 'Expiring in 3 days'}</span>
-              <strong>{formatNumber(credits.expiringSoon)}</strong>
-            </div>
-          : null}
-      </section>
-
-      <section className="dsm-workbuddy-xdpool-panel dsm-workbuddy-xdpool-panel-total">
-        <span className="dsm-workbuddy-xdpool-panel-title">
-          {t?.('row.creditsTotal') ?? 'Total'}
-        </span>
-        <span className="dsm-workbuddy-xdpool-total-value">
-          {formatNumber(credits?.total)}
-        </span>
-        {hasCheckin
-          ? <div className="dsm-workbuddy-xdpool-checkin">
-              {account.checkinError !== undefined
-                /* Folded to a marker with the full text in the tooltip, exactly
-                   like the credits error above. A gateway rejection is a whole
-                   paragraph; printed inline it buries the panel it belongs to. */
-                ? <span className="dsm-workbuddy-xdpool-checkin-error" title={account.checkinError}>
-                    {t?.('row.checkinUnavailable') ?? 'check-in unavailable'}
-                  </span>
-                : checkin === undefined
-                  ? null
-                  : <>
-                      <div className="dsm-workbuddy-xdpool-checkin-meta">
-                        <span className="dsm-workbuddy-xdpool-checkin-streak">
-                          {t?.('row.checkinStreak', { days: checkin.streakDays })
-                            ?? `${checkin.streakDays}-day streak`}
-                        </span>
-                        {checkin.dailyCredit > 0
-                          ? <span className="dsm-workbuddy-xdpool-checkin-daily">
-                              {t?.('row.checkinDaily', { credit: formatNumber(checkin.dailyCredit) })
-                                ?? `+${formatNumber(checkin.dailyCredit)}/day`}
-                            </span>
-                          : null}
-                      </div>
-                      {checkin.isStreakDay && checkin.streakBonusCredit > 0
-                        ? <span className="dsm-workbuddy-xdpool-checkin-bonus">
-                            {t?.('row.checkinStreakBonus', {
-                              days: formatNumber(checkin.nextStreakDay),
-                              credit: formatNumber(checkin.streakBonusCredit),
-                            }) ?? `bonus +${formatNumber(checkin.streakBonusCredit)}`}
-                          </span>
-                        : null}
-                      <button
-                        type="button"
-                        className="dsm-workbuddy-xdpool-checkin-btn"
-                        disabled={!checkin.active || checkin.todayCheckedIn || checkinBusy}
-                        onClick={() => { onClaim(account.id) }}
-                      >
-                        {!checkin.active
-                          ? (t?.('row.checkinInactive') ?? 'Unavailable')
-                          : checkin.todayCheckedIn
-                            ? (t?.('row.checkinClaimed') ?? 'Checked in')
-                            : checkinBusy
-                              ? (t?.('row.checkinClaiming') ?? 'Checking in…')
-                              : (t?.('row.checkinClaim') ?? 'Check in')}
-                      </button>
-                    </>}
-            </div>
-          : null}
-      </section>
+            {credits?.expiringSoon !== undefined && credits.expiringSoon > 0
+              ? <li className="dsm-workbuddy-xdpool-packages-when">
+                  {t?.('row.creditsSoon') ?? 'Expiring in 3 days'}
+                  {' '}
+                  {formatNumber(credits.expiringSoon)}
+                </li>
+              : null}
+          </ul>
+        : null}
     </div>
   )
 }
-
 /**
  * One model row.
  *
@@ -1884,6 +2501,18 @@ function AccountStats({
  * context radios stay disabled rather than pretending an edit took hold. The
  * draft lives in the parent, so this component only ever reports intent.
  */
+/**
+ * The provider id a probe must name for each region's pool lane.
+ *
+ * These strings are duplicated from `src/adapter.ts` rather than imported,
+ * because that module pulls in the Node-only catalog and shim code the browser
+ * bundle must never touch. The values are what the host resolves
+ * `ctx.llm.stream` against, so a drift here would make the button probe a
+ * provider that does not exist — which the host answers as an unknown-model
+ * error rather than as a connectivity failure.
+ */
+const WORKBUDDY_REGION_PROVIDER = { cn: 'workbuddy-xdpool', global: 'workbuddy-xdpool-global' } as const
+
 function ModelRow({
   model,
   region,
@@ -1894,6 +2523,9 @@ function ModelRow({
   onToggle,
   onToggleImage,
   onBudget,
+  onTest,
+  probe,
+  probing,
 }: {
   model: PoolWebModel
   /** Which gateway this row belongs to; the promo campaigns are regional. */
@@ -1910,6 +2542,12 @@ function ModelRow({
   onToggle: (id: string) => void
   onToggleImage: (id: string) => void
   onBudget: (id: string, budget: number) => void
+  /** Send one real request to this row's model and record the reading. */
+  onTest?: () => void
+  /** The last reading for this row, if the user has run one. */
+  probe?: ModelProbeReading | undefined
+  /** True while this row's probe is in flight. */
+  probing?: boolean
 }) {
   const now = new Date()
   const tag = tagFor(model, now, region)
@@ -1947,11 +2585,18 @@ function ModelRow({
     ? null
     : (t?.('row.promoUntil', { date: promo.promoUntil.slice(5).replace('-', '-') })
         ?? `promo until ${promo.promoUntil}`)
-
   const native = model.nativeContextWindow
   const capped = native > DEFAULT_CONTEXT_BUDGET
   const currentBudget = draft.budget ?? native
-
+  /**
+   * The provider id a probe must name, per region.
+   *
+   * Read from the same table the adapter registers under, so a lane rename
+   * cannot leave this button probing a provider the host does not know. Declared
+   * here rather than imported from the adapter module because that module pulls
+   * in Node-only catalog code the browser bundle must not touch.
+   */
+  const probeProvider = WORKBUDDY_REGION_PROVIDER[region]
   return (
     <div className={`dsm-workbuddy-xdpool-model${draft.enabled ? '' : ' dsm-workbuddy-xdpool-model-off'}`}>
       <div className="dsm-workbuddy-xdpool-model-head">
@@ -2035,6 +2680,26 @@ function ModelRow({
                 ?? model.supportedEfforts.join(' / ')}
             </span>}
       </div>
+      {/* The per-model facts and the connectivity test, from the one
+          component all three model pages share.
+
+          The output ceiling and the thinking levels that already sit in
+          -model-meta above are NOT repeated here: this component prints
+          exactly the same two facts from exactly the same fields, and
+          printing them twice is how the same model came to show a
+          different window on two pages. */}
+        <ModelFactsRow
+          t={t}
+          {...onTest === undefined ? {} : { onTest }}
+          {...probe === undefined ? {} : { probe }}
+          {...probing === undefined ? {} : { probing }}
+          row={{
+            contextWindow: model.contextWindow,
+            maxOutputTokens: model.maxOutputTokens,
+            supportsImages: model.supportsImages,
+            supportedEfforts: model.supportedEfforts,
+          }}
+        />
     </div>
   )
 }

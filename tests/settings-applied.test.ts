@@ -287,4 +287,28 @@ describe('#19 ignored accounts never re-enter the pool', () => {
     // who removes the wrong account must be able to find it and put it back.
     expect(hostSource).toContain('ignoredAccounts')
   })
+
+  it('the host pins the preferred account synchronously and re-writes the file on change', () => {
+    // The pin has the same two halves as the ignore list, and each is
+    // load-bearing: a startup read that is async lets the first request of the
+    // process ignore the user's choice, and a write that only touches the pool
+    // loses the pin on restart.
+    expect(hostSource).toContain('readPreferredIdSync')
+    expect(hostSource).toContain('writePreferredId')
+    expect(hostSource).toContain('setPreferredAccount')
+    // The writer updates the pool AFTER the file, so a failed write leaves the
+    // running pin untouched instead of applying a choice that cannot be undone.
+    const write = hostSource.indexOf('writePreferredId(accountId ?? undefined')
+    const apply = hostSource.indexOf('applyPreferred(accountId ?? undefined)')
+    expect(write).toBeGreaterThan(-1)
+    expect(apply).toBeGreaterThan(write)
+  })
+
+  it('the card lets the pin be undone, in the same row that set it', async () => {
+    // Clicking a pinned row's button sends null, which is the only way back.
+    // A pin the user cannot clear from the card becomes a permanent silent
+    // override of their distribution setting.
+    const cardSource = await readFile(new URL('../src/client/PoolCard.tsx', import.meta.url), 'utf8')
+    expect(cardSource).toContain('onPreferAccount(isPreferred ? null : account.id)')
+  })
 })

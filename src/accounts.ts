@@ -672,7 +672,16 @@ export class WorkBuddyAccountPool {
    */
   private readonly affinity = new Map<string, string>()
   private lastScanAtMs = 0
-  private preferredId: string | undefined
+  /**
+   * The account id the user pinned, or undefined for none.
+   *
+   * Field rather than a public property so that the only way in is
+   * {@link WorkBuddyPool.prefer} and the only way out is {@link WorkBuddyPool.preferredId}:
+   * a mutable public field would let a caller pin an account without the pool
+   * knowing, and a getter alone would let a caller read a pin the pool has
+   * already forgotten.
+   */
+  private preferredAccountId: string | undefined
   /**
    * Account ids the user switched off on the card.
    *
@@ -1152,8 +1161,8 @@ export class WorkBuddyAccountPool {
       // An explicit pick wins outright when it is eligible. Reordering the list
       // is not enough now that priority mode draws by weight: the user asked for
       // one account, so the draw should not be able to pick another.
-      if (this.preferredId !== undefined) {
-        const preferred = pool.find(account => account.id === this.preferredId)
+      if (this.preferredAccountId !== undefined) {
+        const preferred = pool.find(account => account.id === this.preferredAccountId)
         if (preferred !== undefined && await this.ensureFresh(preferred)) return preferred
       }
 
@@ -1190,14 +1199,40 @@ export class WorkBuddyAccountPool {
     return undefined
   }
 
-  /** Pin the account the plugin card should prefer; tokens stay out of settings. */
   /** How the pool currently spreads requests. Shown on the card. */
   currentDistribution(): AccountDistribution {
     return this.distribution
   }
 
+  /**
+   * The account the user asked to be tried first, whatever the distribution says.
+   *
+   * Pins identity, not the credential: the account still has to pass every gate
+   * the strategy applies (fresh token, out of cooldown, above its credit reserve,
+   * not switched off), and when it fails one of them the pool falls back to the
+   * strategy untouched. That is the whole promise — "try this first", never "only
+   * ever use this one" — and it is why a stale pin is harmless.
+   *
+   * Returns undefined when nothing is pinned, which is also how the user undoes a
+   * pin. The value survives {@link WorkBuddyPool.scan}, because a rescan discovers
+   * accounts and must not quietly revise a choice the user made about one of them.
+   */
   prefer(accountId: string | undefined): void {
-    this.preferredId = accountId
+    this.preferredAccountId = accountId
+  }
+
+  /**
+   * Which account is pinned, for the card and the status document.
+   *
+   * A reader is required rather than optional politeness: without one the status
+   * document would have to report a preference it cannot see, and the only
+   * truthful way to render "you asked for this one" on a row is to ask the pool.
+   * Callers that need to know whether the pin is still *live* (pinned AND present
+   * in the pool) must do that presence check themselves — this answers "what did
+   * the user choose", not "is it usable right now".
+   */
+  preferredId(): string | undefined {
+    return this.preferredAccountId
   }
 
   /** Whether the user switched this account off on the card. */
