@@ -1,5 +1,5 @@
 /**
- * Same-origin routes backing the WorkBuddy XD Pool settings card.
+ * Same-origin routes backing the XD Pool settings card.
  *
  * These answer loopback browser requests only and never carry token material
  * (no access/refresh tokens, no uin). Read-only by default — the status route
@@ -13,7 +13,7 @@
  * routes and the card degrades to an offline banner — the provider keeps
  * serving models regardless.
  *
- * @module dsh-workbuddy-xdpool/web-status
+ * @module dsh-xdpool/web-status
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { basename } from 'node:path'
@@ -1552,5 +1552,5 @@ export function registerPoolStatusRoute(ctx: Context, deps: PoolStatusRouteOptio
       disposeStatus()
       disposeUsage()
     }
-  }, 'dsh-workbuddy-xdpool: Web status route')
+  }, 'dsh-xdpool: Web status route')
 }

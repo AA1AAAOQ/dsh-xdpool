@@ -23,7 +23,7 @@
  * Translating here would put a second, drifting copy of the wire format between
  * the client and the code that is actually verified.
  *
- * @module dsh-workbuddy-xdpool/relay
+ * @module dsh-xdpool/relay
  */
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer, request as httpRequest } from 'node:http'

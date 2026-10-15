@@ -1,6 +1,6 @@
 /**
  * Node-free constants and types shared by the Host and browser halves of the
- * WorkBuddy XD Pool settings card.
+ * XD Pool settings card.
  *
  * Pool's runtime state already lives in `src/status.ts` (`buildStatus` /
  * `WorkBuddyStatus`); this module only carves the cross-domain (Host→browser)
@@ -8,12 +8,12 @@
  * browser card renders. Route paths are plugin-owned and mounted on the Host's
  * same-origin web server (see `src/web-status.ts`).
  *
- * @module dsh-workbuddy-xdpool/status-paths
+ * @module dsh-xdpool/status-paths
  */
 /** Plugin-owned read-only pool status endpoint (account rows + models + shim). */
-export const POOL_STATUS_PATH = '/plugins/dsh-workbuddy-xdpool/status'
+export const POOL_STATUS_PATH = '/plugins/dsh-xdpool/status'
 /** Plugin-owned local account rescan endpoint (re-read desktop snapshots). */
-export const POOL_RESCAN_PATH = '/plugins/dsh-workbuddy-xdpool/accounts/rescan'
+export const POOL_RESCAN_PATH = '/plugins/dsh-xdpool/accounts/rescan'
 /**
  * Re-fetch the upstream model catalog for both regions.
  *
@@ -23,36 +23,36 @@ export const POOL_RESCAN_PATH = '/plugins/dsh-workbuddy-xdpool/accounts/rescan'
  * fallen back to the static table after a failed startup fetch. The only way
  * out was restarting DSH.
  */
-export const POOL_CATALOG_REFRESH_PATH = '/plugins/dsh-workbuddy-xdpool/models/refresh'
+export const POOL_CATALOG_REFRESH_PATH = '/plugins/dsh-xdpool/models/refresh'
 /** Plugin-owned cooldown reset endpoint (clear all 429 cooldowns). */
-export const POOL_RESET_COOLDOWN_PATH = '/plugins/dsh-workbuddy-xdpool/cooldowns/reset'
+export const POOL_RESET_COOLDOWN_PATH = '/plugins/dsh-xdpool/cooldowns/reset'
 /** Plugin-owned daily check-in action endpoint (claim today's reward). */
-export const POOL_CHECKIN_PATH = '/plugins/dsh-workbuddy-xdpool/checkin'
+export const POOL_CHECKIN_PATH = '/plugins/dsh-xdpool/checkin'
 /** Plugin-owned model-selection save endpoint (writes the settings section). */
-export const POOL_MODELS_SAVE_PATH = '/plugins/dsh-workbuddy-xdpool/models/save'
+export const POOL_MODELS_SAVE_PATH = '/plugins/dsh-xdpool/models/save'
 /** Switch one account in or out of the pool (card toggle). */
-export const POOL_ACCOUNT_DISABLE_PATH = '/plugins/dsh-workbuddy-xdpool/accounts/disabled'
+export const POOL_ACCOUNT_DISABLE_PATH = '/plugins/dsh-xdpool/accounts/disabled'
 /**
  * Throw one account out of the pool for good, or take it back.
  *
  * Separate from the disable route because the semantics differ: disabling is a
  * rotation preference the account survives, ignoring survives the account.
  */
-export const POOL_ACCOUNT_IGNORE_PATH = '/plugins/dsh-workbuddy-xdpool/accounts/ignored'
+export const POOL_ACCOUNT_IGNORE_PATH = '/plugins/dsh-xdpool/accounts/ignored'
 /** Run one automation job immediately, so the card can verify it on demand. */
-export const POOL_AUTOMATION_RUN_PATH = '/plugins/dsh-workbuddy-xdpool/automation/run'
+export const POOL_AUTOMATION_RUN_PATH = '/plugins/dsh-xdpool/automation/run'
 /** Set or clear one account's reserved-credit floor. */
-export const POOL_CREDIT_RESERVE_PATH = '/plugins/dsh-workbuddy-xdpool/accounts/credit-reserve'
+export const POOL_CREDIT_RESERVE_PATH = '/plugins/dsh-xdpool/accounts/credit-reserve'
 /**
  * Name the account to try first, or hand the choice back to the strategy.
  *
  * A route rather than a settings write for the reason the ignore list is a file:
  * the CLI has no settings service, so a card-only settings key could be written
- * by the card and never by `dsh-workbuddy-xdpool prefer`. The route owns the
+ * by the card and never by `dsh-xdpool prefer`. The route owns the
  * write, pushes it into the pool immediately so the very next request sees it,
  * and is the one path both halves share.
  */
-export const POOL_ACCOUNT_PREFER_PATH = '/plugins/dsh-workbuddy-xdpool/accounts/preferred'
+export const POOL_ACCOUNT_PREFER_PATH = '/plugins/dsh-xdpool/accounts/preferred'
 /**
  * Read the aggregate lane's state: every registry provider, its saved setting
  * (never its key), and whether it can serve anything right now.
@@ -63,7 +63,7 @@ export const POOL_ACCOUNT_PREFER_PATH = '/plugins/dsh-workbuddy-xdpool/accounts/
  * status document would make every 30-second poll of the pool card carry a
  * directory nobody reads most of the time.
  */
-export const POOL_AGGREGATE_PATH = '/plugins/dsh-workbuddy-xdpool/aggregate'
+export const POOL_AGGREGATE_PATH = '/plugins/dsh-xdpool/aggregate'
 /**
  * Save one aggregate provider's setting: its key, its on/off switch, its base-URL
  * override, or the model ids a listing round discovered.
@@ -71,7 +71,7 @@ export const POOL_AGGREGATE_PATH = '/plugins/dsh-workbuddy-xdpool/aggregate'
  * POST only, and one provider per request — read-modify-write on the host side,
  * so two tabs editing two providers cannot clobber each other.
  */
-export const POOL_AGGREGATE_SAVE_PATH = '/plugins/dsh-workbuddy-xdpool/aggregate/save'
+export const POOL_AGGREGATE_SAVE_PATH = '/plugins/dsh-xdpool/aggregate/save'
 /**
  * Verify one provider's key with a cheap non-generating call, and report what
  * its listing answered.
@@ -80,7 +80,7 @@ export const POOL_AGGREGATE_SAVE_PATH = '/plugins/dsh-workbuddy-xdpool/aggregate
  * network: a probe must never run as a side effect of saving a setting, or
  * "save" would silently spend the user's rate limit.
  */
-export const POOL_AGGREGATE_TEST_PATH = '/plugins/dsh-workbuddy-xdpool/aggregate/test'
+export const POOL_AGGREGATE_TEST_PATH = '/plugins/dsh-xdpool/aggregate/test'
 /**
  * Send one real streaming call to one model and report how it answered.
  *
@@ -94,7 +94,7 @@ export const POOL_AGGREGATE_TEST_PATH = '/plugins/dsh-workbuddy-xdpool/aggregate
  * rather than through this plugin's lanes, because that registry is the only
  * place that knows which credential and endpoint a given provider id serves.
  */
-export const POOL_MODEL_PROBE_PATH = '/plugins/dsh-workbuddy-xdpool/model/test'
+export const POOL_MODEL_PROBE_PATH = '/plugins/dsh-xdpool/model/test'
 /**
  * POST-only: ask what models several login channels contribute right now.
  *
@@ -109,7 +109,7 @@ export const POOL_MODEL_PROBE_PATH = '/plugins/dsh-workbuddy-xdpool/model/test'
  * this is for. The host's catalogue is the same one the model picker reads, so
  * the two agree by construction instead of by luck.
  */
-export const POOL_CHANNEL_MODELS_PATH = '/plugins/dsh-workbuddy-xdpool/channels/models'
+export const POOL_CHANNEL_MODELS_PATH = '/plugins/dsh-xdpool/channels/models'
 /** The body of {@link POOL_CHANNEL_MODELS_PATH}. */
 export interface PoolWebChannelModelsRequest {
   providers: readonly string[]
@@ -147,7 +147,7 @@ export interface PoolWebChannelModels {
  * changes what the provider contributes to the picker — so it is its own route
  * with its own confirmation, and a failed round keeps the previous roster.
  */
-export const POOL_AGGREGATE_DISCOVER_PATH = '/plugins/dsh-workbuddy-xdpool/aggregate/discover'
+export const POOL_AGGREGATE_DISCOVER_PATH = '/plugins/dsh-xdpool/aggregate/discover'
 /**
  * The thirteen login channels the vendored pack provides.
  *
@@ -156,7 +156,7 @@ export const POOL_AGGREGATE_DISCOVER_PATH = '/plugins/dsh-workbuddy-xdpool/aggre
  * channel list is "what can I scan a QR code into", and mixing them in one poll
  * would put a third-party directory on the critical path of the pool card.
  */
-export const POOL_CHANNELS_PATH = '/plugins/dsh-workbuddy-xdpool/channels'
+export const POOL_CHANNELS_PATH = '/plugins/dsh-xdpool/channels'
 /**
  * The `reason` the channel document carries when the login-channel route is
  * already owned by another plugin.
@@ -179,7 +179,7 @@ export const ROUTE_OWNED_ELSEWHERE = 'already-mounted-elsewhere'
  * vendors is a list nobody can pick from. Reading two documents on one panel
  * open would also mean the roster could be a second older than the chains.
  */
-export const POOL_COMBOS_PATH = '/plugins/dsh-workbuddy-xdpool/combos'
+export const POOL_COMBOS_PATH = '/plugins/dsh-xdpool/combos'
 /**
  * Replace the whole chain list in one write.
  *
@@ -189,7 +189,7 @@ export const POOL_COMBOS_PATH = '/plugins/dsh-workbuddy-xdpool/combos'
  * merge rule would have to guess, and a wrong guess silently resurrects a row the
  * user deleted.
  */
-export const POOL_COMBOS_SAVE_PATH = '/plugins/dsh-workbuddy-xdpool/combos/save'
+export const POOL_COMBOS_SAVE_PATH = '/plugins/dsh-xdpool/combos/save'
 /**
  * The LAN relay's own state, and the only way to change it.
  *
@@ -198,7 +198,7 @@ export const POOL_COMBOS_SAVE_PATH = '/plugins/dsh-workbuddy-xdpool/combos/save'
  * a relay left listening on a network interface is the one failure here that
  * keeps mattering after the plugin is closed.
  */
-export const POOL_RELAY_PATH = '/plugins/dsh-workbuddy-xdpool/relay'
+export const POOL_RELAY_PATH = '/plugins/dsh-xdpool/relay'
 /**
  * What the locally running billion-context proxy is doing, read-only.
  *
@@ -214,7 +214,7 @@ export const POOL_RELAY_PATH = '/plugins/dsh-workbuddy-xdpool/relay'
  * it relays deliberately omits every field that could carry conversation
  * material.
  */
-export const POOL_BILLION_PATH = '/plugins/dsh-workbuddy-xdpool/billion'
+export const POOL_BILLION_PATH = '/plugins/dsh-xdpool/billion'
 /**
  * One billion-context session, reduced to what a dashboard may show.
  *
@@ -534,7 +534,7 @@ export interface PoolWebAggregateProbe {
  * Node-free precisely so the browser half can import the SAME declaration
  * instead of a second one that could quietly drift.
  */
-export const POOL_USAGE_PATH = '/plugins/dsh-workbuddy-xdpool/usage'
+export const POOL_USAGE_PATH = '/plugins/dsh-xdpool/usage'
 /** Body of the reserve route: exactly one account per request. */
 export interface PoolWebCreditReserve {
   /** Pool account id, as reported in `PoolWebAccount.id`. */

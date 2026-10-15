@@ -103,9 +103,9 @@ export function regionCardStyle(
 ): Record<string, string> {
   const palette = REGION_PALETTES[region]
   return {
-    '--dsm-workbuddy-xdpool-region-accent': palette.accent,
-    '--dsm-workbuddy-xdpool-region-icon-from': palette.from,
-    '--dsm-workbuddy-xdpool-region-icon-to': palette.to,
+    '--dsm-xdpool-region-accent': palette.accent,
+    '--dsm-xdpool-region-icon-from': palette.from,
+    '--dsm-xdpool-region-icon-to': palette.to,
   }
 }
 
@@ -158,7 +158,7 @@ export interface RegionCardPaneProps {
  */
 export function RegionCardPane({ id, open, children }: RegionCardPaneProps): ReactElement {
   return (
-    <div className="dsm-workbuddy-xdpool-region-pane" id={id} role="group" hidden={!open}>
+    <div className="dsm-xdpool-region-pane" id={id} role="group" hidden={!open}>
       {children}
     </div>
   )
@@ -207,17 +207,17 @@ export function RegionCardTrigger({
   return (
     <button
       type="button"
-      className="dsm-workbuddy-xdpool-region-seg-btn"
+      className="dsm-xdpool-region-seg-btn"
       aria-expanded={open}
       aria-controls={controls}
       aria-label={label}
       onClick={onToggle}
     >
-      <span className="dsm-workbuddy-xdpool-region-seg-glyph" aria-hidden="true">{glyph}</span>
-      <span className="dsm-workbuddy-xdpool-region-seg-text">{text}</span>
+      <span className="dsm-xdpool-region-seg-glyph" aria-hidden="true">{glyph}</span>
+      <span className="dsm-xdpool-region-seg-text">{text}</span>
       {count === undefined
         ? null
-        : <span className="dsm-workbuddy-xdpool-region-seg-count">{count}</span>}
+        : <span className="dsm-xdpool-region-seg-count">{count}</span>}
     </button>
   )
 }

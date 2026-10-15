@@ -365,11 +365,11 @@ describe('the per-model routes', () => {
     })
     const handler = routes.get(POOL_MODEL_PROBE_PATH) as (req: unknown, res: unknown) => Promise<void>
     const { res, read } = fakeRes()
-    await handler(postReq({ provider: 'workbuddy-xdpool', model: 'deepseek-v3' }), res)
+    await handler(postReq({ provider: 'xdpool', model: 'deepseek-v3' }), res)
     expect(read().status).toBe(200)
     // The pair goes through exactly as the row spelled it: only the host knows
     // which credential and endpoint a given provider id resolves to.
-    expect(seen).toEqual([['workbuddy-xdpool', 'deepseek-v3']])
+    expect(seen).toEqual([['xdpool', 'deepseek-v3']])
     expect(read().body).toEqual({ ok: true, firstFrameMs: 412, outputChars: 5 })
   })
 

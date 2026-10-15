@@ -30,7 +30,7 @@
  *
  * Declared as a literal union rather than as `string` because of variance: every
  * page translator in this plugin is typed over the whole
- * `WorkBuddyPoolSettingsKey` union, and a function accepting that union is NOT
+ * `XdPoolSettingsKey` union, and a function accepting that union is NOT
  * assignable to one accepting `string` — parameters are contravariant, so the
  * target must not demand more than the source offers. Naming our own keys and
  * importing the union's member type here is what keeps the three pages able to

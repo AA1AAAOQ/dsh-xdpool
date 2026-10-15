@@ -28,7 +28,7 @@
  * rejected credentials back (a 401 body routinely repeats the key), and this
  * text is folded into messages the host writes to its durable session log.
  *
- * @module dsh-workbuddy-xdpool/aggregate
+ * @module dsh-xdpool/aggregate
  */
 import {
   chatEndpoint,
@@ -80,7 +80,7 @@ const LISTING_TIMEOUT_MS = 15_000
 /** One turn's budget, matching the pool shim's idle ceiling. */
 const TURN_TIMEOUT_MS = 300_000
 /** Sent when the registry does not declare one (kimchi, and most of the roster). */
-const USER_AGENT = 'dsh-workbuddy-xdpool/2.0'
+const USER_AGENT = 'dsh-xdpool/2.1'
 /** How much of an upstream body is quoted back in a failure message. */
 const BODY_SNIPPET_CHARS = 400
 /** A trimmed non-empty string, or ''. */

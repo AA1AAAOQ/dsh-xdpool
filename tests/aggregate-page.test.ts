@@ -72,10 +72,10 @@ function boundaryIndexOf(haystack: string, needle: string): number {
   return -1
 }
 
-/** Every `dsm-workbuddy-xdpool-*` class name the page's own source mentions. */
+/** Every `dsm-xdpool-*` class name the page's own source mentions. */
 function classNames(): string[] {
   const found = new Set<string>()
-  for (const match of page.matchAll(/dsm-workbuddy-xdpool-[a-z-]+/gu)) found.add(match[0])
+  for (const match of page.matchAll(/dsm-xdpool-[a-z-]+/gu)) found.add(match[0])
   return [...found]
 }
 
@@ -118,26 +118,26 @@ describe('each vendor is a compact card like the sign-in page', () => {
   })
 
   it('shows the vendor name, its category and its wire on two lines', () => {
-    expect(rule('.dsm-workbuddy-xdpool-agg-name')).toContain('font-weight:650')
-    expect(rule('.dsm-workbuddy-xdpool-agg-org')).not.toBe('')
+    expect(rule('.dsm-xdpool-agg-name')).toContain('font-weight:650')
+    expect(rule('.dsm-xdpool-agg-org')).not.toBe('')
     // A long vendor name must ellipsize rather than push the state pill out of
     // the row.
     for (const selector of [
-      '.dsm-workbuddy-xdpool-agg-name',
-      '.dsm-workbuddy-xdpool-agg-org',
+      '.dsm-xdpool-agg-name',
+      '.dsm-xdpool-agg-org',
     ]) {
       expect(rule(selector), `${selector} must ellipsize`).toContain('text-overflow:ellipsis')
-      expect(rule(`.dsm-workbuddy-xdpool-agg-titles`)).toContain('min-width:0')
+      expect(rule(`.dsm-xdpool-agg-titles`)).toContain('min-width:0')
     }
-    expect(rule('.dsm-workbuddy-xdpool-agg-titles')).toContain('min-width:0')
+    expect(rule('.dsm-xdpool-agg-titles')).toContain('min-width:0')
   })
 
   it('says whether the vendor is in the pool in words, not colour alone', () => {
     // The pill carries a 6px dot as well as the tint, so it still reads for
     // someone who cannot separate the two.
-    expect(rule('.dsm-workbuddy-xdpool-agg-state::before')).toContain('border-radius:50%')
-    const ok = rule('.dsm-workbuddy-xdpool-agg-state[data-tone="ok"]')
-    const off = rule('.dsm-workbuddy-xdpool-agg-state[data-tone="off"]')
+    expect(rule('.dsm-xdpool-agg-state::before')).toContain('border-radius:50%')
+    const ok = rule('.dsm-xdpool-agg-state[data-tone="ok"]')
+    const off = rule('.dsm-xdpool-agg-state[data-tone="off"]')
     expect(ok).toContain('state-success-primary')
     expect(off).toContain('label-tertiary')
     // "Off" is not a failure and must not be painted like one.
@@ -152,8 +152,8 @@ describe('the vendor description is the registry`s own line', () => {
     // capability flags — so this is the VENDOR's sentence and the row must not
     // present it as a model description.
     expect(page).toContain('provider.notes')
-    expect(page).toContain('className="dsm-workbuddy-xdpool-agg-note"')
-    const note = rule('.dsm-workbuddy-xdpool-agg-note')
+    expect(page).toContain('className="dsm-xdpool-agg-note"')
+    const note = rule('.dsm-xdpool-agg-note')
     expect(note).toContain('-webkit-line-clamp:2')
     // The longest entry in the registry runs to 259 characters; unclamped, a
     // dozen of those push the rest of the roster off the screen.
@@ -204,8 +204,8 @@ describe('the key field appears only when the row is opened', () => {
   it('hides the pane with the attribute, not with a clipped box', () => {
     // A pane collapsed with `max-height:0` clips the focus ring off the first
     // field when the user tabs into it.
-    expect(rule('.dsm-workbuddy-xdpool-agg-pane')).not.toContain('max-height')
-    expect(rule('.dsm-workbuddy-xdpool-agg-pane[hidden]')).toContain('display:none')
+    expect(rule('.dsm-xdpool-agg-pane')).not.toContain('max-height')
+    expect(rule('.dsm-xdpool-agg-pane[hidden]')).toContain('display:none')
     expect(page).toContain('hidden={!open}')
     expect(page).toContain('role="group"')
   })
@@ -223,10 +223,10 @@ describe('the key field appears only when the row is opened', () => {
     expect(page).toContain('aria-expanded={open}')
     expect(page).toContain('aria-controls={paneId}')
     expect(page).toContain('id={paneId}')
-    const open = rule('.dsm-workbuddy-xdpool-agg-open')
+    const open = rule('.dsm-xdpool-agg-open')
     expect(open).toContain('appearance:none')
     // The caret turns, so the control reads as expandable before it is pressed.
-    expect(rule('.dsm-workbuddy-xdpool-agg-open[aria-expanded="true"] .dsm-workbuddy-xdpool-agg-open-caret'))
+    expect(rule('.dsm-xdpool-agg-open[aria-expanded="true"] .dsm-xdpool-agg-open-caret'))
       .toContain('rotate(180deg)')
   })
 })
@@ -274,7 +274,7 @@ describe('nothing is in the pool until the user says so', () => {
   it('keeps the lane switch separate from the per-vendor one', () => {
     // "Add to the pool" takes a vendor out without throwing the key away, which
     // is a different decision from saving one, so it gets its own control.
-    expect(page).toContain('dsm-workbuddy-xdpool-agg-switch')
+    expect(page).toContain('dsm-xdpool-agg-switch')
     expect(page).toContain("t?.('agg.enable')")
     expect(page).toContain("t?.('agg.enableHint')")
   })

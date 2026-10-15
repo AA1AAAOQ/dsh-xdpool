@@ -14,7 +14,7 @@
  * which the caller drives through an injected chat function so this module
  * stays testable without a network.
  *
- * @module dsh-workbuddy-xdpool/context-budget
+ * @module dsh-xdpool/context-budget
  */
 
 /** One OpenAI chat message, narrowed to the fields we must preserve. */

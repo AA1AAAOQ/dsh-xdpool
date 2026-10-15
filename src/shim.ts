@@ -11,7 +11,7 @@
  * corrinehu/dsh-workbuddy-connect (MIT, Copyright (c) 2026 Corrine Hu), which
  * designed and validated it.
  *
- * @module dsh-workbuddy-xdpool/shim
+ * @module dsh-xdpool/shim
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
@@ -934,7 +934,7 @@ function withBareModelId(raw: string, modelId: string): string {
       // this, every one of `maxAttempts` hit the same dead account while healthy
       // accounts were never tried.
       if (result.kind === 'session_dead') {
-        logger?.warn(`dsh-workbuddy-xdpool: ${account.label} session dead; refreshing token and retrying`)
+        logger?.warn(`dsh-xdpool: ${account.label} session dead; refreshing token and retrying`)
         const before = account.credential.accessToken
         const recovered = await pool.refreshAccount(account.id, { force: true })
         // A 401 on a token the upstream still hands out refresh credentials for
@@ -944,7 +944,7 @@ function withBareModelId(raw: string, modelId: string): string {
         if (!recovered || account.credential.accessToken === before) {
           pool.penalizeCredentialDead(account.id)
           logger?.warn(
-            `dsh-workbuddy-xdpool: ${account.label} sign-in is no longer valid `
+            `dsh-xdpool: ${account.label} sign-in is no longer valid `
               + `(attempt ${attempt + 1}/${maxAttempts}); rotating`,
           )
         }
@@ -956,7 +956,7 @@ function withBareModelId(raw: string, modelId: string): string {
       if (result.kind === 'hard_credit') {
         pool.penalizeExhausted(account.id)
         logger?.warn(
-          `dsh-workbuddy-xdpool: ${account.label} has no credits left `
+          `dsh-xdpool: ${account.label} has no credits left `
             + `(attempt ${attempt + 1}/${maxAttempts}); rotating`,
         )
         continue
@@ -969,7 +969,7 @@ function withBareModelId(raw: string, modelId: string): string {
       // log instead of requiring a reproduction.
       if (result.kind === 'client') {
         logger?.warn(
-          `dsh-workbuddy-xdpool: ${account.label} rejected the request as invalid `
+          `dsh-xdpool: ${account.label} rejected the request as invalid `
           + `(model ${modelId ?? '(none)'}) — ${requestShape(raw)}; upstream: ${result.message.slice(0, 300)}`,
         )
       }
@@ -979,7 +979,7 @@ function withBareModelId(raw: string, modelId: string): string {
       // usable (the upstream explicitly allows switching to another model).
       pool.penalize(account.id, parseRateLimitReset(result.message), modelId)
       logger?.warn(
-        `dsh-workbuddy-xdpool: ${account.label} rate-limited on ${modelId ?? '(no model)'} ` +
+        `dsh-xdpool: ${account.label} rate-limited on ${modelId ?? '(no model)'} ` +
           `(attempt ${attempt + 1}/${maxAttempts}); rotating`,
       )
     }
@@ -1122,7 +1122,7 @@ async function serveSuccessfulStream(
   pool: WorkBuddyAccountPool,
   usage: UsageContext | undefined,
 ): Promise<void> {
-  logger?.info?.(`dsh-workbuddy-xdpool: served by ${account.label}`)
+  logger?.info?.(`dsh-xdpool: served by ${account.label}`)
   // Only now is this account the one actually serving the user: a request
   // that failed over to another account must not mark the tried one as used.
   pool.noteServed(account.id)
@@ -1213,7 +1213,7 @@ async function serveSuccessfulStream(
     if (chunk.includes('[DONE]')) sawDone = true
   })
   body.on('error', (error: unknown) => {
-    logger?.warn('dsh-workbuddy-xdpool: upstream stream failed mid-flight', error)
+    logger?.warn('dsh-xdpool: upstream stream failed mid-flight', error)
     finish(false)
     if (!sawDone && res.writable) res.end('data: [DONE]\n\n')
   })
@@ -1286,7 +1286,7 @@ async function recoverFromContextOverrun(options: RecoverOptions): Promise<Recov
   const fromOverrun = Math.max(512, Math.floor(overrunTokens / 2))
   const budget = Math.min(fromWindow, fromOverrun)
   logger?.warn(
-    `dsh-workbuddy-xdpool: context overrun on ${modelId ?? '(no model)'} `
+    `dsh-xdpool: context overrun on ${modelId ?? '(no model)'} `
       + `(~${overrunTokens} tokens, catalog window ${realWindow ?? 'unknown'}); `
       + `compacting to ~${budget} and retrying once`,
   )
@@ -1350,7 +1350,7 @@ async function recoverFromContextOverrun(options: RecoverOptions): Promise<Recov
     }
     if (result.ok) {
       logger?.info?.(
-        `dsh-workbuddy-xdpool: recovered from context overrun on ${modelId ?? '(no model)'} `
+        `dsh-xdpool: recovered from context overrun on ${modelId ?? '(no model)'} `
           + `(summarised: ${summary === undefined ? 'no' : 'yes'})`,
       )
       return { ok: true, account, result }

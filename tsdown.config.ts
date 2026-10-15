@@ -1,6 +1,6 @@
 import { defineConfig } from 'tsdown'
 
-const PLUGIN_ID = 'dsh-workbuddy-xdpool'
+const PLUGIN_ID = 'dsh-xdpool'
 
 /**
  * Externalized browser-only packages that the Host supplies at runtime through

@@ -32,7 +32,7 @@
  * chain. Keeping it would make the chain report "tried 3 candidates" while only
  * one was ever reachable, which reads on screen as a bug in the plugin.
  *
- * @module dsh-workbuddy-xdpool/combos
+ * @module dsh-xdpool/combos
  */
 import type { AggregateModelRow } from './aggregate.ts'
 import type { WorkBuddyModelInfo } from './catalog.ts'

@@ -1,17 +1,17 @@
 {
-  "name": "dsh-workbuddy-xdpool",
-  "displayName": "DSH WorkBuddy XD Pool",
-  "description": "Merge every locally signed-in WorkBuddy account into DeepSeek Harness as one auto-failing-over model pool (multi-account rotation, live credits, daily check-in and model catalog).",
-  "version": "2.0.0",
+  "name": "dsh-xdpool",
+  "displayName": "DSH XD Pool",
+  "description": "One DSH model pool for every free quota you have: merge all locally signed-in WorkBuddy accounts with auto-failover, sign in to 13 vendors by QR/web, aggregate 76 vendors' free tiers, plus a usage dashboard, model routing, a local OpenAI-compatible gateway and a points-automation suite.",
+  "version": "2.1.0",
   "license": "MIT",
   "author": "XDTrees",
-  "homepage": "https://github.com/XDTrees/dsh-workbuddy-xdpool#readme",
+  "homepage": "https://github.com/XDTrees/dsh-xdpool#readme",
   "bugs": {
-    "url": "https://github.com/XDTrees/dsh-workbuddy-xdpool/issues"
+    "url": "https://github.com/XDTrees/dsh-xdpool/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/XDTrees/dsh-workbuddy-xdpool.git"
+    "url": "git+https://github.com/XDTrees/dsh-xdpool.git"
   },
   "keywords": [
     "dsh-plugin",
@@ -30,7 +30,7 @@
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "bin": {
-    "dsh-workbuddy-xdpool": "lib/bin.js"
+    "dsh-xdpool": "lib/bin.js"
   },
   "exports": {
     ".": {

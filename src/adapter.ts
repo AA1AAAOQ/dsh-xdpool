@@ -1,5 +1,5 @@
 /**
- * The `workbuddy-xdpool` pi-ai provider: one loopback-backed adapter registered
+ * The `xdpool` pi-ai provider: one loopback-backed adapter registered
  * into the Harness LLM seam, assembled from public `dsh-llm-pi-ai` extension
  * points. Every model points at the shim; account rotation stays inside it.
  *
@@ -8,7 +8,7 @@
  * (MIT, Copyright (c) 2026 Corrine Hu) and dingminhua/dsh-connect-workbuddy
  * (MIT), both designed and validated against this host.
  *
- * @module dsh-workbuddy-xdpool/adapter
+ * @module dsh-xdpool/adapter
  */
 import { createProvider } from '@earendil-works/pi-ai'
 import type { Api, AuthContext, CredentialStore, Model, Provider } from '@earendil-works/pi-ai'
@@ -25,9 +25,9 @@ import type { WorkBuddyShim } from './shim.ts'
 import type { FreeModelRow } from './free-catalog.ts'
 /** Provider route this bundle owns. */
 /** Provider route this bundle owns for the domestic (CN) gateway. */
-export const WORKBUDDY_POOL_PROVIDER = 'workbuddy-xdpool'
+export const XDPOOL_PROVIDER = 'xdpool'
 /** Provider route this bundle owns for the international gateway. */
-export const WORKBUDDY_GLOBAL_POOL_PROVIDER = 'workbuddy-xdpool-global'
+export const XDPOOL_GLOBAL_PROVIDER = 'xdpool-global'
 /**
  * Provider route this bundle owns for the aggregate lane.
  *
@@ -38,7 +38,7 @@ export const WORKBUDDY_GLOBAL_POOL_PROVIDER = 'workbuddy-xdpool-global'
  * failures into the pool's cooldown table and its spend into the pool's usage
  * panel, both of which the user reads as WorkBuddy traffic.
  */
-export const WORKBUDDY_AGGREGATE_PROVIDER = 'workbuddy-xdpool-aggregate'
+export const XDPOOL_AGGREGATE_PROVIDER = 'xdpool-aggregate'
 /**
  * Provider route for the免密 free lane.
  *
@@ -48,7 +48,7 @@ export const WORKBUDDY_AGGREGATE_PROVIDER = 'workbuddy-xdpool-aggregate'
  * and its tokens into the pool's usage panel — both of which the user reads as
  * their own WorkBuddy traffic.
  */
-export const WORKBUDDY_FREE_PROVIDER = 'workbuddy-xdpool-free'
+export const XDPOOL_FREE_PROVIDER = 'xdpool-free'
 /**
  * Display name the free lane registers under, so the picker can group it.
  *
@@ -62,8 +62,8 @@ export const EXTRA_LANE_NAMES = {
 } as const
 /** The provider id each region registers as. */
 export const POOL_PROVIDER_BY_REGION = {
-  cn: WORKBUDDY_POOL_PROVIDER,
-  global: WORKBUDDY_GLOBAL_POOL_PROVIDER,
+  cn: XDPOOL_PROVIDER,
+  global: XDPOOL_GLOBAL_PROVIDER,
 } as const
 /**
  * Display name each region registers under, so the picker can group them.
@@ -98,7 +98,7 @@ const INERT_AUTH: { credentials: CredentialStore; authContext: AuthContext } = {
     async read() { return undefined },
     async list() { return [] },
     async modify() {
-      throw new Error('dsh-workbuddy-xdpool: this route has no pi-ai credential lifecycle')
+      throw new Error('dsh-xdpool: this route has no pi-ai credential lifecycle')
     },
     async delete() {},
   },
@@ -329,7 +329,7 @@ function toExtraLaneModel(row: FreeModelRow, baseUrl: string, providerId: string
  */
 export function createWorkBuddyAdapter(options: WorkBuddyAdapterOptions): WorkBuddyAdapter {
   const { shim, catalog } = options
-  const providerId = options.providerId ?? WORKBUDDY_POOL_PROVIDER
+  const providerId = options.providerId ?? XDPOOL_PROVIDER
   const displayName = options.displayName ?? 'XD Pool'
   const aggregateCatalog = isAggregateCatalog(catalog)
   const extraRows = options.extraRows
@@ -354,12 +354,12 @@ export function createWorkBuddyAdapter(options: WorkBuddyAdapterOptions): WorkBu
     name: displayName,
     auth: {
       apiKey: {
-        name: 'WorkBuddy XD Pool loopback secret',
+        name: 'XD Pool loopback secret',
         async resolve({ credential }) {
           const apiKey = credential?.key
           return apiKey === undefined || apiKey.length === 0
             ? undefined
-            : { auth: { apiKey }, source: 'WorkBuddy XD Pool' }
+            : { auth: { apiKey }, source: 'XD Pool' }
         },
       },
     },
@@ -371,7 +371,7 @@ export function createWorkBuddyAdapter(options: WorkBuddyAdapterOptions): WorkBu
     provider: providerId,
     displayName,
     streamIdleTimeoutMs: WORKBUDDY_STREAM_IDLE_TIMEOUT_MS,
-    retryPolicy: resolveRetryPolicy(undefined, 'dsh-workbuddy-xdpool retryPolicy'),
+    retryPolicy: resolveRetryPolicy(undefined, 'dsh-xdpool retryPolicy'),
     configuredMaxTokens: new Map(),
     // Required by dsh-llm-pi-ai >= 0.1.5-rc.2: the host adapter reads
     // profile.modelErrors.get(model) on every model resolution. The catalog

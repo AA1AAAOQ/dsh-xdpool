@@ -87,13 +87,13 @@ function fillOf(selector: string): string {
  * The region-card class names a source file mentions in markup.
  *
  * Custom-property names are skipped. `regionCardStyle` writes keys like
- * `--dsm-workbuddy-xdpool-region-accent`, and a regex that only looks for
- * `dsm-workbuddy-xdpool-region-` matches the tail of those too — and there is
+ * `--dsm-xdpool-region-accent`, and a regex that only looks for
+ * `dsm-xdpool-region-` matches the tail of those too — and there is
  * no rule to define a variable, so every one of them would read as missing.
  */
 function regionClassNames(source: string): string[] {
   return [...new Set(
-    [...source.matchAll(/(?<![-\w])dsm-workbuddy-xdpool-region-[a-z0-9-]+/gu)]
+    [...source.matchAll(/(?<![-\w])dsm-xdpool-region-[a-z0-9-]+/gu)]
       .map(match => match[0]),
   )]
 }
@@ -129,7 +129,7 @@ describe('the region cards stack the way the login page stacks', () => {
     // The user asked for the pool to be arranged like the scan-login page, and
     // that page is a single column of full-width cards. Side by side, the
     // shorter lane read as a lane that was missing something.
-    const grid = rule('.dsm-workbuddy-xdpool-region-grid')
+    const grid = rule('.dsm-xdpool-region-grid')
     expect(grid).not.toBe('')
     expect(grid).toContain('flex-direction:column')
     // `minmax(0, …)` and its grid equivalent are both about refusing to let a
@@ -137,7 +137,7 @@ describe('the region cards stack the way the login page stacks', () => {
     // the equivalent guard is `min-width:0` on the container.
     expect(grid).toContain('min-width:0')
     expect(grid).not.toContain('repeat(2')
-    expect(rule('.dsm-workbuddy-xdpool-channels')).toContain('flex-direction:column')
+    expect(rule('.dsm-xdpool-channels')).toContain('flex-direction:column')
   })
 
   it('renders both lanes on every visit, not one tab at a time', () => {
@@ -149,7 +149,7 @@ describe('the region cards stack the way the login page stacks', () => {
     expect(card).toMatch(/data-region=\{region\}/)
     // and no tab strip is left behind to imply one-at-a-time.
     expect(card).not.toContain('role="tablist"')
-    expect(card).not.toContain('dsm-workbuddy-xdpool-tab-active')
+    expect(card).not.toContain('dsm-xdpool-tab-active')
   })
 })
 
@@ -158,7 +158,7 @@ describe('each card carries a brand tile', () => {
     // The user asked for the pool to look like the sign-in page. Two tiles
     // measured by eye stop matching the first time one of them moves a pixel,
     // so both pages must render the SAME component and the same class.
-    const tile = rule('.dsm-workbuddy-xdpool-tile')
+    const tile = rule('.dsm-xdpool-tile')
     expect(tile).not.toBe('')
     expect(tile).toContain('width:40px')
     expect(tile).toContain('height:40px')
@@ -166,14 +166,14 @@ describe('each card carries a brand tile', () => {
     expect(tile).toContain('linear-gradient(145deg')
     // The glyph is a mask, not a background-image: hovering the tile repaints
     // the gradient, and a background-image would repaint the glyph with it.
-    const glyph = rule('.dsm-workbuddy-xdpool-tile::after')
+    const glyph = rule('.dsm-xdpool-tile::after')
     expect(glyph).not.toBe('')
-    expect(glyph).toContain('mask:var(--dsm-workbuddy-xdpool-tile-glyph')
+    expect(glyph).toContain('mask:var(--dsm-xdpool-tile-glyph')
     expect(glyph).not.toContain('background-image')
 
-    expect(brandTile).toContain('className={`dsm-workbuddy-xdpool-tile')
-    expect(brandTile).toContain('--dsm-workbuddy-xdpool-tile-accent')
-    expect(brandTile).toContain('--dsm-workbuddy-xdpool-tile-glyph')
+    expect(brandTile).toContain('className={`dsm-xdpool-tile')
+    expect(brandTile).toContain('--dsm-xdpool-tile-accent')
+    expect(brandTile).toContain('--dsm-xdpool-tile-glyph')
     // Decorative: the channel name sits next to it, so announcing it would say
     // every name twice.
     expect(brandTile).toContain('aria-hidden="true"')
@@ -189,15 +189,15 @@ describe('each card carries a brand tile', () => {
     // brand marks the OFM build embeds. Eight of the thirteen channels have
     // one; the other five keep the gradient-and-glyph fallback, which is why
     // the tile has to be good in both shapes.
-    const art = rule('.dsm-workbuddy-xdpool-tile-art')
+    const art = rule('.dsm-xdpool-tile-art')
     expect(art, 'the artwork variant must exist').not.toBe('')
-    expect(art).toContain('var(--dsm-workbuddy-xdpool-tile-icon')
+    expect(art).toContain('var(--dsm-xdpool-tile-icon')
     expect(art).toContain('background-size:contain')
     // The gradient and the mask are both switched off rather than layered
     // under an opaque PNG.
-    expect(rule('.dsm-workbuddy-xdpool-tile-art::after')).toContain('content:none')
-    expect(brandTile).toContain('--dsm-workbuddy-xdpool-tile-icon')
-    expect(brandTile).toContain('dsm-workbuddy-xdpool-tile-art')
+    expect(rule('.dsm-xdpool-tile-art::after')).toContain('content:none')
+    expect(brandTile).toContain('--dsm-xdpool-tile-icon')
+    expect(brandTile).toContain('dsm-xdpool-tile-art')
 
     // Both pages ask the same map, so a channel cannot have a logo on one page
     // and a fallback glyph on the other.
@@ -237,9 +237,9 @@ describe('each card carries a brand tile', () => {
     // A lane's colour reaches the DOM as a custom property, not as a class per
     // lane, so adding a lane is a data change and not a stylesheet change.
     expect(regionCardStyle('cn')).toEqual({
-      '--dsm-workbuddy-xdpool-region-accent': REGION_PALETTES.cn.accent,
-      '--dsm-workbuddy-xdpool-region-icon-from': REGION_PALETTES.cn.from,
-      '--dsm-workbuddy-xdpool-region-icon-to': REGION_PALETTES.cn.to,
+      '--dsm-xdpool-region-accent': REGION_PALETTES.cn.accent,
+      '--dsm-xdpool-region-icon-from': REGION_PALETTES.cn.from,
+      '--dsm-xdpool-region-icon-to': REGION_PALETTES.cn.to,
     })
     // The two stops are named, not derived: these lanes ARE the pool's own
     // suppliers, so their gradient is a brand decision.
@@ -253,14 +253,14 @@ describe('each card carries a brand tile', () => {
 
 describe('the state pill is a colour plus a word, never a colour alone', () => {
   it('has three states with three distinct colours', () => {
-    const base = rule('.dsm-workbuddy-xdpool-region-state')
+    const base = rule('.dsm-xdpool-region-state')
     expect(base).not.toBe('')
     // A 6px dot carries the colour as well, so the pill still reads for
     // someone who cannot separate the tint from the surface.
-    expect(rule('.dsm-workbuddy-xdpool-region-state::before')).toContain('border-radius:50%')
-    const ok = rule('.dsm-workbuddy-xdpool-region[data-state="ok"] .dsm-workbuddy-xdpool-region-state')
-    const cooling = rule('.dsm-workbuddy-xdpool-region[data-state="cooling"] .dsm-workbuddy-xdpool-region-state')
-    const error = rule('.dsm-workbuddy-xdpool-region[data-state="error"] .dsm-workbuddy-xdpool-region-state')
+    expect(rule('.dsm-xdpool-region-state::before')).toContain('border-radius:50%')
+    const ok = rule('.dsm-xdpool-region[data-state="ok"] .dsm-xdpool-region-state')
+    const cooling = rule('.dsm-xdpool-region[data-state="cooling"] .dsm-xdpool-region-state')
+    const error = rule('.dsm-xdpool-region[data-state="error"] .dsm-xdpool-region-state')
     expect(ok).toContain('state-success-primary')
     expect(error).toContain('state-error-primary')
     // Cooling is not a failure and must not be painted like one.
@@ -274,7 +274,7 @@ describe('the state pill is a colour plus a word, never a colour alone', () => {
     // the login-channel cards. The badge is the loudest thing on both, so it has
     // to be the same component: a 999px pill, 6px/14px padding, a translucent
     // layer-1 fill and an inset top highlight, all lifted from `.ofm_poolbadge`.
-    const base = rule('.dsm-workbuddy-xdpool-region-state')
+    const base = rule('.dsm-xdpool-region-state')
     expect(base).toContain('padding:6px 14px')
     expect(base).toContain('border-radius:999px')
     expect(base).toContain('font-weight:650')
@@ -283,7 +283,7 @@ describe('the state pill is a colour plus a word, never a colour alone', () => {
     // A `box-shadow` ring reads as a notification. Each state must tint the
     // badge's OWN fill instead, which is why no state may carry a ring.
     for (const state of ['ok', 'cooling', 'error']) {
-      const tone = rule(`.dsm-workbuddy-xdpool-region[data-state="${state}"] .dsm-workbuddy-xdpool-region-state`)
+      const tone = rule(`.dsm-xdpool-region[data-state="${state}"] .dsm-xdpool-region-state`)
       expect(tone, `data-state="${state}" must exist`).not.toBe('')
       expect(tone, `data-state="${state}" must not ring`).not.toContain('box-shadow')
       expect(tone, `data-state="${state}" must tint its own fill`).toContain('background:color-mix')
@@ -296,14 +296,14 @@ describe('the account-pool card is the same size as a login-channel card', () =>
     // "Same size" has to mean the same shell, not a similar one. Three numbers
     // carry it: the radius, the padding, and the layer-3 translucent fill. If
     // one drifts the pool card stops reading as the same object as a channel.
-    const region = rule('.dsm-workbuddy-xdpool-region')
-    const channel = rule('.dsm-workbuddy-xdpool-channel')
+    const region = rule('.dsm-xdpool-region')
+    const channel = rule('.dsm-xdpool-channel')
     expect(region).not.toBe('')
     expect(channel).not.toBe('')
-    expect(radiusOf('.dsm-workbuddy-xdpool-region'), 'the two cards must share a radius')
-      .toBe(radiusOf('.dsm-workbuddy-xdpool-channel'))
-    expect(fillOf('.dsm-workbuddy-xdpool-region'), 'the two cards must share a fill')
-      .toBe(fillOf('.dsm-workbuddy-xdpool-channel'))
+    expect(radiusOf('.dsm-xdpool-region'), 'the two cards must share a radius')
+      .toBe(radiusOf('.dsm-xdpool-channel'))
+    expect(fillOf('.dsm-xdpool-region'), 'the two cards must share a fill')
+      .toBe(fillOf('.dsm-xdpool-channel'))
     expect(region).toContain('padding:12px 13px 12px 15px')
     // And the card gap matches too: five, not ten, because the channel card is
     // the denser of the two and the pool lane follows it.
@@ -311,13 +311,13 @@ describe('the account-pool card is the same size as a login-channel card', () =>
   })
 
   it('wears an accent hairline on top, so the two pages share a family', () => {
-    const hair = rule('.dsm-workbuddy-xdpool-region::before')
+    const hair = rule('.dsm-xdpool-region::before')
     expect(hair).not.toBe('')
-    expect(hair).toContain('--dsm-workbuddy-xdpool-region-accent')
+    expect(hair).toContain('--dsm-xdpool-region-accent')
     // Error has to break the lane\u2019s own colour, because a red-hairlined card
     // beside a purple one is the only place the failure is visible once the
     // card scrolls below the fold.
-    expect(rule('.dsm-workbuddy-xdpool-region[data-state="error"]::before'))
+    expect(rule('.dsm-xdpool-region[data-state="error"]::before'))
       .toContain('state-error-primary')
   })
 
@@ -328,7 +328,7 @@ describe('the account-pool card is the same size as a login-channel card', () =>
     // "label number" pairs. Three boxes for three numbers made the card taller
     // than the thing it described, and gave a 7.1K balance more visual weight
     // than the sentence explaining what the balance buys.
-    const stats = rule('.dsm-workbuddy-xdpool-region-stats')
+    const stats = rule('.dsm-xdpool-region-stats')
     expect(stats).not.toBe('')
     expect(stats).toContain('flex-wrap:wrap')
     // Baseline, not stretch: the labels and the numbers sit on one text line.
@@ -340,7 +340,7 @@ describe('the account-pool card is the same size as a login-channel card', () =>
     // No more recessed tile: no radius, no padding, no background, no column.
     expect(stats).not.toContain('border-radius')
     expect(stats).not.toContain('align-items:stretch')
-    const stat = rule('.dsm-workbuddy-xdpool-region-stat')
+    const stat = rule('.dsm-xdpool-region-stat')
     expect(stat).not.toBe('')
     expect(stat).toContain('display:inline-flex')
     expect(stat).toContain('align-items:baseline')
@@ -348,7 +348,7 @@ describe('the account-pool card is the same size as a login-channel card', () =>
     expect(stat).not.toContain('flex-direction:column')
     // The figure is the loud part, so it takes the secondary label colour and
     // the tabular figures; the label beside it stays inherited.
-    const num = rule('.dsm-workbuddy-xdpool-region-num')
+    const num = rule('.dsm-xdpool-region-num')
     expect(num).toContain('font-weight:650')
     expect(num).toContain('tabular-nums')
     expect(num).toContain('label-secondary')
@@ -363,7 +363,7 @@ describe('the statistics row reads numbers first and labels second', () => {
     // number a statistics row must not invent.
     expect(card).toContain('creditLeftOf')
     expect(card).toContain('data-tone="quiet"')
-    expect(rule('.dsm-workbuddy-xdpool-region-num[data-tone="quiet"]')).not.toBe('')
+    expect(rule('.dsm-xdpool-region-num[data-tone="quiet"]')).not.toBe('')
     expect(card).toContain("{creditLeft ?? '–'}")
   })
 
@@ -377,7 +377,7 @@ describe('the statistics row reads numbers first and labels second', () => {
     // asked for reads label-first, and the reference build\'s `.ofm_chanmeta`
     // builds each pair as the label followed by a <b>. Getting this backwards
     // produces a row that reads as three fractions and no nouns.
-    const stat = card.slice(card.indexOf('dsm-workbuddy-xdpool-region-stats'))
+    const stat = card.slice(card.indexOf('dsm-xdpool-region-stats'))
     const label = stat.indexOf('region-label')
     const num = stat.indexOf('region-num')
     expect(label).toBeGreaterThan(-1)
@@ -387,13 +387,13 @@ describe('the statistics row reads numbers first and labels second', () => {
 
 describe('the buttons are adapted for a 510px column', () => {
   it('lets the button group wrap instead of overflowing', () => {
-    expect(rule('.dsm-workbuddy-xdpool-region-actions')).toContain('flex-wrap:wrap')
-    expect(rule('.dsm-workbuddy-xdpool-region-btns')).toContain('flex-wrap:wrap')
+    expect(rule('.dsm-xdpool-region-actions')).toContain('flex-wrap:wrap')
+    expect(rule('.dsm-xdpool-region-btns')).toContain('flex-wrap:wrap')
     // At the narrowest width each group takes its own full line and the
     // segments split it evenly, so neither can push the other out of the card.
-    expect(mediaRule('@media (max-width:760px)', '.dsm-workbuddy-xdpool-region-btns')).toContain('flex:1 1 100%')
-    expect(mediaRule('@media (max-width:760px)', '.dsm-workbuddy-xdpool-region-seg')).toContain('width:100%')
-    expect(mediaRule('@media (max-width:760px)', '.dsm-workbuddy-xdpool-region-seg-btn')).toContain('flex:1 1 0')
+    expect(mediaRule('@media (max-width:760px)', '.dsm-xdpool-region-btns')).toContain('flex:1 1 100%')
+    expect(mediaRule('@media (max-width:760px)', '.dsm-xdpool-region-seg')).toContain('width:100%')
+    expect(mediaRule('@media (max-width:760px)', '.dsm-xdpool-region-seg-btn')).toContain('flex:1 1 0')
   })
 
   it('neutralises the hover lift on a disabled control', () => {
@@ -401,8 +401,8 @@ describe('the buttons are adapted for a 510px column', () => {
     // button would still lift on hover — a control that moves under the cursor
     // while refusing to do anything.
     for (const selector of [
-      '.dsm-workbuddy-xdpool-region-seg-btn:disabled',
-      '.dsm-workbuddy-xdpool-region-tool:disabled',
+      '.dsm-xdpool-region-seg-btn:disabled',
+      '.dsm-xdpool-region-tool:disabled',
     ]) {
       const disabled = rule(selector)
       expect(disabled, `${selector} must exist`).not.toBe('')
@@ -417,12 +417,12 @@ describe('the buttons are adapted for a 510px column', () => {
   it('keeps a busy button the width it had', () => {
     // Swapping the label for a spinner-sized box reflows the row and shoves
     // the segmented control sideways in the middle of a click.
-    const busy = rule('.dsm-workbuddy-xdpool-region-btn[aria-busy="true"]')
+    const busy = rule('.dsm-xdpool-region-btn[aria-busy="true"]')
     expect(busy).not.toBe('')
     expect(busy).toContain('cursor:progress')
     expect(busy).toContain('pointer-events:none')
     expect(busy).not.toMatch(/\bwidth\s*:/)
-    expect(rule('.dsm-workbuddy-xdpool-region-btn[aria-busy="true"]::before')).toContain('position:absolute')
+    expect(rule('.dsm-xdpool-region-btn[aria-busy="true"]::before')).toContain('position:absolute')
     // And the card must actually set it, with the region that owns the work so
     // a click on the domestic card cannot spin the international one.
     expect(card).toContain('aria-busy={busyRegion === region}')
@@ -433,7 +433,7 @@ describe('the buttons are adapted for a 510px column', () => {
   it('keeps the focus ring inside the segmented control gutter', () => {
     // The segments sit in a 3px inset groove; an outline at the default 2px
     // offset would cross the card border and read as belonging to the card.
-    expect(rule('.dsm-workbuddy-xdpool-region-seg-btn:focus-visible')).toContain('outline-offset:-2px')
+    expect(rule('.dsm-xdpool-region-seg-btn:focus-visible')).toContain('outline-offset:-2px')
   })
 
   it('truncates the three places a long string would otherwise push the card', () => {
@@ -442,9 +442,9 @@ describe('the buttons are adapted for a 510px column', () => {
     // that is the parent's job. `text-overflow` on a child of a box that
     // refuses to shrink does nothing.
     for (const [selector, container] of [
-      ['.dsm-workbuddy-xdpool-region-title', '.dsm-workbuddy-xdpool-region-titles'],
-      ['.dsm-workbuddy-xdpool-region-sub', '.dsm-workbuddy-xdpool-region-titles'],
-      ['.dsm-workbuddy-xdpool-channel-name', '.dsm-workbuddy-xdpool-channel-head'],
+      ['.dsm-xdpool-region-title', '.dsm-xdpool-region-titles'],
+      ['.dsm-xdpool-region-sub', '.dsm-xdpool-region-titles'],
+      ['.dsm-xdpool-channel-name', '.dsm-xdpool-channel-head'],
     ] as const) {
       const body = rule(selector)
       expect(body, `${selector} must exist`).not.toBe('')
@@ -460,14 +460,14 @@ describe('the disclosures open in place', () => {
   it('hides a closed pane with hidden, never with max-height', () => {
     // `max-height:0` clips the focus ring of anything inside, so the first Tab
     // after expanding lands nowhere visible.
-    expect(rule('.dsm-workbuddy-xdpool-region-pane[hidden]')).toContain('display:none')
-    expect(rule('.dsm-workbuddy-xdpool-region-pane')).not.toContain('max-height')
+    expect(rule('.dsm-xdpool-region-pane[hidden]')).toContain('display:none')
+    expect(rule('.dsm-xdpool-region-pane')).not.toContain('max-height')
     expect(regionCard).toContain('hidden={!open}')
   })
 
   it('opens a disclosure without changing the expanded control shape', () => {
-    expect(rule('.dsm-workbuddy-xdpool-region-seg-btn[aria-expanded="true"]')).not.toBe('')
-    expect(rule('.dsm-workbuddy-xdpool-region-tool[aria-expanded="true"]')).not.toBe('')
+    expect(rule('.dsm-xdpool-region-seg-btn[aria-expanded="true"]')).not.toBe('')
+    expect(rule('.dsm-xdpool-region-tool[aria-expanded="true"]')).not.toBe('')
     expect(regionCard).toContain('aria-expanded={open}')
     expect(regionCard).toContain('aria-controls={controls}')
     // Four panes per lane, all closed on arrival: a card that opens with a
@@ -482,7 +482,7 @@ describe('the disclosures open in place', () => {
   it('keeps the two tool buttons on the domestic lane only', () => {
     // The international gateway has no growth system at all, so an automation
     // switch there would be a control that can never do anything.
-    expect(card).toContain('dsm-workbuddy-xdpool-region-cntools')
+    expect(card).toContain('dsm-xdpool-region-cntools')
     expect(card).toMatch(/region === 'cn' \? here\?\.automation : undefined/)
     // And the card it reads from must be this lane's status, not the focused one.
     expect(card).toContain('const here = card.status')
@@ -495,10 +495,10 @@ describe('the shared page classes survive a 510px column', () => {
     // `-stats` is shared with the aggregate and relay pages, so whatever it is,
     // it has to be safe in a ~510px lane column. The lane card only needs its
     // gap tightened; anything more would be a second competing layout.
-    const scoped = rule('.dsm-workbuddy-xdpool-region .dsm-workbuddy-xdpool-stats')
+    const scoped = rule('.dsm-xdpool-region .dsm-xdpool-stats')
     expect(scoped).not.toBe('')
     expect(scoped, 'a column count here would resurrect the squeezed grid').not.toContain('grid-template-columns')
-    const global = rule('.dsm-workbuddy-xdpool-stats')
+    const global = rule('.dsm-xdpool-stats')
     expect(global, 'the figures line must wrap rather than declare columns')
       .not.toContain('grid-template-columns')
     expect(global).toContain('flex-wrap:wrap')
@@ -511,16 +511,16 @@ describe('one account is one flat row, not a card with two boxed halves', () => 
     // line beside a two-column credit grid, inside a card the lane's own width
     // had already forced down to one column. So the grid never did anything, and
     // the row read as a tall box that was mostly padding.
-    const head = rule('.dsm-workbuddy-xdpool-account-head')
+    const head = rule('.dsm-xdpool-account-head')
     expect(head).not.toBe('')
     expect(head).toContain('flex-wrap:wrap')
     expect(head, 'no divider: the head and the figures are one card now').not.toContain('border-bottom')
     // The name is the only thing allowed to shrink; it has to be able to.
-    expect(rule('.dsm-workbuddy-xdpool-account-label')).toContain('min-width:0')
+    expect(rule('.dsm-xdpool-account-label')).toContain('min-width:0')
   })
 
   it('reads the balance as one figure in a row, not as a headline', () => {
-    const total = rule('.dsm-workbuddy-xdpool-total-value')
+    const total = rule('.dsm-xdpool-total-value')
     expect(total).not.toBe('')
     // The emphasis is colour and weight. At 28px the number outweighed the
     // account name it belongs to, which is how a routine balance became the
@@ -536,24 +536,24 @@ describe('one account is one flat row, not a card with two boxed halves', () => 
     // belonged to — the name had to be repeated in the strip to be useful at all.
     expect(card).toContain('serving={card.activeAccount?.id === account.id}')
     expect(card).toContain("data-serving={serving === true ? 'true' : undefined}")
-    expect(rule('.dsm-workbuddy-xdpool-account[data-serving="true"]'), 'the row needs its own live state')
+    expect(rule('.dsm-xdpool-account[data-serving="true"]'), 'the row needs its own live state')
       .not.toBe('')
     // The strip needed the account's name, because the row it pointed at was
     // somewhere else in the list. On the row itself that name is already there.
-    expect(card).not.toContain('dsm-workbuddy-xdpool-current-name')
+    expect(card).not.toContain('dsm-xdpool-current-name')
     expect(card).not.toContain('row.currentAccountDisabled')
-    expect(styles).not.toContain('dsm-workbuddy-xdpool-current-name')
+    expect(styles).not.toContain('dsm-xdpool-current-name')
   })
 
   it('prints the package breakdown as chips on the figures line', () => {
     // As its own column it needed a heading to say what it was. As chips the
     // name says it, and the amounts stay comparable between accounts.
-    const list = rule('.dsm-workbuddy-xdpool-packages')
+    const list = rule('.dsm-xdpool-packages')
     expect(list).toContain('flex-wrap:wrap')
-    const item = rule('.dsm-workbuddy-xdpool-packages li')
+    const item = rule('.dsm-xdpool-packages li')
     expect(item, 'a two-row grid per package is the old table again')
       .not.toContain('grid-template-columns')
-    expect(card).toContain('dsm-workbuddy-xdpool-panel-packages dsm-workbuddy-xdpool-packages')
+    expect(card).toContain('dsm-xdpool-panel-packages dsm-xdpool-packages')
   })
 
   it('gives up the total panel its banner chrome', () => {
@@ -561,16 +561,16 @@ describe('one account is one flat row, not a card with two boxed halves', () => 
     // full-width banner. On a figure inside a row they made the balance look like
     // a section of its own, which is the second half of the same problem.
     expect(styles, 'the banner cap must go with the banner')
-      .not.toContain('dsm-workbuddy-xdpool-panel-total::before')
-    expect(card).toContain('dsm-workbuddy-xdpool-panel-total')
+      .not.toContain('dsm-xdpool-panel-total::before')
+    expect(card).toContain('dsm-xdpool-panel-total')
   })
 
   it('keeps the check-in action on one line with its streak', () => {
-    const checkin = rule('.dsm-workbuddy-xdpool-checkin')
+    const checkin = rule('.dsm-xdpool-checkin')
     expect(checkin).not.toBe('')
     expect(checkin, 'a centred column under a divider is a dialog, and this is not')
       .not.toContain('align-items:center;gap:7px;width:100%;margin-top')
-    expect(rule('.dsm-workbuddy-xdpool-checkin-btn'), 'a full-width button stretched the row')
+    expect(rule('.dsm-xdpool-checkin-btn'), 'a full-width button stretched the row')
       .not.toContain('width:100%')
   })
 })
@@ -652,8 +652,8 @@ describe('the scan-login roster is read for branding only, never mirrored', () =
     // Asserted at the source level: the section is asserted absent here so that
     // re-adding it means editing this sentence, which is the point.
     for (const gone of [
-      'dsm-workbuddy-xdpool-poolchans',
-      'dsm-workbuddy-xdpool-poolchan',
+      'dsm-xdpool-poolchans',
+      'dsm-xdpool-poolchan',
       'PoolChannelRow',
       'row.poolChan',
     ]) {

@@ -19,7 +19,7 @@
  * log. It does NOT refuse to start: a version mismatch might well be benign, and
  * a plugin that hard-fails on a guess would be worse than one that warns.
  *
- * @module dsh-workbuddy-xdpool/pi-ai-generation
+ * @module dsh-xdpool/pi-ai-generation
  */
 
 import { createRequire } from 'node:module'
@@ -111,7 +111,7 @@ export function checkPiAiGeneration(pluginDir: string, hostDir: string): PiAiGen
 export function piAiMismatchMessage(check: PiAiGenerationCheck): string | undefined {
   if (check.kind !== 'mismatched') return undefined
   return (
-    'dsh-workbuddy-xdpool: @earendil-works/pi-ai generation mismatch — this plugin '
+    'dsh-xdpool: @earendil-works/pi-ai generation mismatch — this plugin '
     + `assembled its provider with ${check.plugin.version} while the host adapter resolves `
     + `${check.host.version}. Two generations on one call chain produce a TypeError at the `
     + 'adapter seam ("Cannot read properties of undefined"), which the host reports as a '

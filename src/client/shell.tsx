@@ -27,14 +27,14 @@
  *    that, on a machine without outbound network, looks exactly like a broken
  *    plugin.
  *
- * @module dsh-workbuddy-xdpool/client/shell
+ * @module dsh-xdpool/client/shell
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { WorkBuddyPoolSettingsKey } from './locales.ts'
+import type { XdPoolSettingsKey } from './locales.ts'
 import { SHARED_CARD_CSS, SHELL_CSS } from './styles.ts'
 /** The translator the settings section injects. */
-type Translate = (key: WorkBuddyPoolSettingsKey, params?: Record<string, unknown>) => string
+type Translate = (key: XdPoolSettingsKey, params?: Record<string, unknown>) => string
 /** One page in the tab strip. `num` renders the OFM-style corner count. */
 export interface ShellTab {
   id: string
@@ -95,10 +95,10 @@ export function KpiCard({
   sub?: string | undefined
 }) {
   return (
-    <div className="dsm-workbuddy-xdpool-kpi dsm-workbuddy-xdpool-glass">
-      <span className="dsm-workbuddy-xdpool-kpi-label">{label}</span>
-      <span className="dsm-workbuddy-xdpool-kpi-value">{value}</span>
-      <span className="dsm-workbuddy-xdpool-kpi-sub">{sub ?? ''}</span>
+    <div className="dsm-xdpool-kpi dsm-xdpool-glass">
+      <span className="dsm-xdpool-kpi-label">{label}</span>
+      <span className="dsm-xdpool-kpi-value">{value}</span>
+      <span className="dsm-xdpool-kpi-sub">{sub ?? ''}</span>
     </div>
   )
 }
@@ -122,14 +122,14 @@ export function PageHero({
   pills?: ReactNode | undefined
 }) {
   return (
-    <div className="dsm-workbuddy-xdpool-hero dsm-workbuddy-xdpool-glass">
-      <div className="dsm-workbuddy-xdpool-pagehead">
-        <span className="dsm-workbuddy-xdpool-pagecopy">
-          <h2 className="dsm-workbuddy-xdpool-pagetitle">{title}</h2>
-          {sub === undefined || sub === '' ? null : <p className="dsm-workbuddy-xdpool-pagesub">{sub}</p>}
+    <div className="dsm-xdpool-hero dsm-xdpool-glass">
+      <div className="dsm-xdpool-pagehead">
+        <span className="dsm-xdpool-pagecopy">
+          <h2 className="dsm-xdpool-pagetitle">{title}</h2>
+          {sub === undefined || sub === '' ? null : <p className="dsm-xdpool-pagesub">{sub}</p>}
         </span>
-        {pills === undefined ? null : <div className="dsm-workbuddy-xdpool-pills">{pills}</div>}
-        {actions === undefined ? null : <div className="dsm-workbuddy-xdpool-pageactions">{actions}</div>}
+        {pills === undefined ? null : <div className="dsm-xdpool-pills">{pills}</div>}
+        {actions === undefined ? null : <div className="dsm-xdpool-pageactions">{actions}</div>}
       </div>
     </div>
   )
@@ -184,7 +184,7 @@ export function PoolShell({
     onSelect(id)
   }, [onSelect])
   return (
-    <div className="dsm-workbuddy-xdpool-shell">
+    <div className="dsm-xdpool-shell">
       {/*
         Two sheets, in this order. Every page injects its own stylesheet from
         inside this shell, so the shared primitives have to be declared here —
@@ -194,26 +194,26 @@ export function PoolShell({
       */}
       <style>{SHARED_CARD_CSS}</style>
       <style>{SHELL_CSS}</style>
-      <div className="dsm-workbuddy-xdpool-aurora" aria-hidden="true">
+      <div className="dsm-xdpool-aurora" aria-hidden="true">
         <i />
         <i />
         <i />
       </div>
-      <nav className="dsm-workbuddy-xdpool-nav">
-        <div className="dsm-workbuddy-xdpool-brand">
-          <img className="dsm-workbuddy-xdpool-avatar" src={avatar} alt="" />
-          <span className="dsm-workbuddy-xdpool-brand-copy">
-            <span className="dsm-workbuddy-xdpool-brand-title">
+      <nav className="dsm-xdpool-nav">
+        <div className="dsm-xdpool-brand">
+          <img className="dsm-xdpool-avatar" src={avatar} alt="" />
+          <span className="dsm-xdpool-brand-copy">
+            <span className="dsm-xdpool-brand-title">
               {t?.('shell.brand') ?? 'XD Pool'}
               {version === undefined || version === ''
                 ? null
-                : <span className="dsm-workbuddy-xdpool-version">v{version}</span>}
+                : <span className="dsm-xdpool-version">v{version}</span>}
             </span>
           </span>
         </div>
         <a
-          className="dsm-workbuddy-xdpool-star"
-          href="https://github.com/XDTrees/dsh-workbuddy-xdpool"
+          className="dsm-xdpool-star"
+          href="https://github.com/XDTrees/dsh-xdpool"
           target="_blank"
           rel="noreferrer"
           title={t?.('shell.starHint') ?? 'Open this plugin on GitHub'}
@@ -226,10 +226,10 @@ export function PoolShell({
           </svg>
           <span>{t?.('shell.star') ?? 'Star on GitHub'}</span>
         </a>
-        <div className="dsm-workbuddy-xdpool-navtabs" role="tablist" ref={tabsRef}>
+        <div className="dsm-xdpool-navtabs" role="tablist" ref={tabsRef}>
           {glider === undefined ? null
             : <span
-                className="dsm-workbuddy-xdpool-navglider"
+                className="dsm-xdpool-navglider"
                 style={{
                   transform: `translate(${String(glider.left)}px, ${String(glider.top)}px)`,
                   width: `${String(glider.width)}px`,
@@ -243,17 +243,17 @@ export function PoolShell({
               role="tab"
               aria-selected={tab.id === active}
               ref={(element) => { tabRefs.current.set(tab.id, element) }}
-              className={`dsm-workbuddy-xdpool-navtab${tab.id === active ? ' dsm-workbuddy-xdpool-navtab-on' : ''}`}
+              className={`dsm-xdpool-navtab${tab.id === active ? ' dsm-xdpool-navtab-on' : ''}`}
               onClick={() => { select(tab.id) }}
             >
               {tab.label}
-              {tab.num === undefined ? null : <span className="dsm-workbuddy-xdpool-navtabnum">{tab.num}</span>}
+              {tab.num === undefined ? null : <span className="dsm-xdpool-navtabnum">{tab.num}</span>}
             </button>
           ))}
         </div>
       </nav>
       {hero === undefined ? null : hero}
-      <div className="dsm-workbuddy-xdpool-body">{children}</div>
+      <div className="dsm-xdpool-body">{children}</div>
     </div>
   )
 }

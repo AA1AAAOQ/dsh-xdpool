@@ -105,9 +105,9 @@ function Figure({ label, value, title }: {
   title?: string
 }): ReactElement {
   return (
-    <span className="dsm-workbuddy-xdpool-mfacts-fig" {...(title === undefined ? {} : { title })}>
-      <span className="dsm-workbuddy-xdpool-mfacts-fig-label">{label}</span>
-      <span className="dsm-workbuddy-xdpool-mfacts-fig-value">{value}</span>
+    <span className="dsm-xdpool-mfacts-fig" {...(title === undefined ? {} : { title })}>
+      <span className="dsm-xdpool-mfacts-fig-label">{label}</span>
+      <span className="dsm-xdpool-mfacts-fig-value">{value}</span>
     </span>
   )
 }
@@ -144,11 +144,11 @@ export function ModelFactsRow({ row, t, className, facts, onTest, probe, probing
     return null
   }
   return (
-    <div className={`dsm-workbuddy-xdpool-mfacts${className === undefined ? '' : ` ${className}`}`}>
+    <div className={`dsm-xdpool-mfacts${className === undefined ? '' : ` ${className}`}`}>
       {resolved.description === undefined ? null
-        : <p className="dsm-workbuddy-xdpool-mfacts-note">{resolved.description}</p>}
+        : <p className="dsm-xdpool-mfacts-note">{resolved.description}</p>}
       {hasFigures || onTest !== undefined || probe !== undefined
-        ? <div className="dsm-workbuddy-xdpool-mfacts-line">
+        ? <div className="dsm-xdpool-mfacts-line">
             {figures.context === undefined ? null
               : <Figure
                   label={say('facts.context', 'context')}
@@ -179,7 +179,7 @@ export function ModelFactsRow({ row, t, className, facts, onTest, probe, probing
                 />}
             {probe === undefined ? null
               : <span
-                  className="dsm-workbuddy-xdpool-mfacts-result"
+                  className="dsm-xdpool-mfacts-result"
                   data-ok={probe.ok ? 'true' : 'false'}
                   title={probe.error ?? undefined}
                 >
@@ -199,7 +199,7 @@ export function ModelFactsRow({ row, t, className, facts, onTest, probe, probing
             {probe !== undefined || onTest === undefined ? null
               : <button
                   type="button"
-                  className="dsm-workbuddy-xdpool-mfacts-probe"
+                  className="dsm-xdpool-mfacts-probe"
                   onClick={() => { onTest() }}
                   disabled={probing === true}
                   aria-busy={probing === true}
@@ -212,7 +212,7 @@ export function ModelFactsRow({ row, t, className, facts, onTest, probe, probing
           </div>
         : null}
       {probe?.error === undefined ? null
-        : <span className="dsm-workbuddy-xdpool-mfacts-result-error">{probe.error}</span>}
+        : <span className="dsm-xdpool-mfacts-result-error">{probe.error}</span>}
     </div>
   )
 }

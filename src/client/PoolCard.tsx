@@ -1,5 +1,5 @@
 /**
- * WorkBuddy XD Pool card contributed to DSH Plugin configuration.
+ * XD Pool card contributed to DSH Plugin configuration.
  *
  * The card body mirrors the LaoDing plugin family used by dingminhua's
  * `dsh-connect-workbuddy`: a small status row (dot + count + Rescan / Clear
@@ -11,7 +11,7 @@
  * a left-nav row and a scrollable content column, so everything is visible at
  * once — a fold inside the page only hid the pool behind a click.
  *
- * @module dsh-workbuddy-xdpool/client/PoolCard
+ * @module dsh-xdpool/client/PoolCard
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
@@ -64,10 +64,10 @@ import { ModelFactsRow } from './model-facts-row.tsx'
 import type { ModelProbeReading } from './model-facts.ts'
 import type { UsageSummary } from '../stats.ts'
 import { POOL_VERSION } from '../version.ts'
-import type { WorkBuddyPoolSettingsKey } from './locales.ts'
+import type { XdPoolSettingsKey } from './locales.ts'
 /** Localized copy injected by the browser-plugin registration. */
 export interface PoolCardInjected {
-  t: (key: WorkBuddyPoolSettingsKey, params?: Record<string, unknown>) => string
+  t: (key: XdPoolSettingsKey, params?: Record<string, unknown>) => string
   /**
    * The plugin settings section the card reads and writes. Model selection
    * lives here, which is what makes it apply to the whole pool rather than to
@@ -103,13 +103,13 @@ const DEFAULT_CONTEXT_BUDGET = 200_000
 const POLL_INTERVAL_MS = 30_000
 /** Inject or refresh the shared card CSS for the current client bundle. */
 if (typeof document !== 'undefined') {
-  const cssId = 'dsh-workbuddy-xdpool/client.css'
+  const cssId = 'dsh-xdpool/client.css'
   const existing = document.querySelector<HTMLStyleElement>(`style[data-plugin-css="${cssId}"]`)
   if (existing !== null) {
     existing.textContent = POOL_CARD_CSS
   } else {
     const styleTag = document.createElement('style')
-    styleTag.dataset.plugin = 'dsh-workbuddy-xdpool'
+    styleTag.dataset.plugin = 'dsh-xdpool'
     styleTag.dataset.pluginCss = cssId
     styleTag.textContent = POOL_CARD_CSS
     document.head.appendChild(styleTag)
@@ -1414,9 +1414,9 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
               <style>{POOL_CARD_CSS}</style>
               {usage === undefined
                 ? null
-                : <section className="dsm-workbuddy-xdpool-card dsm-workbuddy-xdpool-usage" aria-label={t?.('row.usageTitle') ?? 'Usage'}>
-                    <div className="dsm-workbuddy-xdpool-usage-head">
-                      <h3 className="dsm-workbuddy-xdpool-usage-title">
+                : <section className="dsm-xdpool-card dsm-xdpool-usage" aria-label={t?.('row.usageTitle') ?? 'Usage'}>
+                    <div className="dsm-xdpool-usage-head">
+                      <h3 className="dsm-xdpool-usage-title">
                         {t?.('row.usageTitle') ?? 'Usage'}
                       </h3>
                       {/* Turns and calls are printed as two numbers, never as
@@ -1424,7 +1424,7 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                           the user asked for and THREE upstream round trips;
                           collapsing them is what makes a panel disagree with
                           the person reading it. */}
-                      <p className="dsm-workbuddy-xdpool-usage-summary">
+                      <p className="dsm-xdpool-usage-summary">
                         {t?.('row.usageTurns', {
                           turns: usage.turns,
                           calls: usage.calls,
@@ -1434,7 +1434,7 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                       </p>
                     </div>
                     {usage.calls === 0
-                      ? <p className="dsm-workbuddy-xdpool-usage-note">{t?.('row.usageEmpty') ?? 'No calls recorded yet.'}</p>
+                      ? <p className="dsm-xdpool-usage-note">{t?.('row.usageEmpty') ?? 'No calls recorded yet.'}</p>
                       : null}
                     {/* "Reported no tokens" and "used no tokens" are different
                         facts, and only `usageReported` tells them apart. Printing
@@ -1443,12 +1443,12 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                         invent. */}
                     {usage.usageReported
                       ? null
-                      : <p className="dsm-workbuddy-xdpool-usage-note">{t?.('row.usageNotReported') ?? 'The gateway reported no token counts.'}</p>}
-                    <div className="dsm-workbuddy-xdpool-usage-rows">
+                      : <p className="dsm-xdpool-usage-note">{t?.('row.usageNotReported') ?? 'The gateway reported no token counts.'}</p>}
+                    <div className="dsm-xdpool-usage-rows">
                       {usage.rows.map(row => (
-                        <div className="dsm-workbuddy-xdpool-usage-row" key={`${row.region}:${row.model}`}>
-                          <span className="dsm-workbuddy-xdpool-usage-model">{row.model}</span>
-                          <span className="dsm-workbuddy-xdpool-usage-numbers">
+                        <div className="dsm-xdpool-usage-row" key={`${row.region}:${row.model}`}>
+                          <span className="dsm-xdpool-usage-model">{row.model}</span>
+                          <span className="dsm-xdpool-usage-numbers">
                             {t?.('row.usageTokens', {
                               input: formatNumber(row.inputTokens),
                               output: formatNumber(row.outputTokens),
@@ -1472,7 +1472,7 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                     {/* Stated rather than hidden: the window lives in memory, so
                         a restart empties it. A user who reads these as a
                         permanent record will one day be wrong about them. */}
-                    <p className="dsm-workbuddy-xdpool-usage-note">
+                    <p className="dsm-xdpool-usage-note">
                       {t?.('row.usageWindow', { samples: usage.samples }) ?? 'Last {samples} call(s) held in memory; restarting clears them.'}
                     </p>
                   </section>}
@@ -1481,8 +1481,8 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                   Both are always rendered, so a lane with no accounts reads as
                   "not signed in here yet" rather than a tab that only appears
                   after the user has already signed in somewhere else. */}
-              <section className="dsm-workbuddy-xdpool-regions">
-              <div className="dsm-workbuddy-xdpool-region-grid">
+              <section className="dsm-xdpool-regions">
+              <div className="dsm-xdpool-region-grid">
                 {REGION_CARDS.map(region => {
                   const card = cardOf(region)
                   const accountsPaneId = `dsm-xdpool-${region}-accounts`
@@ -1507,20 +1507,20 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                   return (
                     <article
                       key={region}
-                      className="dsm-workbuddy-xdpool-region dsm-workbuddy-xdpool-region-in"
+                      className="dsm-xdpool-region dsm-xdpool-region-in"
                       data-region={region}
                       data-state={card.cardState}
                       style={regionCardStyle(region) as Record<string, string>}
                     >
-                      <div className="dsm-workbuddy-xdpool-region-head">
+                      <div className="dsm-xdpool-region-head">
                         <RegionCardTile region={region} />
-                        <div className="dsm-workbuddy-xdpool-region-titles">
-                          <h3 className="dsm-workbuddy-xdpool-region-title">{card.brandName}</h3>
-                          <p className="dsm-workbuddy-xdpool-region-sub">{card.brandSub}</p>
+                        <div className="dsm-xdpool-region-titles">
+                          <h3 className="dsm-xdpool-region-title">{card.brandName}</h3>
+                          <p className="dsm-xdpool-region-sub">{card.brandSub}</p>
                         </div>
-                        <span className="dsm-workbuddy-xdpool-region-state">{card.stateLabel}</span>
+                        <span className="dsm-xdpool-region-state">{card.stateLabel}</span>
                       </div>
-                      <p className="dsm-workbuddy-xdpool-region-note">{card.brandNote}</p>
+                      <p className="dsm-xdpool-region-note">{card.brandNote}</p>
                       {/*
                         * Numbers first, label after — the order the reference
                         * build reads them in, and the order a user compares two
@@ -1529,33 +1529,33 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                         * card taller than the thing it was describing, and the
                         * numbers were the smallest text on it.
                         */}
-                      <div className="dsm-workbuddy-xdpool-region-stats">
-                        <span className="dsm-workbuddy-xdpool-region-stat">
-                          <span className="dsm-workbuddy-xdpool-region-label">
+                      <div className="dsm-xdpool-region-stats">
+                        <span className="dsm-xdpool-region-stat">
+                          <span className="dsm-xdpool-region-label">
                             {t?.('row.regionStatAccounts') ?? 'accounts'}
                           </span>{' '}
-                          <b className="dsm-workbuddy-xdpool-region-num">{card.accountCount === 0 ? '–' : String(card.accountCount)}</b>
+                          <b className="dsm-xdpool-region-num">{card.accountCount === 0 ? '–' : String(card.accountCount)}</b>
                         </span>
-                        <span className="dsm-workbuddy-xdpool-region-stat">
-                          <span className="dsm-workbuddy-xdpool-region-label">
+                        <span className="dsm-xdpool-region-stat">
+                          <span className="dsm-xdpool-region-label">
                             {t?.('row.regionStatModels') ?? 'models'}
                           </span>{' '}
-                          <b className="dsm-workbuddy-xdpool-region-num">{models.length === 0 ? '–' : `${card.modelState.enabled}/${models.length}`}</b>
+                          <b className="dsm-xdpool-region-num">{models.length === 0 ? '–' : `${card.modelState.enabled}/${models.length}`}</b>
                         </span>
-                        <span className="dsm-workbuddy-xdpool-region-stat">
-                          <span className="dsm-workbuddy-xdpool-region-label">
+                        <span className="dsm-xdpool-region-stat">
+                          <span className="dsm-xdpool-region-label">
                             {t?.('row.regionStatCredit') ?? 'credit left'}
                           </span>{' '}
-                          <b className="dsm-workbuddy-xdpool-region-num" data-tone="quiet">
+                          <b className="dsm-xdpool-region-num" data-tone="quiet">
                             {creditLeft ?? '–'}
                           </b>
                         </span>
                       </div>
-                      <div className="dsm-workbuddy-xdpool-region-actions">
-                        <div className="dsm-workbuddy-xdpool-region-btns">
+                      <div className="dsm-xdpool-region-actions">
+                        <div className="dsm-xdpool-region-btns">
                           <button
                             type="button"
-                            className="dsm-btn dsm-btn-outline dsm-workbuddy-xdpool-region-btn"
+                            className="dsm-btn dsm-btn-outline dsm-xdpool-region-btn"
                             disabled={busyRegion !== undefined}
                             aria-busy={busyRegion === region}
                             onClick={() => { void rescan(region) }}
@@ -1566,7 +1566,7 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                           </button>
                           <button
                             type="button"
-                            className="dsm-btn dsm-btn-outline dsm-workbuddy-xdpool-region-btn"
+                            className="dsm-btn dsm-btn-outline dsm-xdpool-region-btn"
                             disabled={cooldownBusyRegion !== undefined || card.cooling === 0}
                             aria-busy={cooldownBusyRegion === region}
                             onClick={() => { void resetCooldowns(region) }}
@@ -1577,7 +1577,7 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                           </button>
                           <button
                             type="button"
-                            className="dsm-btn dsm-btn-outline dsm-workbuddy-xdpool-region-btn"
+                            className="dsm-btn dsm-btn-outline dsm-xdpool-region-btn"
                             disabled={catalogBusyRegion !== undefined}
                             aria-busy={catalogBusyRegion === region}
                             onClick={() => { void refreshCatalog(region) }}
@@ -1588,7 +1588,7 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                               : (t?.('row.catalogRefresh') ?? 'Refresh models')}
                           </button>
                         </div>
-                        <div className="dsm-workbuddy-xdpool-region-seg">
+                        <div className="dsm-xdpool-region-seg">
                           <RegionCardTrigger
                             controls={accountsPaneId}
                             open={accountsOpen}
@@ -1610,30 +1610,30 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                         </div>
                       </div>
                       {region === 'cn'
-                        ? <div className="dsm-workbuddy-xdpool-region-cntools">
+                        ? <div className="dsm-xdpool-region-cntools">
                             <button
                               type="button"
-                              className="dsm-workbuddy-xdpool-region-tool"
+                              className="dsm-xdpool-region-tool"
                               aria-expanded={distOpen}
                               aria-controls={distPaneId}
                               onClick={() => { setPane(distPaneId, !distOpen) }}
                             >
-                              <span className="dsm-workbuddy-xdpool-region-tool-caret" aria-hidden="true">▸</span>
+                              <span className="dsm-xdpool-region-tool-caret" aria-hidden="true">▸</span>
                               <span>{t?.('row.distTitle') ?? 'Account usage'}</span>
-                              <span className="dsm-workbuddy-xdpool-region-tool-value">
+                              <span className="dsm-xdpool-region-tool-value">
                                 {distLabel(card.status?.distribution ?? 'priority', t)}
                               </span>
                             </button>
                             <button
                               type="button"
-                              className="dsm-workbuddy-xdpool-region-tool"
+                              className="dsm-xdpool-region-tool"
                               aria-expanded={autoOpen}
                               aria-controls={autoPaneId}
                               onClick={() => { setPane(autoPaneId, !autoOpen) }}
                             >
-                              <span className="dsm-workbuddy-xdpool-region-tool-caret" aria-hidden="true">▸</span>
+                              <span className="dsm-xdpool-region-tool-caret" aria-hidden="true">▸</span>
                               <span>{t?.('row.autoTitle') ?? 'Automation'}</span>
-                              <span className="dsm-workbuddy-xdpool-region-tool-value">
+                              <span className="dsm-xdpool-region-tool-value">
                                 {card.automation === undefined
                                   ? '–'
                                   : card.automation.enabled
@@ -1645,24 +1645,24 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                         : null}
                       <RegionCardPane id={accountsPaneId} open={accountsOpen}>
                         {card.accountCount === 0 && card.status !== undefined
-                          ? <div className="dsm-workbuddy-xdpool-region-empty">
-                              <p className="dsm-workbuddy-xdpool-empty-title">
+                          ? <div className="dsm-xdpool-region-empty">
+                              <p className="dsm-xdpool-empty-title">
                                 {t?.('row.regionEmptyTitle', { region: card.regionLabel })
                                   ?? t?.('row.regionEmpty') ?? 'No account yet'}
                               </p>
-                              <div className="dsm-workbuddy-xdpool-empty-steps">
-                                <p className="dsm-workbuddy-xdpool-empty-steps-title">
+                              <div className="dsm-xdpool-empty-steps">
+                                <p className="dsm-xdpool-empty-steps-title">
                                   {t?.('row.regionHowToTitle', { region: card.regionLabel })
                                     ?? `How to sign in to the ${card.regionLabel} version`}
                                 </p>
-                                <ol className="dsm-workbuddy-xdpool-empty-list">
+                                <ol className="dsm-xdpool-empty-list">
                                   <li>{t?.('row.regionHowTo1') ?? ''}</li>
                                   <li>{t?.('row.regionHowTo2') ?? ''}</li>
                                   <li>{t?.('row.regionHowTo3') ?? ''}</li>
                                   <li>{t?.('row.regionHowTo4') ?? ''}</li>
                                 </ol>
                               </div>
-                              <p className="dsm-workbuddy-xdpool-empty-note">
+                              <p className="dsm-xdpool-empty-note">
                                 {t?.('row.regionHowToNote') ?? ''}
                               </p>
                             </div>
@@ -1695,15 +1695,15 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                               </>}
                         {card.status?.skippedFiles === undefined || card.status.skippedFiles.length === 0
                           ? null
-                          : <div className="dsm-workbuddy-xdpool-skipped">
-                              <p className="dsm-workbuddy-xdpool-skipped-summary">
+                          : <div className="dsm-xdpool-skipped">
+                              <p className="dsm-xdpool-skipped-summary">
                                 {t?.('row.skippedFiles', { count: card.status.skippedFiles.length })
                                   ?? `${card.status.skippedFiles.length} credential file(s) could not be read`}
                               </p>
                               {card.status.skippedFiles.slice(0, 4).map(entry => (
-                                <p key={entry.file} className="dsm-workbuddy-xdpool-skipped-row">
-                                  <span className="dsm-workbuddy-xdpool-skipped-file">{entry.file}</span>
-                                  <span className="dsm-workbuddy-xdpool-skipped-reason">
+                                <p key={entry.file} className="dsm-xdpool-skipped-row">
+                                  <span className="dsm-xdpool-skipped-file">{entry.file}</span>
+                                  <span className="dsm-xdpool-skipped-reason">
                                     {entry.reason === 'encrypted'
                                       ? (t?.('row.skippedEncrypted') ?? 'encrypted — start WorkBuddy once')
                                       : entry.reason === 'unreadable'
@@ -1714,17 +1714,17 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                               ))}
                             </div>}
                         {(card.status?.ignored.length ?? 0) > 0
-                          ? <div className="dsm-workbuddy-xdpool-ignored">
-                              <p className="dsm-workbuddy-xdpool-ignored-summary">
+                          ? <div className="dsm-xdpool-ignored">
+                              <p className="dsm-xdpool-ignored-summary">
                                 {t?.('row.ignoredSummary', { count: card.status?.ignored.length ?? 0 })
                                   ?? `${card.status?.ignored.length ?? 0} account(s) no longer in the pool`}
                               </p>
                               {card.status?.ignored.map(entry => (
-                                <div key={entry.id} className="dsm-workbuddy-xdpool-ignored-row">
-                                  <span className="dsm-workbuddy-xdpool-ignored-label">{entry.label}</span>
+                                <div key={entry.id} className="dsm-xdpool-ignored-row">
+                                  <span className="dsm-xdpool-ignored-label">{entry.label}</span>
                                   <button
                                     type="button"
-                                    className="dsm-workbuddy-xdpool-ignored-restore"
+                                    className="dsm-xdpool-ignored-restore"
                                     title={t?.('row.ignoredRestoreHint') ?? 'Put this account back into the pool'}
                                     disabled={accountBusyId === entry.id}
                                     onClick={() => { void setAccountIgnored(region, entry.id, false) }}
@@ -1738,22 +1738,22 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                       </RegionCardPane>
                       <RegionCardPane id={modelsPaneId} open={modelsOpen}>
                         {models.length === 0
-                          ? <p className="dsm-workbuddy-xdpool-region-empty">
+                          ? <p className="dsm-xdpool-region-empty">
                               {t?.('row.regionNoModels') ?? 'No model published by this gateway yet.'}
                             </p>
                           : <>
-                              <div className="dsm-workbuddy-xdpool-region-pane-head">
-                                <span className="dsm-workbuddy-xdpool-region-pane-title">
+                              <div className="dsm-xdpool-region-pane-head">
+                                <span className="dsm-xdpool-region-pane-title">
                                   {t?.('row.modelsEnabledCount', {
                                     enabled: card.modelState.enabled,
                                     total: models.length,
                                   }) ?? `${card.modelState.enabled} / ${models.length} enabled`}
                                 </span>
-                                <div className="dsm-workbuddy-xdpool-models-actions">
+                                <div className="dsm-xdpool-models-actions">
                                   {card.status?.catalogSource !== 'fallback'
                                     ? null
                                     : <span
-                                        className="dsm-workbuddy-xdpool-catalog-offline"
+                                        className="dsm-xdpool-catalog-offline"
                                         title={card.status.catalogError ?? undefined}
                                       >
                                         {t?.('row.catalogOffline') ?? 'built-in list (offline)'}
@@ -1778,7 +1778,7 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                                   </button>
                                 </div>
                               </div>
-                              <div className="dsm-workbuddy-xdpool-model-list">
+                              <div className="dsm-xdpool-model-list">
                                 {[...models]
                                   .sort((a, b) => Number(isFreeNow(b, now, region)) - Number(isFreeNow(a, now, region)))
                                   .map(model => (
@@ -1793,7 +1793,7 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                                       onToggle={(id) => { toggleModel(region, id) }}
                                       onToggleImage={(id) => { toggleModelImage(region, id) }}
                                       onBudget={(id, budget) => { setModelBudget(region, id, budget) }}
-                                      onTest={() => { void testModel(WORKBUDDY_REGION_PROVIDER[region], model.id) }}
+                                      onTest={() => { void testModel(XDPOOL_REGION_PROVIDER[region], model.id) }}
                                       probe={probes[model.id]}
                                       probing={probingModel === model.id}
                                     />
@@ -1803,21 +1803,21 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                       </RegionCardPane>
                       <RegionCardPane id={distPaneId} open={distOpen}>
                         {card.status === undefined ? null
-                          : <div className="dsm-workbuddy-xdpool-dist" role="radiogroup"
+                          : <div className="dsm-xdpool-dist" role="radiogroup"
                               aria-label={t?.('row.distTitle') ?? 'Account usage'}>
-                              <div className="dsm-workbuddy-xdpool-dist-head">
-                                <span className="dsm-workbuddy-xdpool-dist-title">
+                              <div className="dsm-xdpool-dist-head">
+                                <span className="dsm-xdpool-dist-title">
                                   {t?.('row.distTitle') ?? 'Account usage'}
                                 </span>
-                                <span className="dsm-workbuddy-xdpool-dist-now">
+                                <span className="dsm-xdpool-dist-now">
                                   {distLabel(card.status.distribution ?? 'priority', t)}
                                 </span>
                               </div>
-                              <div className="dsm-workbuddy-xdpool-dist-options">
+                              <div className="dsm-xdpool-dist-options">
                                 {DIST_OPTIONS.map(option => {
                                   const active = (card.status?.distribution ?? 'priority') === option
-                                  const cls = 'dsm-workbuddy-xdpool-dist-option'
-                                    + (active ? ' dsm-workbuddy-xdpool-dist-option-active' : '')
+                                  const cls = 'dsm-xdpool-dist-option'
+                                    + (active ? ' dsm-xdpool-dist-option-active' : '')
                                   return (
                                     <button
                                       key={option}
@@ -1829,10 +1829,10 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                                       className={cls}
                                       onClick={() => { void setDistribution(region, option) }}
                                     >
-                                      <span className="dsm-workbuddy-xdpool-dist-option-top">
-                                        <span className="dsm-workbuddy-xdpool-dist-option-name">{distLabel(option, t)}</span>
+                                      <span className="dsm-xdpool-dist-option-top">
+                                        <span className="dsm-xdpool-dist-option-name">{distLabel(option, t)}</span>
                                         {option === 'sticky'
-                                          ? <span className="dsm-workbuddy-xdpool-dist-option-badge">
+                                          ? <span className="dsm-xdpool-dist-option-badge">
                                               {t?.('row.distRecommended') ?? 'Recommended'}
                                             </span>
                                           : null}
@@ -1841,27 +1841,27 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                                   )
                                 })}
                               </div>
-                              <p className="dsm-workbuddy-xdpool-dist-hint">
+                              <p className="dsm-xdpool-dist-hint">
                                 {distHint(card.status?.distribution ?? 'priority', t)}
                               </p>
                             </div>}
                       </RegionCardPane>
                       <RegionCardPane id={autoPaneId} open={autoOpen}>
                         {automation === undefined
-                          ? <p className="dsm-workbuddy-xdpool-region-empty">
+                          ? <p className="dsm-xdpool-region-empty">
                               {t?.('row.autoUnavailable') ?? 'This lane has no daily-points system.'}
                             </p>
                           : here === undefined
                             ? null
-                            : <div className="dsm-workbuddy-xdpool-auto">
-                              <div className="dsm-workbuddy-xdpool-auto-head">
-                                <span className="dsm-workbuddy-xdpool-auto-title">
+                            : <div className="dsm-xdpool-auto">
+                              <div className="dsm-xdpool-auto-head">
+                                <span className="dsm-xdpool-auto-title">
                                   {t?.('row.autoTitle') ?? 'Automation'}
                                 </span>
                                 {automation.enabled
                                   ? <button
                                       type="button"
-                                      className="dsm-btn dsm-btn-outline dsm-workbuddy-xdpool-auto-run"
+                                      className="dsm-btn dsm-btn-outline dsm-xdpool-auto-run"
                                       disabled={automationRun !== undefined}
                                       onClick={() => { void runAutomationJob(region) }}
                                     >
@@ -1875,7 +1875,7 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                                   role="switch"
                                   aria-checked={automation.enabled}
                                   disabled={!settingsWritable || automationBusyRegion !== undefined}
-                                  className={`dsm-workbuddy-xdpool-auto-switch${automation.enabled ? ' dsm-workbuddy-xdpool-auto-switch-on' : ''}`}
+                                  className={`dsm-xdpool-auto-switch${automation.enabled ? ' dsm-xdpool-auto-switch-on' : ''}`}
                                   onClick={() => { void setAutomationEnabled(region, !automation.enabled) }}
                                 >
                                   {automationBusyRegion === region
@@ -1885,7 +1885,7 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                                       : (t?.('row.autoOff') ?? 'Off')}
                                 </button>
                               </div>
-                              <p className="dsm-workbuddy-xdpool-auto-hint">
+                              <p className="dsm-xdpool-auto-hint">
                                 {automation.enabled
                                   ? (t?.('row.autoHintOn') ?? 'Reports activity, claims task rewards and checks in once a day.')
                                   : (t?.('row.autoHintOff') ?? 'Off: no background requests are made for you.')}
@@ -1893,13 +1893,13 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                               {card.automationTotals.credit === 0 && card.automationTotals.checkinCredit === 0
                                 && card.automationTotals.bonusCredit === 0 && card.automationTotals.travelCredit === 0
                                 ? null
-                                : <div className="dsm-workbuddy-xdpool-auto-total">
-                                    <span className="dsm-workbuddy-xdpool-auto-total-label">
+                                : <div className="dsm-xdpool-auto-total">
+                                    <span className="dsm-xdpool-auto-total-label">
                                       {t?.('row.autoToday') ?? 'Today'}
                                     </span>
-                                    <span className="dsm-workbuddy-xdpool-auto-total-list">
+                                    <span className="dsm-xdpool-auto-total-list">
                                       {card.automationTotals.credit > 0
-                                        ? <span className="dsm-workbuddy-xdpool-auto-total-row">
+                                        ? <span className="dsm-xdpool-auto-total-row">
                                             {t?.('row.autoFromTasks', {
                                               credit: card.automationTotals.credit,
                                               energy: card.automationTotals.energy,
@@ -1908,19 +1908,19 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                                           </span>
                                         : null}
                                       {card.automationTotals.checkinCredit > 0
-                                        ? <span className="dsm-workbuddy-xdpool-auto-total-row">
+                                        ? <span className="dsm-xdpool-auto-total-row">
                                             {t?.('row.autoFromCheckin', { credit: card.automationTotals.checkinCredit })
                                               ?? `Check-in +${card.automationTotals.checkinCredit}`}
                                           </span>
                                         : null}
                                       {card.automationTotals.bonusCredit > 0
-                                        ? <span className="dsm-workbuddy-xdpool-auto-total-row">
+                                        ? <span className="dsm-xdpool-auto-total-row">
                                             {t?.('row.autoFromBonus', { credit: card.automationTotals.bonusCredit })
                                               ?? `Streak +${card.automationTotals.bonusCredit}`}
                                           </span>
                                         : null}
                                       {card.automationTotals.travelCredit > 0
-                                        ? <span className="dsm-workbuddy-xdpool-auto-total-row">
+                                        ? <span className="dsm-xdpool-auto-total-row">
                                             {t?.('row.autoFromTravel', { credit: card.automationTotals.travelCredit })
                                               ?? `Buddy +${card.automationTotals.travelCredit}`}
                                           </span>
@@ -1928,30 +1928,30 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                                     </span>
                                   </div>}
                               {automation.enabled
-                                ? <div className="dsm-workbuddy-xdpool-auto-jobs">
+                                ? <div className="dsm-xdpool-auto-jobs">
                                     {AUTOMATION_JOBS.map(kind => {
                                       const job = automationJob(here, kind)
                                       const hours = automationHours(here, kind)
                                       const label = t?.(`row.autoJob_${kind}`) ?? kind
                                       return (
-                                        <div key={kind} className="dsm-workbuddy-xdpool-auto-job">
-                                          <span className="dsm-workbuddy-xdpool-auto-job-name">{label}</span>
-                                          <span className="dsm-workbuddy-xdpool-auto-job-when">
+                                        <div key={kind} className="dsm-xdpool-auto-job">
+                                          <span className="dsm-xdpool-auto-job-name">{label}</span>
+                                          <span className="dsm-xdpool-auto-job-when">
                                             {hours.length === 0
                                               ? (t?.('row.autoHourNone') ?? 'not scheduled')
                                               : hours.map(hour => `${String(hour).padStart(2, '0')}:00`).join(' · ')}
                                           </span>
-                                          <span className="dsm-workbuddy-xdpool-auto-job-last">
+                                          <span className="dsm-xdpool-auto-job-last">
                                             {job?.lastRunAtMs === undefined
                                               ? (t?.('row.autoNever') ?? 'not run yet')
                                               : `${formatTime(job.lastRunAtMs)} · ${job.ok}${job.failed > 0 ? `/${job.failed}` : ''}`}
                                           </span>
                                           {job?.progress === undefined
                                             ? null
-                                            : <span className="dsm-workbuddy-xdpool-auto-job-note">{job.progress}</span>}
+                                            : <span className="dsm-xdpool-auto-job-note">{job.progress}</span>}
                                           {job?.detail === undefined || job.detail.length === 0
                                             ? null
-                                            : <span className="dsm-workbuddy-xdpool-auto-job-detail">
+                                            : <span className="dsm-xdpool-auto-job-detail">
                                                 {job.detail.join(' · ')}
                                               </span>}
                                         </div>
@@ -1967,9 +1967,9 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
               </div>
               </section>
               {flash === undefined ? null
-                : <p className="dsm-workbuddy-xdpool-note">{flash}</p>}
+                : <p className="dsm-xdpool-note">{flash}</p>}
               {error === undefined ? null
-                : <p className="dsm-workbuddy-xdpool-error">
+                : <p className="dsm-xdpool-error">
                     {t?.('row.error', { message: error }) ?? `Pool status unavailable: ${error}`}
                   </p>}
           </>
@@ -2047,20 +2047,20 @@ function AccountBlock({
   // A rejected sign-in outranks "cooling": a cooldown lifts on its own, this
   // one needs the user to sign in again, so it is the more useful thing to say.
   const tag = isDead
-    ? { text: t?.('row.credentialDeadTag') ?? 'Sign-in rejected', cls: 'dsm-workbuddy-xdpool-account-tag dsm-workbuddy-xdpool-account-tag-dead' }
+    ? { text: t?.('row.credentialDeadTag') ?? 'Sign-in rejected', cls: 'dsm-xdpool-account-tag dsm-xdpool-account-tag-dead' }
     : isCooling
-      ? { text: t?.('row.cooling') ?? 'Cooling', cls: 'dsm-workbuddy-xdpool-account-tag dsm-workbuddy-xdpool-account-tag-cooling' }
+      ? { text: t?.('row.cooling') ?? 'Cooling', cls: 'dsm-xdpool-account-tag dsm-xdpool-account-tag-cooling' }
       : null
   return (
-    <div className={isDisabled ? 'dsm-workbuddy-xdpool-account dsm-workbuddy-xdpool-account-off' : 'dsm-workbuddy-xdpool-account'}
+    <div className={isDisabled ? 'dsm-xdpool-account dsm-xdpool-account-off' : 'dsm-xdpool-account'}
          data-serving={serving === true ? 'true' : undefined}
     >
-      <div className="dsm-workbuddy-xdpool-account-head">
-        <span className="dsm-workbuddy-xdpool-account-label">{account.label}</span>
+      <div className="dsm-xdpool-account-head">
+        <span className="dsm-xdpool-account-label">{account.label}</span>
         {serving === true
-          ? <span className="dsm-workbuddy-xdpool-current">
-              <span className="dsm-workbuddy-xdpool-current-dot" />
-              <span className="dsm-workbuddy-xdpool-current-label">
+          ? <span className="dsm-xdpool-current">
+              <span className="dsm-xdpool-current-dot" />
+              <span className="dsm-xdpool-current-label">
                 {t?.('row.currentAccount') ?? 'In use now'}
               </span>
             </span>
@@ -2075,8 +2075,8 @@ function AccountBlock({
         <button
           type="button"
           className={isPreferred
-            ? 'dsm-workbuddy-xdpool-account-prefer dsm-workbuddy-xdpool-account-prefer-on'
-            : 'dsm-workbuddy-xdpool-account-prefer'}
+            ? 'dsm-xdpool-account-prefer dsm-xdpool-account-prefer-on'
+            : 'dsm-xdpool-account-prefer'}
           aria-pressed={isPreferred}
           title={isPreferred
             ? (t?.('row.accountPreferClearHint') ?? 'Stop preferring this account; the distribution strategy decides again')
@@ -2084,7 +2084,7 @@ function AccountBlock({
           disabled={accountBusyId === account.id || accountBusyId === 'none'}
           onClick={() => { onPreferAccount(isPreferred ? null : account.id) }}
         >
-          <span className="dsm-workbuddy-xdpool-account-prefer-star" aria-hidden="true">★</span>
+          <span className="dsm-xdpool-account-prefer-star" aria-hidden="true">★</span>
           {isPreferred ? (t?.('row.accountPreferOn') ?? 'Preferred') : (t?.('row.accountPrefer') ?? 'Prefer')}
         </button>
         <button
@@ -2092,13 +2092,13 @@ function AccountBlock({
           role="switch"
           aria-checked={!isDisabled}
           className={isDisabled
-            ? 'dsm-workbuddy-xdpool-account-toggle'
-            : 'dsm-workbuddy-xdpool-account-toggle dsm-workbuddy-xdpool-account-toggle-on'}
+            ? 'dsm-xdpool-account-toggle'
+            : 'dsm-xdpool-account-toggle dsm-xdpool-account-toggle-on'}
           title={t?.('row.accountToggleHint') ?? 'Enable this account (uncheck to keep it out of the pool)'}
           disabled={accountBusyId === account.id}
           onClick={() => { onToggleDisabled(account.id, !isDisabled) }}
         >
-          <span className="dsm-workbuddy-xdpool-account-toggle-dot" />
+          <span className="dsm-xdpool-account-toggle-dot" />
           {isDisabled ? (t?.('row.accountOff') ?? 'Disabled') : (t?.('row.accountInRotation') ?? 'Enabled')}
         </button>
         {/* Throwing the account away for good. Deliberately a separate, plainly
@@ -2108,7 +2108,7 @@ function AccountBlock({
             user permanently drops an account by accident. */}
         <button
           type="button"
-          className="dsm-workbuddy-xdpool-account-ignore"
+          className="dsm-xdpool-account-ignore"
           title={t?.('row.accountIgnoreHint') ?? 'Remove this account from the pool for good'}
           disabled={accountBusyId === account.id}
           onClick={() => { onIgnoreAccount(account.id) }}
@@ -2116,16 +2116,16 @@ function AccountBlock({
           {t?.('row.accountIgnore') ?? 'Remove'}
         </button>
       </div>
-      <div className="dsm-workbuddy-xdpool-account-body">
-        <div className="dsm-workbuddy-xdpool-account-copy">
+      <div className="dsm-xdpool-account-body">
+        <div className="dsm-xdpool-account-copy">
           {account.expiresAt !== undefined
-            ? <span className="dsm-workbuddy-xdpool-account-meta">
+            ? <span className="dsm-xdpool-account-meta">
                 {t?.('row.tokenExpiry', { time: formatDateTime(account.expiresAt) })
                   ?? `token ${formatDateTime(account.expiresAt)}`}
               </span>
             : null}
           {isCooling && cooldownUntil !== undefined && !Number.isNaN(cooldownUntil)
-            ? <span className="dsm-workbuddy-xdpool-account-meta">
+            ? <span className="dsm-xdpool-account-meta">
                 {t?.('row.cooldownUntil', { time: formatTime(cooldownUntil) }) ?? `until ${formatTime(cooldownUntil)}`}
                 {' · '}
                 {t?.('row.cooldownHits', { hits: account.rateLimitHits ?? 0 })
@@ -2133,12 +2133,12 @@ function AccountBlock({
               </span>
             : null}
           {isDead
-            ? <span className="dsm-workbuddy-xdpool-account-meta dsm-workbuddy-xdpool-account-meta-dead">
+            ? <span className="dsm-xdpool-account-meta dsm-xdpool-account-meta-dead">
                 {t?.('row.credentialDeadHint') ?? 'Sign in again in the WorkBuddy desktop app to restore it'}
               </span>
             : null}
           {modelCooldowns.length > 0
-            ? <div className="dsm-workbuddy-xdpool-account-modelcool">
+            ? <div className="dsm-xdpool-account-modelcool">
                 {modelCooldowns.map(mc => {
                   // Each row of a product line is rate-limited on its own, so a
                   // cooling free row usually has a paid twin that still serves.
@@ -2148,11 +2148,11 @@ function AccountBlock({
                     ? undefined
                     : paidAlternativeFor(coolingModel, models)
                   return (
-                    <span key={mc.modelId} className="dsm-workbuddy-xdpool-account-modelcool-chip">
+                    <span key={mc.modelId} className="dsm-xdpool-account-modelcool-chip">
                       {t?.('row.modelCooling', { model: mc.modelId, time: formatDateTime(mc.until) })
                         ?? `${mc.modelId} cooling to ${formatDateTime(mc.until)}`}
                       {twin === undefined ? null
-                        : <span className="dsm-workbuddy-xdpool-account-modelcool-twin" title={t?.('row.paidTwinHint') ?? 'Same model, paid row'}>
+                        : <span className="dsm-xdpool-account-modelcool-twin" title={t?.('row.paidTwinHint') ?? 'Same model, paid row'}>
                             {t?.('row.rateLimitedPaidTwin', { id: twin.id, rate: twin.multiplier.toFixed(2) })
                               ?? `→ ${twin.id} (${twin.multiplier.toFixed(2)}x) still works`}
                           </span>}
@@ -2182,31 +2182,31 @@ function AccountBlock({
             row of zeroes that reads like a failure. */}
         {account.automationToday === undefined
           ? null
-          : <div className="dsm-workbuddy-xdpool-earned">
-              <span className="dsm-workbuddy-xdpool-earned-label">
+          : <div className="dsm-xdpool-earned">
+              <span className="dsm-xdpool-earned-label">
                 {t?.('row.autoEarned') ?? 'Automation today'}
               </span>
-              <span className="dsm-workbuddy-xdpool-earned-list">
+              <span className="dsm-xdpool-earned-list">
                 {account.automationToday.credit > 0
-                  ? <span className="dsm-workbuddy-xdpool-earned-row">
+                  ? <span className="dsm-xdpool-earned-row">
                       {t?.('row.autoFromTasks', { credit: account.automationToday.credit, energy: account.automationToday.energy, count: account.automationToday.claimed })
                         ?? `Tasks +${account.automationToday.credit}`}
                     </span>
                   : null}
                 {account.automationToday.checkinCredit > 0
-                  ? <span className="dsm-workbuddy-xdpool-earned-row">
+                  ? <span className="dsm-xdpool-earned-row">
                       {t?.('row.autoFromCheckin', { credit: account.automationToday.checkinCredit })
                         ?? `Check-in +${account.automationToday.checkinCredit}`}
                     </span>
                   : null}
                 {account.automationToday.bonusCredit > 0
-                  ? <span className="dsm-workbuddy-xdpool-earned-row">
+                  ? <span className="dsm-xdpool-earned-row">
                       {t?.('row.autoFromBonus', { credit: account.automationToday.bonusCredit })
                         ?? `Streak +${account.automationToday.bonusCredit}`}
                     </span>
                   : null}
                 {account.automationToday.travelCredit > 0
-                  ? <span className="dsm-workbuddy-xdpool-earned-row">
+                  ? <span className="dsm-xdpool-earned-row">
                       {t?.('row.autoFromTravel', { credit: account.automationToday.travelCredit })
                         ?? `Buddy +${account.automationToday.travelCredit}`}
                     </span>
@@ -2293,8 +2293,8 @@ function CreditReserveRow({
     }
   }
   return (
-    <div className="dsm-workbuddy-xdpool-reserve">
-      <span className="dsm-workbuddy-xdpool-reserve-label">
+    <div className="dsm-xdpool-reserve">
+      <span className="dsm-xdpool-reserve-label">
         {t?.('row.reserveTitle') ?? 'Keep at least'}
       </span>
       <input
@@ -2303,7 +2303,7 @@ function CreditReserveRow({
         step={1}
         value={draft}
         disabled={busy}
-        className="dsm-workbuddy-xdpool-reserve-input"
+        className="dsm-xdpool-reserve-input"
         aria-label={t?.('row.reserveTitle') ?? 'Keep at least'}
         onChange={(event) => {
           setDraft(event.target.value)
@@ -2313,12 +2313,12 @@ function CreditReserveRow({
           if (event.key === 'Enter') void commit()
         }}
       />
-      <span className="dsm-workbuddy-xdpool-reserve-unit">
+      <span className="dsm-xdpool-reserve-unit">
         {t?.('row.reserveUnit') ?? 'credits'}
       </span>
       <button
         type="button"
-        className="dsm-workbuddy-xdpool-reserve-save"
+        className="dsm-xdpool-reserve-save"
         disabled={busy || !dirty}
         onClick={() => { void commit() }}
       >
@@ -2327,19 +2327,19 @@ function CreditReserveRow({
           : (t?.('row.reserveSave') ?? 'Save')}
       </button>
       {note === 'saved'
-        ? <span className="dsm-workbuddy-xdpool-reserve-note dsm-workbuddy-xdpool-reserve-note-ok">
+        ? <span className="dsm-xdpool-reserve-note dsm-xdpool-reserve-note-ok">
             {next > 0
               ? (t?.('row.reserveSaved', { credits: next }) ?? `Keeping ${next} credits`)
               : (t?.('row.reserveCleared') ?? 'Reserve cleared')}
           </span>
         : null}
       {note === 'failed'
-        ? <span className="dsm-workbuddy-xdpool-reserve-note dsm-workbuddy-xdpool-reserve-note-bad">
+        ? <span className="dsm-xdpool-reserve-note dsm-xdpool-reserve-note-bad">
             {t?.('row.reserveFailed') ?? 'Not saved — try again'}
           </span>
         : null}
       {account.reserved === true
-        ? <span className="dsm-workbuddy-xdpool-reserve-badge">
+        ? <span className="dsm-xdpool-reserve-badge">
             {t?.('row.reserveHolding') ?? 'Reserved: skipped'}
           </span>
         : null}
@@ -2379,41 +2379,41 @@ function AccountStats({
      * the balance, the action and the breakdown in reading order at any width,
      * and stops a routine balance from being set in 28px type.
      */
-    <div className="dsm-workbuddy-xdpool-stats">
-      <span className="dsm-workbuddy-xdpool-panel dsm-workbuddy-xdpool-panel-total">
-        <span className="dsm-workbuddy-xdpool-panel-title">
+    <div className="dsm-xdpool-stats">
+      <span className="dsm-xdpool-panel dsm-xdpool-panel-total">
+        <span className="dsm-xdpool-panel-title">
           {t?.('row.creditsTotal') ?? 'Total'}
         </span>
-        <span className="dsm-workbuddy-xdpool-total-value">
+        <span className="dsm-xdpool-total-value">
           {formatNumber(credits?.total)}
         </span>
       </span>
       {hasCheckin
-        ? <div className="dsm-workbuddy-xdpool-checkin">
+        ? <div className="dsm-xdpool-checkin">
             {account.checkinError !== undefined
               /* Folded to a marker with the full text in the tooltip. A gateway
                  rejection is a whole paragraph; printed inline it buries the
                  figures it belongs to. */
-              ? <span className="dsm-workbuddy-xdpool-checkin-error" title={account.checkinError}>
+              ? <span className="dsm-xdpool-checkin-error" title={account.checkinError}>
                   {t?.('row.checkinUnavailable') ?? 'check-in unavailable'}
                 </span>
               : checkin === undefined
                 ? null
                 : <>
-                    <div className="dsm-workbuddy-xdpool-checkin-meta">
-                      <span className="dsm-workbuddy-xdpool-checkin-streak">
+                    <div className="dsm-xdpool-checkin-meta">
+                      <span className="dsm-xdpool-checkin-streak">
                         {t?.('row.checkinStreak', { days: checkin.streakDays })
                           ?? `${checkin.streakDays}-day streak`}
                       </span>
                       {checkin.dailyCredit > 0
-                        ? <span className="dsm-workbuddy-xdpool-checkin-daily">
+                        ? <span className="dsm-xdpool-checkin-daily">
                             {t?.('row.checkinDaily', { credit: formatNumber(checkin.dailyCredit) })
                               ?? `+${formatNumber(checkin.dailyCredit)}/day`}
                           </span>
                         : null}
                     </div>
                     {checkin.isStreakDay && checkin.streakBonusCredit > 0
-                      ? <span className="dsm-workbuddy-xdpool-checkin-bonus">
+                      ? <span className="dsm-xdpool-checkin-bonus">
                           {t?.('row.checkinStreakBonus', {
                             days: formatNumber(checkin.nextStreakDay),
                             credit: formatNumber(checkin.streakBonusCredit),
@@ -2422,7 +2422,7 @@ function AccountStats({
                       : null}
                     <button
                       type="button"
-                      className="dsm-workbuddy-xdpool-checkin-btn"
+                      className="dsm-xdpool-checkin-btn"
                       disabled={!checkin.active || checkin.todayCheckedIn || checkinBusy}
                       onClick={() => { onClaim(account.id) }}
                     >
@@ -2438,14 +2438,14 @@ function AccountStats({
           </div>
         : null}
       {hasCredits
-        ? <ul className="dsm-workbuddy-xdpool-panel-packages dsm-workbuddy-xdpool-packages">
+        ? <ul className="dsm-xdpool-panel-packages dsm-xdpool-packages">
             {account.creditsError !== undefined
               // The upstream error is a full English paragraph (it explains HOW
               // to recover). Printed inline it would blow the line up to several
               // lines, so it becomes a short marker with the text in the tooltip.
               ? <li>
                   <span
-                    className={`dsm-workbuddy-xdpool-panel-error${account.credentialDead === true ? ' dsm-workbuddy-xdpool-panel-error-dead' : ''}`}
+                    className={`dsm-xdpool-panel-error${account.credentialDead === true ? ' dsm-xdpool-panel-error-dead' : ''}`}
                     title={account.creditsError}
                   >
                     {account.credentialDead === true
@@ -2454,7 +2454,7 @@ function AccountStats({
                   </span>
                 </li>
               : packages.length === 0
-                ? <li className="dsm-workbuddy-xdpool-panel-empty">–</li>
+                ? <li className="dsm-xdpool-panel-empty">–</li>
                 : packages.map((pack, index) => {
                   const expiry = formatExpiry(pack.expiresAtMs)
                   const refresh = formatExpiry(pack.cycleRefreshMs)
@@ -2467,14 +2467,14 @@ function AccountStats({
                     : (expiry === '' ? null : (t?.('row.creditsExpiresAt', { time: expiry }) ?? `Expires ${expiry}`))
                   return (
                     <li key={`${pack.packageName}-${String(index)}`}>
-                      <span className="dsm-workbuddy-xdpool-packages-name">{pack.packageName}</span>
-                      <span className="dsm-workbuddy-xdpool-packages-value">
+                      <span className="dsm-xdpool-packages-name">{pack.packageName}</span>
+                      <span className="dsm-xdpool-packages-value">
                         {t?.('row.creditsPackage', { remain: formatNumber(pack.remain), size: formatNumber(pack.size) })
                           ?? `${formatNumber(pack.remain)} / ${formatNumber(pack.size)}`}
                       </span>
                       {when === null ? null
                         : <span
-                            className={`dsm-workbuddy-xdpool-packages-when${soon ? ' dsm-workbuddy-xdpool-packages-when-soon' : ''}`}
+                            className={`dsm-xdpool-packages-when${soon ? ' dsm-xdpool-packages-when-soon' : ''}`}
                             title={t?.('row.creditsExpiresSoonTitle') ?? 'Expiring within 3 days'}
                           >
                             {when}
@@ -2483,7 +2483,7 @@ function AccountStats({
                   )
                 })}
             {credits?.expiringSoon !== undefined && credits.expiringSoon > 0
-              ? <li className="dsm-workbuddy-xdpool-packages-when">
+              ? <li className="dsm-xdpool-packages-when">
                   {t?.('row.creditsSoon') ?? 'Expiring in 3 days'}
                   {' '}
                   {formatNumber(credits.expiringSoon)}
@@ -2511,7 +2511,7 @@ function AccountStats({
  * provider that does not exist — which the host answers as an unknown-model
  * error rather than as a connectivity failure.
  */
-const WORKBUDDY_REGION_PROVIDER = { cn: 'workbuddy-xdpool', global: 'workbuddy-xdpool-global' } as const
+const XDPOOL_REGION_PROVIDER = { cn: 'xdpool', global: 'xdpool-global' } as const
 
 function ModelRow({
   model,
@@ -2596,34 +2596,34 @@ function ModelRow({
    * here rather than imported from the adapter module because that module pulls
    * in Node-only catalog code the browser bundle must not touch.
    */
-  const probeProvider = WORKBUDDY_REGION_PROVIDER[region]
+  const probeProvider = XDPOOL_REGION_PROVIDER[region]
   return (
-    <div className={`dsm-workbuddy-xdpool-model${draft.enabled ? '' : ' dsm-workbuddy-xdpool-model-off'}`}>
-      <div className="dsm-workbuddy-xdpool-model-head">
-        <label className="dsm-workbuddy-xdpool-model-check">
+    <div className={`dsm-xdpool-model${draft.enabled ? '' : ' dsm-xdpool-model-off'}`}>
+      <div className="dsm-xdpool-model-head">
+        <label className="dsm-xdpool-model-check">
           <input
             type="checkbox"
             checked={draft.enabled}
             disabled={!editable}
             onChange={() => { onToggle(model.id) }}
           />
-          <span className="dsm-workbuddy-xdpool-model-copy">
-            <span className="dsm-workbuddy-xdpool-model-name">
+          <span className="dsm-xdpool-model-copy">
+            <span className="dsm-xdpool-model-name">
               <span>{model.name}</span>
               {/* A zero multiplier IS the upstream's way of saying "free"
                   (`credits: "x0.00"`), so printing "x0.00 积分" next to a
                   model that costs nothing is worse than printing nothing.
                   The badge below already carries the free/free-tier label. */}
               {model.multiplier === undefined || model.multiplier === 0 ? null
-                : <span className="dsm-workbuddy-xdpool-model-name-rate">
+                : <span className="dsm-xdpool-model-name-rate">
                     {t?.('row.rate', { rate: model.multiplier.toFixed(2) }) ?? `${model.multiplier.toFixed(2)}x`}
                   </span>}
             </span>
-            <span className="dsm-workbuddy-xdpool-model-id">{model.id}</span>
+            <span className="dsm-xdpool-model-id">{model.id}</span>
           </span>
         </label>
-        <div className="dsm-workbuddy-xdpool-model-controls">
-          <label className="dsm-workbuddy-xdpool-model-image" title={t?.('row.modelImage') ?? 'Image input'}>
+        <div className="dsm-xdpool-model-controls">
+          <label className="dsm-xdpool-model-image" title={t?.('row.modelImage') ?? 'Image input'}>
             <input
               type="checkbox"
               checked={draft.images}
@@ -2633,7 +2633,7 @@ function ModelRow({
             <span>{t?.('row.modelImage') ?? 'Image'}</span>
           </label>
           {capped
-            ? <fieldset className="dsm-workbuddy-xdpool-model-budget" aria-label={t?.('row.modelContextBudget') ?? 'Context'}>
+            ? <fieldset className="dsm-xdpool-model-budget" aria-label={t?.('row.modelContextBudget') ?? 'Context'}>
                 <label>
                   <input
                     type="radio"
@@ -2658,24 +2658,24 @@ function ModelRow({
             : null}
         </div>
       </div>
-      <div className="dsm-workbuddy-xdpool-model-meta">
+      <div className="dsm-xdpool-model-meta">
         {tagText === null ? null
-          : <span className="dsm-workbuddy-xdpool-model-meta-tag">{tagText}</span>}
+          : <span className="dsm-xdpool-model-meta-tag">{tagText}</span>}
         {laterHint === null ? null
-          : <span className="dsm-workbuddy-xdpool-model-meta-later">{laterHint}</span>}
+          : <span className="dsm-xdpool-model-meta-later">{laterHint}</span>}
         {promoUntil === null ? null
-          : <span className="dsm-workbuddy-xdpool-model-meta-promo">{promoUntil}</span>}
+          : <span className="dsm-xdpool-model-meta-promo">{promoUntil}</span>}
         {paidTwin === undefined ? null
-          : <span className="dsm-workbuddy-xdpool-model-meta-twin" title={t?.('row.paidTwinHint') ?? 'Same model, paid row'}>
+          : <span className="dsm-xdpool-model-meta-twin" title={t?.('row.paidTwinHint') ?? 'Same model, paid row'}>
               {t?.('row.paidTwin', { id: paidTwin.id, rate: paidTwin.multiplier.toFixed(2) })
                 ?? `paid twin ${paidTwin.id} (${paidTwin.multiplier.toFixed(2)}x)`}
             </span>}
-        <span className="dsm-workbuddy-xdpool-model-cap">
+        <span className="dsm-xdpool-model-cap">
           {t?.('row.modelOutput', { size: formatCapacity(model.maxOutputTokens) })
             ?? `out ${formatCapacity(model.maxOutputTokens)}`}
         </span>
         {model.supportedEfforts === undefined || model.supportedEfforts.length === 0 ? null
-          : <span className="dsm-workbuddy-xdpool-model-cap">
+          : <span className="dsm-xdpool-model-cap">
               {t?.('row.modelReasoning', { efforts: model.supportedEfforts.join(' / ') })
                 ?? model.supportedEfforts.join(' / ')}
             </span>}

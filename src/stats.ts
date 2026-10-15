@@ -24,7 +24,7 @@
  * AND says so, so the panel can print "not reported" instead of a confident
  * "0 tokens".
  *
- * @module dsh-workbuddy-xdpool/stats
+ * @module dsh-xdpool/stats
  */
 
 /** Tokens one upstream call reported. Every field is a non-negative count. */

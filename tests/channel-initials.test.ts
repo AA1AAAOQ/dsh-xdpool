@@ -68,16 +68,16 @@ describe('a channel with no logo wears its own letters', () => {
     expect(tile).toContain("letters === undefined ? BRAND_TILE_GLYPHS[glyph] : 'none'")
     expect(tile).toContain('icon === undefined ? tileInitials(initials) : undefined')
     // Artwork still wins: a channel that has a logo must never get letters too.
-    expect(tile).toContain('icon === undefined ? \'\' : \' dsm-workbuddy-xdpool-tile-art\'')
+    expect(tile).toContain('icon === undefined ? \'\' : \' dsm-xdpool-tile-art\'')
   })
 
   it('centres the letters on the gradient and sizes them for 40px', () => {
     const block = sharedCss()
-    expect(block).toMatch(/\.dsm-workbuddy-xdpool-tile-letters\{[^}]*display:grid[^}]*place-items:center/u)
-    expect(block).toMatch(/\.dsm-workbuddy-xdpool-tile-letters\{[^}]*font-weight:800/u)
+    expect(block).toMatch(/\.dsm-xdpool-tile-letters\{[^}]*display:grid[^}]*place-items:center/u)
+    expect(block).toMatch(/\.dsm-xdpool-tile-letters\{[^}]*font-weight:800/u)
     // The gradient tile's mask would otherwise paint a key glyph on top of the
     // letters; the letters variant has to switch it off.
-    expect(block).toMatch(/\.dsm-workbuddy-xdpool-tile-letters::after\{content:none\}/u)
+    expect(block).toMatch(/\.dsm-xdpool-tile-letters::after\{content:none\}/u)
   })
 
   it('styles the tile for every page that renders one, not just the login page', () => {
@@ -86,10 +86,10 @@ describe('a channel with no logo wears its own letters', () => {
     // that declared the tile, so their logos came out as blank 40px boxes. The
     // rule belongs in the shared sheet the shell injects once for every page.
     for (const selector of [
-      '.dsm-workbuddy-xdpool-tile',
-      '.dsm-workbuddy-xdpool-tile::after',
-      '.dsm-workbuddy-xdpool-tile-art',
-      '.dsm-workbuddy-xdpool-tile-letters',
+      '.dsm-xdpool-tile',
+      '.dsm-xdpool-tile::after',
+      '.dsm-xdpool-tile-art',
+      '.dsm-xdpool-tile-letters',
     ]) {
       expect(sharedCss(), `${selector} must be styled in the shared sheet`).toContain(`${selector}{`)
     }

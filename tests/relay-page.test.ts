@@ -50,7 +50,7 @@ describe('gateway panel', () => {
     for (const method of ['PUT', 'PATCH', 'DELETE']) {
       expect(cardCode).not.toContain(`method: '${method}'`)
     }
-    expect(paths).toContain("POOL_RELAY_PATH = '/plugins/dsh-workbuddy-xdpool/relay'")
+    expect(paths).toContain("POOL_RELAY_PATH = '/plugins/dsh-xdpool/relay'")
   })
   it('starts on loopback and offers exactly the addresses the listener accepts', () => {
     // The card and the listener keep separate copies of the address list. The
@@ -122,14 +122,14 @@ describe('gateway panel', () => {
     expect(index).toContain("patch.key === '' ? newRelayKey() : patch.key")
   })
   it('gives every class the page owns a rule, and borrows the rest from the shell', () => {
-    const owned = [...card.matchAll(/dsm-workbuddy-xdpool-(gw-[a-z-]+)/gu)].map(match => match[1]!)
+    const owned = [...card.matchAll(/dsm-xdpool-(gw-[a-z-]+)/gu)].map(match => match[1]!)
     expect(owned.length).toBeGreaterThan(0)
     for (const name of new Set(owned)) {
-      expect(styles).toContain(`.dsm-workbuddy-xdpool-${name}{`)
+      expect(styles).toContain(`.dsm-xdpool-${name}{`)
     }
     // Section frames, pills and the hero are shared. If this page ever grows its
     // own copy of one of them the settings surface starts drifting.
-    for (const shared of ['dsm-workbuddy-xdpool-sec', 'dsm-workbuddy-xdpool-sectitle', 'dsm-workbuddy-xdpool-pill']) {
+    for (const shared of ['dsm-xdpool-sec', 'dsm-xdpool-sectitle', 'dsm-xdpool-pill']) {
       expect(card).toContain(shared)
       expect(styles).toContain(`.${shared}{`)
     }

@@ -712,7 +712,7 @@ export class WorkBuddyScheduler {
     this.runInFlight = true
     void this.runAll()
       .catch((error: unknown) => {
-        this.logger.warn?.('dsh-workbuddy-xdpool automation run failed:', error)
+        this.logger.warn?.('dsh-xdpool automation run failed:', error)
       })
       .finally(() => { this.runInFlight = false })
     return true
@@ -875,7 +875,7 @@ export class WorkBuddyScheduler {
       }
     } catch (error: unknown) {
       // A defect in the loop itself must not kill the timer.
-      this.logger.warn?.('dsh-workbuddy-xdpool automation tick failed:', error)
+      this.logger.warn?.('dsh-xdpool automation tick failed:', error)
     } finally {
       this.busy = false
     }
@@ -967,11 +967,11 @@ export class WorkBuddyScheduler {
       const saved = this.saveEarningsFn(ledger)
       if (saved !== undefined && typeof saved.then === 'function') {
         void saved.then(undefined, (error: unknown) => {
-          this.logger.warn?.('dsh-workbuddy-xdpool: could not persist automation earnings:', error)
+          this.logger.warn?.('dsh-xdpool: could not persist automation earnings:', error)
         })
       }
     } catch (error: unknown) {
-      this.logger.warn?.('dsh-workbuddy-xdpool: could not persist automation earnings:', error)
+      this.logger.warn?.('dsh-xdpool: could not persist automation earnings:', error)
     }
   }
 

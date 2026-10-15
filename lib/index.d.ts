@@ -181,7 +181,7 @@ export declare function expertChatEvents(expert: MarketExpert, conversationId: s
  * which the caller drives through an injected chat function so this module
  * stays testable without a network.
  *
- * @module dsh-workbuddy-xdpool/context-budget
+ * @module dsh-xdpool/context-budget
  */
 /** One OpenAI chat message, narrowed to the fields we must preserve. */
 interface ChatMessage {
@@ -1301,7 +1301,7 @@ export declare class WorkBuddyAccountPool {
 //#region src/status-paths.d.ts
 /**
  * Node-free constants and types shared by the Host and browser halves of the
- * WorkBuddy XD Pool settings card.
+ * XD Pool settings card.
  *
  * Pool's runtime state already lives in `src/status.ts` (`buildStatus` /
  * `WorkBuddyStatus`); this module only carves the cross-domain (Host→browser)
@@ -1309,29 +1309,29 @@ export declare class WorkBuddyAccountPool {
  * browser card renders. Route paths are plugin-owned and mounted on the Host's
  * same-origin web server (see `src/web-status.ts`).
  *
- * @module dsh-workbuddy-xdpool/status-paths
+ * @module dsh-xdpool/status-paths
  */
 /** Plugin-owned read-only pool status endpoint (account rows + models + shim). */
-export declare const POOL_STATUS_PATH = "/plugins/dsh-workbuddy-xdpool/status";
+export declare const POOL_STATUS_PATH = "/plugins/dsh-xdpool/status";
 /** Plugin-owned local account rescan endpoint (re-read desktop snapshots). */
-export declare const POOL_RESCAN_PATH = "/plugins/dsh-workbuddy-xdpool/accounts/rescan";
+export declare const POOL_RESCAN_PATH = "/plugins/dsh-xdpool/accounts/rescan";
 /** Plugin-owned cooldown reset endpoint (clear all 429 cooldowns). */
-export declare const POOL_RESET_COOLDOWN_PATH = "/plugins/dsh-workbuddy-xdpool/cooldowns/reset";
+export declare const POOL_RESET_COOLDOWN_PATH = "/plugins/dsh-xdpool/cooldowns/reset";
 /** Plugin-owned daily check-in action endpoint (claim today's reward). */
-export declare const POOL_CHECKIN_PATH = "/plugins/dsh-workbuddy-xdpool/checkin";
+export declare const POOL_CHECKIN_PATH = "/plugins/dsh-xdpool/checkin";
 /** Plugin-owned model-selection save endpoint (writes the settings section). */
-export declare const POOL_MODELS_SAVE_PATH = "/plugins/dsh-workbuddy-xdpool/models/save";
+export declare const POOL_MODELS_SAVE_PATH = "/plugins/dsh-xdpool/models/save";
 /**
  * Throw one account out of the pool for good, or take it back.
  *
  * Separate from the disable route because the semantics differ: disabling is a
  * rotation preference the account survives, ignoring survives the account.
  */
-export declare const POOL_ACCOUNT_IGNORE_PATH = "/plugins/dsh-workbuddy-xdpool/accounts/ignored";
+export declare const POOL_ACCOUNT_IGNORE_PATH = "/plugins/dsh-xdpool/accounts/ignored";
 /** Run one automation job immediately, so the card can verify it on demand. */
-export declare const POOL_AUTOMATION_RUN_PATH = "/plugins/dsh-workbuddy-xdpool/automation/run";
+export declare const POOL_AUTOMATION_RUN_PATH = "/plugins/dsh-xdpool/automation/run";
 /** Set or clear one account's reserved-credit floor. */
-export declare const POOL_CREDIT_RESERVE_PATH = "/plugins/dsh-workbuddy-xdpool/accounts/credit-reserve";
+export declare const POOL_CREDIT_RESERVE_PATH = "/plugins/dsh-xdpool/accounts/credit-reserve";
 /**
  * One model's facts, exactly as the host's catalogue spells them.
  *
@@ -2336,7 +2336,7 @@ declare class AggregateCatalog {
  * AND says so, so the panel can print "not reported" instead of a confident
  * "0 tokens".
  *
- * @module dsh-workbuddy-xdpool/stats
+ * @module dsh-xdpool/stats
  */
 /** Tokens one upstream call reported. Every field is a non-negative count. */
 interface TokenUsage {
@@ -2669,7 +2669,7 @@ interface FreeModelRow {
 //#region src/adapter.d.ts
 /** Provider route this bundle owns. */
 /** Provider route this bundle owns for the domestic (CN) gateway. */
-export declare const WORKBUDDY_POOL_PROVIDER = "workbuddy-xdpool";
+export declare const XDPOOL_PROVIDER = "xdpool";
 interface WorkBuddyAdapterOptions {
   shim: WorkBuddyShim;
   catalog: WorkBuddyCatalog | AggregateCatalog;
@@ -3299,7 +3299,7 @@ export declare function formatRates(status: WorkBuddyStatus): string;
 //#endregion
 //#region src/ignored.d.ts
 /** Directory holding this plugin's own state (imported snapshots, ignore list). */
-export declare const PLUGIN_DATA_DIR_NAME = ".workbuddy-xdpool";
+export declare const PLUGIN_DATA_DIR_NAME = ".xdpool";
 /** File holding the permanent ignore list, inside {@link pluginDataDir}. */
 export declare const IGNORED_FILE_NAME = "ignored.json";
 /** One ignored account, as stored on disk and shown on the card. */
@@ -3631,16 +3631,16 @@ export declare function registerPoolStatusRoute(ctx: Context$1, deps: PoolStatus
 //#endregion
 //#region src/index.d.ts
 /** Stable Cordis plugin name. */
-export declare const name = "llm-workbuddy-xdpool";
+export declare const name = "llm-xdpool";
 /** The model registry required before the provider can register. */
 export declare const inject: string[];
 /**
- * Settings namespace for the WorkBuddy XD Pool card. Registering a section here
+ * Settings namespace for the XD Pool card. Registering a section here
  * is what makes the provider appear on the Models settings page and causes the
  * Host to mount the plugin's client card under Plugin configuration — exactly
  * the mechanism the single-account connector uses.
  */
-export declare const WORKBUDDY_POOL_SETTINGS_NS: SettingsNamespace;
+export declare const XDPOOL_SETTINGS_NS: SettingsNamespace;
 /** Plugin configuration. */
 export interface Config {
   /** Explicit WorkBuddy desktop auth-file path override. */
@@ -3826,7 +3826,7 @@ export declare function createCore(logger?: {
   scheduler: WorkBuddyScheduler;
 };
 /**
- * Start the loopback endpoint, register the `workbuddy-xdpool` provider, and
+ * Start the loopback endpoint, register the `xdpool` provider, and
  * discover accounts. The provider registers only after `shim.ready` resolves,
  * because its models read the shim origin at construction time.
  */

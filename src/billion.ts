@@ -45,7 +45,7 @@
  * only ever reads `/__bili/health` and `/__bili/sessions`. Both are GETs. This
  * module has no code path that could write to that proxy.
  *
- * @module dsh-workbuddy-xdpool/billion
+ * @module dsh-xdpool/billion
  */
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'

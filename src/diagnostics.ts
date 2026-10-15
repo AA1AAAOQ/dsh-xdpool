@@ -12,7 +12,7 @@
  * diagnosing is worse than no diagnostic, so every path swallows its own
  * failure and returns a value the caller can log instead.
  *
- * @module dsh-workbuddy-xdpool/diagnostics
+ * @module dsh-xdpool/diagnostics
  */
 import { appendFileSync, mkdirSync, statSync, truncateSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -28,7 +28,7 @@ export function startupLogPath(): string {
   const home = process.env.DSH_HOME !== undefined && process.env.DSH_HOME !== ''
     ? process.env.DSH_HOME
     : homedir()
-  return join(home, '.workbuddy-xdpool', 'startup.log')
+  return join(home, '.xdpool', 'startup.log')
 }
 /**
  * Render any thrown value as one line of text.

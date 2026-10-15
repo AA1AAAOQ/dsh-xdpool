@@ -2,8 +2,8 @@
 # reuses the WorkBuddy desktop app's own sign-in files and never starts a
 # separate OAuth flow. Requests rotate across every discovered account.
 - insert:
-    - id: llm-workbuddy-xdpool
-      name: dsh-workbuddy-xdpool
+    - id: llm-xdpool
+      name: dsh-xdpool
 # Bring up billion-context alongside us, so the card's billion page has a live
 # compressor to read instead of asking the user to install a second plugin.
 #

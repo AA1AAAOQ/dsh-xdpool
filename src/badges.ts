@@ -26,7 +26,7 @@
  * label and a colour, never an expiry, so the plugin can say "限时免费" but
  * cannot say when it ends. Inventing a date would change what the user spends.
  *
- * @module dsh-workbuddy-xdpool/badges
+ * @module dsh-xdpool/badges
  */
 
 /** Prefix the CN gateway uses for a promotion badge inside `tags`. */

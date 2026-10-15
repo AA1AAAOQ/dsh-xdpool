@@ -119,11 +119,11 @@ export function BrandTile({ accent, glyph, icon, initials, className }: BrandTil
   return (
     <span
       aria-hidden="true"
-      className={`dsm-workbuddy-xdpool-tile${icon === undefined ? '' : ' dsm-workbuddy-xdpool-tile-art'}${letters === undefined ? '' : ' dsm-workbuddy-xdpool-tile-letters'}${className === undefined ? '' : ` ${className}`}`}
+      className={`dsm-xdpool-tile${icon === undefined ? '' : ' dsm-xdpool-tile-art'}${letters === undefined ? '' : ' dsm-xdpool-tile-letters'}${className === undefined ? '' : ` ${className}`}`}
       style={{
-        '--dsm-workbuddy-xdpool-tile-accent': accent,
-        '--dsm-workbuddy-xdpool-tile-glyph': letters === undefined ? BRAND_TILE_GLYPHS[glyph] : 'none',
-        '--dsm-workbuddy-xdpool-tile-icon': icon === undefined ? 'none' : `url("${icon}")`,
+        '--dsm-xdpool-tile-accent': accent,
+        '--dsm-xdpool-tile-glyph': letters === undefined ? BRAND_TILE_GLYPHS[glyph] : 'none',
+        '--dsm-xdpool-tile-icon': icon === undefined ? 'none' : `url("${icon}")`,
       } as Record<string, string>}
     >
       {letters}

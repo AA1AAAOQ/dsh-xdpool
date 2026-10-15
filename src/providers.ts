@@ -27,7 +27,7 @@
  * Nothing here touches Node or HTTP, so the tests exercise the same module the
  * browser bundle imports for the provider list.
  *
- * @module dsh-workbuddy-xdpool/providers
+ * @module dsh-xdpool/providers
  */
 import registry from './providers-registry.json' with { type: 'json' }
 /** Wire protocols this lane can speak, as the registry names them. */

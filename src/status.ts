@@ -5,7 +5,7 @@
  * rather than failing the whole document, because billing is an auxiliary
  * concern next to actually serving models.
  *
- * @module dsh-workbuddy-xdpool/status
+ * @module dsh-xdpool/status
  */
 
 import type { WorkBuddyAccount, WorkBuddyAccountPool } from './accounts.ts'
@@ -118,7 +118,7 @@ export function formatStatus(status: WorkBuddyStatus): string {
   lines.push('')
   if (status.accounts.length === 0) {
     lines.push('No WorkBuddy credential found. Sign in on the WorkBuddy desktop app,')
-    lines.push('then run: dsh plugin --profile desktop exec dsh-workbuddy-xdpool import <key>')
+    lines.push('then run: dsh plugin --profile desktop exec dsh-xdpool import <key>')
     return lines.join('\n')
   }
   for (const account of status.accounts) {

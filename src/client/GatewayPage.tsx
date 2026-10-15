@@ -18,19 +18,19 @@
  * 3. A failed bind is reported as a failure, not as "off". The difference matters
  *    because "off" tells the user to turn on something that is already on.
  *
- * Class names: this page reuses the shell's generic `.dsm-workbuddy-xdpool-sec`
+ * Class names: this page reuses the shell's generic `.dsm-xdpool-sec`
  * and `-sectitle` instead of redefining a section frame per panel. The few
  * classes it does own are prefixed `-gw-` and all live in `GATEWAY_CARD_CSS`.
  *
- * @module dsh-workbuddy-xdpool/client/GatewayPage
+ * @module dsh-xdpool/client/GatewayPage
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { POOL_RELAY_PATH, type PoolWebRelayStatus } from '../status-paths.ts'
 import { GATEWAY_CARD_CSS } from './styles.ts'
 import { PageHero } from './shell.tsx'
-import type { WorkBuddyPoolSettingsKey } from './locales.ts'
+import type { XdPoolSettingsKey } from './locales.ts'
 /** The translator the settings section injects. */
-type Translate = (key: WorkBuddyPoolSettingsKey, params?: Record<string, unknown>) => string
+type Translate = (key: XdPoolSettingsKey, params?: Record<string, unknown>) => string
 export interface GatewayPageProps {
   t?: Translate | undefined
 }
@@ -154,19 +154,19 @@ export function GatewayPage({ t }: GatewayPageProps) {
   const parsedPort = Number(port)
   const portUsable = Number.isInteger(parsedPort) && parsedPort >= 1 && parsedPort <= 65_535
   return (
-    <div className="dsm-workbuddy-xdpool-gw">
+    <div className="dsm-xdpool-gw">
       <style>{GATEWAY_CARD_CSS}</style>
       <PageHero
         title={t?.('gw.title') ?? 'Gateway'}
         sub={t?.('gw.sub') ?? ''}
         pills={<>
-          <span className="dsm-workbuddy-xdpool-pill" data-tone={enabled ? 'ok' : 'off'}>
+          <span className="dsm-xdpool-pill" data-tone={enabled ? 'ok' : 'off'}>
             {enabled ? (t?.('gw.on') ?? 'On') : (t?.('gw.off') ?? 'Off')}
           </span>
           {/* Two different states, on purpose. "On but not listening" is a
               failure the user has to be able to see; collapsing it into "off"
               would tell them to switch on something that is already on. */}
-          <span className="dsm-workbuddy-xdpool-pill" data-tone={listening ? 'ok' : enabled ? 'warn' : 'off'}>
+          <span className="dsm-xdpool-pill" data-tone={listening ? 'ok' : enabled ? 'warn' : 'off'}>
             {listening
               ? (t?.('gw.listening') ?? 'Listening')
               : enabled
@@ -176,23 +176,23 @@ export function GatewayPage({ t }: GatewayPageProps) {
         </>}
       />
       {error !== undefined
-        ? <p className="dsm-workbuddy-xdpool-panel-error">{error}</p>
+        ? <p className="dsm-xdpool-panel-error">{error}</p>
         : null}
       {flash !== undefined
-        ? <p className="dsm-workbuddy-xdpool-gw-flash">{flash}</p>
+        ? <p className="dsm-xdpool-gw-flash">{flash}</p>
         : null}
       {status?.error !== undefined && status.error !== ''
-        ? <p className="dsm-workbuddy-xdpool-panel-error">{status.error}</p>
+        ? <p className="dsm-xdpool-panel-error">{status.error}</p>
         : null}
       {status === undefined && error === undefined
-        ? <p className="dsm-workbuddy-xdpool-panel-empty">{t?.('gw.loading') ?? 'Reading…'}</p>
+        ? <p className="dsm-xdpool-panel-empty">{t?.('gw.loading') ?? 'Reading…'}</p>
         : null}
-      <div className="dsm-workbuddy-xdpool-sec">
-        <p className="dsm-workbuddy-xdpool-sectitle">{t?.('gw.switch') ?? 'Relay'}</p>
+      <div className="dsm-xdpool-sec">
+        <p className="dsm-xdpool-sectitle">{t?.('gw.switch') ?? 'Relay'}</p>
         <div>
           <button
             type="button"
-            className="dsm-workbuddy-xdpool-gw-btn"
+            className="dsm-xdpool-gw-btn"
             data-on={enabled ? 'true' : 'false'}
             disabled={busy}
             onClick={() => { void write({ enabled: !enabled }) }}
@@ -200,11 +200,11 @@ export function GatewayPage({ t }: GatewayPageProps) {
             {enabled ? (t?.('gw.turnOff') ?? 'Turn off') : (t?.('gw.turnOn') ?? 'Turn on')}
           </button>
         </div>
-        <p className="dsm-workbuddy-xdpool-gw-note">{t?.('gw.switchHint') ?? ''}</p>
+        <p className="dsm-xdpool-gw-note">{t?.('gw.switchHint') ?? ''}</p>
       </div>
-      <div className="dsm-workbuddy-xdpool-sec">
-        <p className="dsm-workbuddy-xdpool-sectitle">{t?.('gw.address') ?? 'Address'}</p>
-        <label className="dsm-workbuddy-xdpool-gw-field">
+      <div className="dsm-xdpool-sec">
+        <p className="dsm-xdpool-sectitle">{t?.('gw.address') ?? 'Address'}</p>
+        <label className="dsm-xdpool-gw-field">
           <span>{t?.('gw.host') ?? 'Bind address'}</span>
           <select value={host} disabled={busy} onChange={event => { setHost(event.target.value) }}>
             {HOSTS.map(option => (
@@ -214,7 +214,7 @@ export function GatewayPage({ t }: GatewayPageProps) {
             ))}
           </select>
         </label>
-        <label className="dsm-workbuddy-xdpool-gw-field">
+        <label className="dsm-xdpool-gw-field">
           <span>{t?.('gw.port') ?? 'Port'}</span>
           <input
             type="number"
@@ -228,7 +228,7 @@ export function GatewayPage({ t }: GatewayPageProps) {
         <div>
           <button
             type="button"
-            className="dsm-workbuddy-xdpool-gw-btn"
+            className="dsm-xdpool-gw-btn"
             data-on="false"
             disabled={busy || !portUsable}
             onClick={() => { void write({ host, port: parsedPort }) }}
@@ -236,22 +236,22 @@ export function GatewayPage({ t }: GatewayPageProps) {
             {t?.('gw.saveAddress') ?? 'Save address'}
           </button>
         </div>
-        {portUsable ? null : <p className="dsm-workbuddy-xdpool-gw-warn">{t?.('gw.portInvalid') ?? ''}</p>}
+        {portUsable ? null : <p className="dsm-xdpool-gw-warn">{t?.('gw.portInvalid') ?? ''}</p>}
         {listening && status?.endpoint !== undefined && status.endpoint !== ''
-          ? <p className="dsm-workbuddy-xdpool-gw-note">
+          ? <p className="dsm-xdpool-gw-note">
               {t?.('gw.endpoint', { endpoint: status.endpoint }) ?? status.endpoint}
             </p>
           : null}
       </div>
-      <div className="dsm-workbuddy-xdpool-sec">
-        <p className="dsm-workbuddy-xdpool-sectitle">{t?.('gw.key') ?? 'Key'}</p>
-        <p className="dsm-workbuddy-xdpool-gw-key">
+      <div className="dsm-xdpool-sec">
+        <p className="dsm-xdpool-sectitle">{t?.('gw.key') ?? 'Key'}</p>
+        <p className="dsm-xdpool-gw-key">
           {key === '' ? (t?.('gw.noKey') ?? 'No key yet') : revealed ? key : maskOf(key)}
         </p>
-        <div className="dsm-workbuddy-xdpool-gw-actions">
+        <div className="dsm-xdpool-gw-actions">
           <button
             type="button"
-            className="dsm-workbuddy-xdpool-gw-btn"
+            className="dsm-xdpool-gw-btn"
             data-on="false"
             disabled={busy || key === ''}
             onClick={() => { setRevealed(current => !current) }}
@@ -260,7 +260,7 @@ export function GatewayPage({ t }: GatewayPageProps) {
           </button>
           <button
             type="button"
-            className="dsm-workbuddy-xdpool-gw-btn"
+            className="dsm-xdpool-gw-btn"
             data-on="false"
             disabled={busy}
             onClick={() => { void write({ key: '' }) }}
@@ -268,11 +268,11 @@ export function GatewayPage({ t }: GatewayPageProps) {
             {t?.('gw.rotate') ?? 'Rotate'}
           </button>
         </div>
-        <p className="dsm-workbuddy-xdpool-gw-note">{t?.('gw.keyHint') ?? ''}</p>
+        <p className="dsm-xdpool-gw-note">{t?.('gw.keyHint') ?? ''}</p>
       </div>
-      <div className="dsm-workbuddy-xdpool-sec">
-        <p className="dsm-workbuddy-xdpool-sectitle">{t?.('gw.usage') ?? 'Using it'}</p>
-        <p className="dsm-workbuddy-xdpool-gw-note">{t?.('gw.usageHint') ?? ''}</p>
+      <div className="dsm-xdpool-sec">
+        <p className="dsm-xdpool-sectitle">{t?.('gw.usage') ?? 'Using it'}</p>
+        <p className="dsm-xdpool-gw-note">{t?.('gw.usageHint') ?? ''}</p>
       </div>
     </div>
   )

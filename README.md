@@ -1,21 +1,36 @@
-# DSH WorkBuddy XD Pool
+# DSH XD Pool
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/dsh-workbuddy-xdpool"><img src="https://img.shields.io/npm/v/dsh-workbuddy-xdpool?style=flat-square&label=npm&color=cb3837" alt="npm version"></a>
-  <a href="https://www.npmjs.com/package/dsh-workbuddy-xdpool"><img src="https://img.shields.io/npm/d18m/dsh-workbuddy-xdpool?style=flat-square&label=downloads&color=cb3837" alt="npm downloads"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/XDTrees/dsh-workbuddy-xdpool?style=flat-square" alt="MIT license"></a>
-  <a href="https://github.com/XDTrees/dsh-workbuddy-xdpool/stargazers"><img src="https://img.shields.io/github/stars/XDTrees/dsh-workbuddy-xdpool?style=flat-square" alt="GitHub stars"></a>
+  <a href="https://www.npmjs.com/package/dsh-xdpool"><img src="https://img.shields.io/npm/v/dsh-xdpool?style=flat-square&label=npm&color=cb3837" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/dsh-xdpool"><img src="https://img.shields.io/npm/d18m/dsh-xdpool?style=flat-square&label=downloads&color=cb3837" alt="npm downloads"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/XDTrees/dsh-xdpool?style=flat-square" alt="MIT license"></a>
+  <a href="https://github.com/XDTrees/dsh-xdpool/stargazers"><img src="https://img.shields.io/github/stars/XDTrees/dsh-xdpool?style=flat-square" alt="GitHub stars"></a>
 </p>
 
 [English](./README.en.md) | 中文
 
-把 WorkBuddy 桌面 App 里登录过的**所有账号**，合成一个 DSH 模型池。你在 WorkBuddy 里登过几个号，池里就有几个号——不用手动填表，不用一个个录入。
+**把你手上所有能白嫖的模型额度，接进 DSH 的同一个模型池。**
 
-哪个号被限流了、积分用光了，请求自动换到下一个能用的号上去。你只管问，剩下的它自己处理。
+它从一件事开始——把本机 WorkBuddy 桌面 App 里登录过的**所有账号**合成一个自动容错的池子，哪个号被限流了、积分用光了，请求自动换到下一个能用的号上去。你不用挑号，不用手动导入。
+
+然后它长成了七页：账号池之外，还能扫码登录十三家厂商的免费模型、把 **76 家**厂商的免费额度聚合成一条通道、看用量账本、把几个模型串成链、把池子开成一个本地 OpenAI 兼容网关。
+
+| 页面 | 干什么 |
+| --- | --- |
+| **账号池** | 本机 WorkBuddy 账号、池健康、实时用量、积分自动化 |
+| **扫码登录** | 十三家支持网页 / 扫码登录的厂商，登一次，它们的免费模型就进选择器 |
+| **聚合渠道** | 76 家厂商的免费额度接进同一个池（默认一家都不开，填了 key 才亮） |
+| **数据看板** | 今天的轮次、调用、失败、换号救回、token、缓存命中、速度 |
+| **billion-context** | 只读观测本机 billion-context 压缩器的运行状态 |
+| **路由** | 把多个模型串成一条链，按顺序或轮换使用 |
+| **网关** | 把池子开成本地 OpenAI 兼容接口，可转发给局域网其它设备 |
 
 **另外附送一整套「积分自动化」**：签到、领任务奖励、连登兑换、开猫猫旅行……这些每天都要手动点一遍的活儿，插件在后台替你干完了。
 
-> **和单账号连接插件的区别**：`dsh-workbuddy-connect` 那类插件是「一次一个账号」。XD Pool 把**多账号当默认情况**——不挑号、不手动导入，本机 WorkBuddy 所有历史登录快照全部收进一个共享池，对外用一个 `workbuddy-xdpool` provider 分组，池内自动容错。
+> **和单账号连接插件的区别**：`dsh-workbuddy-connect` 那类插件是「一次一个账号」。XD Pool 把**多账号当默认情况**——不挑号、不手动导入，本机 WorkBuddy 所有历史登录快照全部收进一个共享池，对外用一个 `xdpool` provider 分组，池内自动容错。
+
+> **从旧名升级**：这个插件以前叫 `dsh-workbuddy-xdpool`。改名后**旧数据会自动接过来**（你的 API key、忽略名单、账号 pin 都还在）；唯一需要你动手的是「默认模型」如果指向旧 id，见[从旧版升级](#从旧版升级)。
+
 
 ## 先看几张图
 
@@ -110,7 +125,7 @@
 
 ```sh
 # dsh 不在 PATH 时，用 node ~/.dsh/profiles/node_modules/@deepseek-ai/dsh/lib/bin.js 代替 dsh
-dsh plugin --profile desktop add dsh-workbuddy-xdpool
+dsh plugin --profile desktop add dsh-xdpool
 ```
 
 > 推荐 npm：需要拉取的依赖只有插件自己（**约 1 个包，几秒搞定**）。
@@ -119,17 +134,17 @@ dsh plugin --profile desktop add dsh-workbuddy-xdpool
 **方式二：从 GitHub 源码安装**
 
 ```sh
-dsh plugin --profile desktop add github:XDTrees/dsh-workbuddy-xdpool
+dsh plugin --profile desktop add github:XDTrees/dsh-xdpool
 ```
 
 **方式三：手动注册 bundle**
 
 ```sh
 # 1) 先装包（npm 或 GitHub 任选）
-dsh plugin --profile desktop add dsh-workbuddy-xdpool
+dsh plugin --profile desktop add dsh-xdpool
 
 # 2) 注册 bundle：编辑 ~/.dsh/profiles/desktop/package.json，
-#    在 "dsh" → "profile" → "bundles" 数组末尾加上 "dsh-workbuddy-xdpool"
+#    在 "dsh" → "profile" → "bundles" 数组末尾加上 "dsh-xdpool"
 
 # 3) 重启 DSH Desktop
 ```
@@ -139,7 +154,7 @@ dsh plugin --profile desktop add dsh-workbuddy-xdpool
 ```sh
 pnpm install
 pnpm build              # 产出 lib/index.js + lib/index.d.ts + lib/bin.js + lib/client.js
-pnpm test               # 138 项测试
+pnpm test               # 814 项测试
 pnpm typecheck          # 宿主侧类型检查
 pnpm typecheck:client   # 客户端类型检查
 ```
@@ -148,23 +163,56 @@ pnpm typecheck:client   # 客户端类型检查
 
 > 注意：`pnpm install` 要用 pnpm 11（`npx pnpm@11`），必要时加 `--config.confirmModulesPurge=false --config.minimumReleaseAge=0`——pnpm 11 默认的 `minimumReleaseAge` 供应链年龄策略会拦下刚发布的 rc 包。
 
-装完以后：模型选择器里会出现 **WorkBuddy XD Pool** 分组；打开设置面板（左下角齿轮或 `Ctrl+Alt+,`）切到 **XD Pool** 一栏，能看池健康、各账号的令牌 / 积分 / 签到 / 冷却状态，还有「重新检测账号」「清除所有冷却」按钮和每个账号的签到按钮。
+装完以后：模型选择器里会出现 **XD Pool（国内版）** 和 **XD Pool（国际版）** 两个分组（另有「聚合渠道」和「XD Pool · 免费模型」按需出现）；打开设置面板（左下角齿轮或 `Ctrl+Alt+,`）切到 **XD Pool** 一栏，能看池健康、各账号的令牌 / 积分 / 签到 / 冷却状态，还有「重新检测账号」「清除所有冷却」按钮和每个账号的签到按钮。
 
 Web / TUI profile 也能用（`--profile web` / `--profile dsh-tui`）。
 
+## 从旧版升级
+
+这个插件以前叫 **`dsh-workbuddy-xdpool`**（显示名 `DSH WorkBuddy XD Pool`）。从 2.1.0 起改名为 **`dsh-xdpool`**。
+
+**你的数据不会丢。** 插件自己的目录从 `~/.dsh/.workbuddy-xdpool` 变成了 `~/.dsh/.xdpool`，启动时会**自动把旧目录复制过来**——你填过的第三方 API key、忽略名单、账号 pin、启动日志，都在。旧目录**只复制、不删除**，所以想退回旧版、或者两个版本并存，都还能用。
+
+唯一需要你动手的地方：**如果你的「默认模型」指向旧 id**，它不会自己改。旧 id 是宿主配置里的一个字符串，插件不去改宿主的配置文件（那等于插件改自己的加载器配置）。
+
+| 旧 id | 新 id |
+| --- | --- |
+| `workbuddy-xdpool` | `xdpool` |
+| `workbuddy-xdpool-global` | `xdpool-global` |
+| `workbuddy-xdpool-aggregate` | `xdpool-aggregate` |
+| `workbuddy-xdpool-free` | `xdpool-free` |
+
+要改两处（都在 profile 目录里）：
+
+```yaml
+# ~/.dsh/profiles/desktop/home/settings.yaml
+agent-default-model:
+  provider: xdpool        # 原来是 workbuddy-xdpool
+  model: hy3
+```
+
+```yaml
+# ~/.dsh/profiles/desktop/cordis.patch.yml
+- id: agent-default-model
+  config:
+    provider: xdpool-global   # 原来是 workbuddy-xdpool-global
+```
+
+插件每次启动都会把这件事写进 `~/.dsh/.xdpool/startup.log`，所以忘了改也能在日志里找到确切该改什么。
+
 ## 命令行
 
-统一用 `dsh plugin --profile desktop exec dsh-workbuddy-xdpool <子命令>` 调用：
+统一用 `dsh plugin --profile desktop exec dsh-xdpool <子命令>` 调用：
 
 ```sh
-dsh plugin --profile desktop exec dsh-workbuddy-xdpool status    # 池里几个号 / 几个冷却 + shim 状态（--credits 查积分、--json 机器可读、--rates 看倍率）
-dsh plugin --profile desktop exec dsh-workbuddy-xdpool accounts  # 已发现的账号（--json）
-dsh plugin --profile desktop exec dsh-workbuddy-xdpool doctor    # 诊断发现 / 冷却 / 上游连通性
-dsh plugin --profile desktop exec dsh-workbuddy-xdpool reset     # 立刻清掉所有 429 冷却
-dsh plugin --profile desktop exec dsh-workbuddy-xdpool checkin   # 查每个账号今天签到了没（--json 机器可读）
-dsh plugin --profile desktop exec dsh-workbuddy-xdpool checkin all
+dsh plugin --profile desktop exec dsh-xdpool status    # 池里几个号 / 几个冷却 + shim 状态（--credits 查积分、--json 机器可读、--rates 看倍率）
+dsh plugin --profile desktop exec dsh-xdpool accounts  # 已发现的账号（--json）
+dsh plugin --profile desktop exec dsh-xdpool doctor    # 诊断发现 / 冷却 / 上游连通性
+dsh plugin --profile desktop exec dsh-xdpool reset     # 立刻清掉所有 429 冷却
+dsh plugin --profile desktop exec dsh-xdpool checkin   # 查每个账号今天签到了没（--json 机器可读）
+dsh plugin --profile desktop exec dsh-xdpool checkin all
                                                                  # 领掉所有账号今天的签到奖励；也可以只传一个账号标签领单个
-dsh plugin --profile desktop exec dsh-workbuddy-xdpool login     # 教你怎么在桌面再加一个号进池
+dsh plugin --profile desktop exec dsh-xdpool login     # 教你怎么在桌面再加一个号进池
 ```
 
 ## 池里怎么多账号？
@@ -175,17 +223,17 @@ dsh plugin --profile desktop exec dsh-workbuddy-xdpool login     # 教你怎么�
 
 ```sh
 # 在 WorkBuddy 桌面 App 登录账号后（key 自己起名）：
-dsh plugin --profile desktop exec dsh-workbuddy-xdpool import myKey
+dsh plugin --profile desktop exec dsh-xdpool import myKey
 # 查看 / 删除已导入的快照：
-dsh plugin --profile desktop exec dsh-workbuddy-xdpool accounts
-dsh plugin --profile desktop exec dsh-workbuddy-xdpool remove myKey
+dsh plugin --profile desktop exec dsh-xdpool accounts
+dsh plugin --profile desktop exec dsh-xdpool remove myKey
 ```
 
-导入的快照以 key 的 **MD5 前 8 位**命名，放在 `~/.dsh/.workbuddy-xdpool/`（key 本身记在文件里），中文、带 `/`、带空格的 key 都安全。长期使用靠 refresh token 自动续期；失效了就回桌面重新登录，再 `import <key> --force` 覆盖。
+导入的快照以 key 的 **MD5 前 8 位**命名，放在 `~/.dsh/.xdpool/`（key 本身记在文件里），中文、带 `/`、带空格的 key 都安全。长期使用靠 refresh token 自动续期；失效了就回桌面重新登录，再 `import <key> --force` 覆盖。
 
 ## 配置
 
-池的配置走插件设置节（`settings.workbuddy-xdpool`），模型设置页里能改，改完立即生效：
+池的配置走插件设置节（`settings.xdpool`），模型设置页里能改，改完立即生效：
 
 | 字段 | 说明 | 默认 |
 | --- | --- | --- |
@@ -198,7 +246,7 @@ dsh plugin --profile desktop exec dsh-workbuddy-xdpool remove myKey
 也可以直接写进 `~/.dsh/settings.yaml`：
 
 ```yaml
-workbuddy-xdpool:
+xdpool:
   cooldownMs: 120000
   distribution: sticky
 ```
@@ -206,7 +254,7 @@ workbuddy-xdpool:
 ## 架构
 
 - **宿主侧**（`src/`，跑在 DSH 主进程里）
-  - `index.ts` —— 注册 `workbuddy-xdpool` provider、`workbuddy-xdpool` 设置节、各条同源路由（状态 / 重新检测 / 清除冷却 / 签到 / 自动化运行 / 保留积分），以及账号发现与模型目录播种。
+  - `index.ts` —— 注册 `xdpool` provider、`xdpool` 设置节、各条同源路由（状态 / 重新检测 / 清除冷却 / 签到 / 自动化运行 / 保留积分），以及账号发现与模型目录播种。
   - `accounts.ts` —— `WorkBuddyAccountPool`：读本机 WorkBuddy 桌面 auth 快照、429 冷却、轮换与 token 刷新；账号停用与积分保留也在这里。
   - `scheduler.ts` —— 积分自动化的调度器：按本地时点跑五个任务（签到 / 上报 / 任务 / 连登 / 旅行），每日收益账本落盘，手动「立即运行」走的是同一套逻辑。
   - `task-events.ts` —— 13 条任务事件链的构造。每条链都是纯数据，外加它该走哪个指纹通道（桌面 / 网页）；需要真实会话的任务（技能、专家）在这里先开一次真对话，拿到服务端 id。
@@ -214,7 +262,7 @@ workbuddy-xdpool:
   - `web-status.ts` / `status-paths.ts` —— 卡片读的同源状态文档与路由。写操作按「POST + 回环来源 + 显式 accountId」把关。
   - `bin.ts` —— 上面那套 CLI。
 - **客户端**（`src/client/`，浏览器卡片，经 `dsh.client` 由宿主加载）
-  折叠卡片外壳沿用宿主内置卡的 `dsm-plugin-card*` 样式语言（`--dsw-alias-*` 主题变量），内容类名统一 `dsm-workbuddy-xdpool-*` 前缀，不污染宿主其它卡片；文案命名空间 `settings.workbuddy-xdpool`。
+  折叠卡片外壳沿用宿主内置卡的 `dsm-plugin-card*` 样式语言（`--dsw-alias-*` 主题变量），内容类名统一 `dsm-xdpool-*` 前缀，不污染宿主其它卡片；文案命名空间 `settings.xdpool`。
 - **构建**
   `tsdown` 产出 `lib/index.js`（宿主入口）+ `lib/index.d.ts`（类型）+ `lib/bin.js`（CLI）+ `lib/client.js`（CJS，用 `window.__ModuleLoader__.load` 包起来的浏览器 bundle）。四个产物都随仓库提交，所以安装时不需要任何构建脚本。
 

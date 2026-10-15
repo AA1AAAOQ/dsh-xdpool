@@ -99,7 +99,7 @@ describe('the page links instead of redrawing', () => {
   })
   it('sends every session row to the proxy own detail route', () => {
     expect(page).toContain('`#/sessions/${encodeURIComponent(row.id)}`')
-    expect(page).toContain('dsm-workbuddy-xdpool-sesslink')
+    expect(page).toContain('dsm-xdpool-sesslink')
   })
   it('hands the opened tab to the proxy rather than keeping a handle on it', () => {
     // Same rule as the channels page: the destination owns that tab, and this
@@ -135,7 +135,7 @@ describe('the page links instead of redrawing', () => {
   it('defines every class it renders', () => {
     const billionCss = styles.slice(styles.indexOf('export const BILLION_CARD_CSS'))
     const used = new Set(
-      [...page.matchAll(/dsm-workbuddy-xdpool-([a-z0-9-]+)/gu)].map(m => m[0]),
+      [...page.matchAll(/dsm-xdpool-([a-z0-9-]+)/gu)].map(m => m[0]),
     )
     // Shared classes live in the ledger stylesheet, which this page also loads.
     const shared = ['sec', 'sectitle', 'table', 'tablewrap', 'num', 'ellipsis', 'note', 'kpis', 'steps']
@@ -146,7 +146,7 @@ describe('the page links instead of redrawing', () => {
     // …and the ones that are new must be in THIS page's own block, not merely
     // somewhere in the file, so removing them here is caught.
     for (const name of ['sechead', 'secbtns', 'secghost', 'sesslink']) {
-      expect(billionCss, `.${name} missing from BILLION_CARD_CSS`).toContain(`.dsm-workbuddy-xdpool-${name}`)
+      expect(billionCss, `.${name} missing from BILLION_CARD_CSS`).toContain(`.dsm-xdpool-${name}`)
     }
     expect(shared.length).toBeGreaterThan(5)
   })

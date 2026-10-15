@@ -5,7 +5,7 @@
  * upstream call; when the live catalog arrives it replaces the fallback and
  * the adapter rebuilds the provider's model list.
  *
- * @module dsh-workbuddy-xdpool/catalog
+ * @module dsh-xdpool/catalog
  */
 
 import { BADGE_TAG_PREFIX } from './badges.ts'

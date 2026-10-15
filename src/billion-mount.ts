@@ -36,7 +36,7 @@
  * row is absent or inert and nothing would ever bring the listener up — so the
  * card would sit on `missing` forever with no indication why.
  *
- * @module dsh-workbuddy-xdpool/billion-mount
+ * @module dsh-xdpool/billion-mount
  */
 import type { Context } from '@deepseek-ai/cordis'
 

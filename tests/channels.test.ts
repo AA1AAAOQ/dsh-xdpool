@@ -63,7 +63,7 @@ describe('login channel roster', () => {
 })
 describe('channel route contract', () => {
   it('addresses the list and the pack RPC on separate paths', () => {
-    expect(POOL_CHANNELS_PATH).toBe('/plugins/dsh-workbuddy-xdpool/channels')
+    expect(POOL_CHANNELS_PATH).toBe('/plugins/dsh-xdpool/channels')
     expect(CHANNEL_PACK_RPC_PATH).toBe('/api/channel-pack')
   })
   it('forwards only the three methods the UI actually calls', () => {

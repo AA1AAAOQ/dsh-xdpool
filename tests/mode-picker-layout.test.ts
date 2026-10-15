@@ -56,7 +56,7 @@ describe('the mode picker has room for every mode it offers', () => {
     // The concrete defect, twice over: four modes in a three-column grid, then
     // five in a two-column one. A declared column count is what stranded a chip,
     // so the property is "the row wraps when it must", not "there are N columns".
-    const options = rule('dsm-workbuddy-xdpool-dist-options')
+    const options = rule('dsm-xdpool-dist-options')
     expect(options).not.toBe('')
     expect(options, 'a 3-column grid cannot hold 4 modes').not.toContain('repeat(3,')
     expect(options, 'a 2-column grid strands the fifth mode').not.toContain('repeat(2,')
@@ -67,7 +67,7 @@ describe('the mode picker has room for every mode it offers', () => {
   it('sizes the chips so five of them share the row on a normal panel', () => {
     // flex-basis is what decides when the row breaks; without a basis the chips
     // shrink to their content and the layout stops being a row of equals.
-    const option = rule('dsm-workbuddy-xdpool-dist-option')
+    const option = rule('dsm-xdpool-dist-option')
     expect(option).toMatch(/flex:1 1 \d+px/)
     expect(option).toContain('min-width:0')
   })
@@ -79,7 +79,7 @@ describe('the mode picker has room for every mode it offers', () => {
     // onto a second row while the first row still had room for it.
     const global = styles.slice(0, styles.indexOf('@media (max-width:760px)'))
     expect(global, 'the odd-last span must not apply at full width')
-      .not.toContain('.dsm-workbuddy-xdpool-dist-options > :last-child')
+      .not.toContain('.dsm-xdpool-dist-options > :last-child')
   })
 
   it('does not re-declare a column count when the card is narrow', () => {
@@ -87,8 +87,8 @@ describe('the mode picker has room for every mode it offers', () => {
     // would be a second, competing layout rule that only fires below 760px.
     const media = styles.slice(styles.indexOf('@media (max-width:760px)'))
     const block = media.slice(0, media.indexOf('/* Automation panel'))
-    expect(block).not.toContain('.dsm-workbuddy-xdpool-dist-options{grid-template-columns')
-    expect(block, 'a one-chip-tall row must not reserve desktop height').toContain('.dsm-workbuddy-xdpool-dist-option{min-height:0}')
+    expect(block).not.toContain('.dsm-xdpool-dist-options{grid-template-columns')
+    expect(block, 'a one-chip-tall row must not reserve desktop height').toContain('.dsm-xdpool-dist-option{min-height:0}')
   })
 })
 
@@ -98,7 +98,7 @@ describe('the selected mode is unmistakable', () => {
     // belongs to the host chrome — a choice control borrowing either one reads
     // as somebody else's status. The card's own language is the raised surface
     // (same as the region tabs) plus a neutral inset bar.
-    const active = rule('dsm-workbuddy-xdpool-dist-option-active')
+    const active = rule('dsm-xdpool-dist-option-active')
     expect(active).not.toBe('')
     expect(active, 'the accent must be the neutral label colour').toContain('--dsw-alias-label-primary')
     expect(active, 'not the host brand blue').not.toContain('brand-primary')
@@ -109,21 +109,21 @@ describe('the selected mode is unmistakable', () => {
 
   it('repeats the active mode in the header', () => {
     // The answer to "which one is on?" without scanning four cards.
-    expect(rule('dsm-workbuddy-xdpool-dist-now')).not.toBe('')
-    expect(card).toContain('dsm-workbuddy-xdpool-dist-now')
+    expect(rule('dsm-xdpool-dist-now')).not.toBe('')
+    expect(card).toContain('dsm-xdpool-dist-now')
   })
 
   it('gives the recommended mode a badge', () => {
-    expect(rule('dsm-workbuddy-xdpool-dist-option-badge')).not.toBe('')
-    expect(card).toContain('dsm-workbuddy-xdpool-dist-option-badge')
+    expect(rule('dsm-xdpool-dist-option-badge')).not.toBe('')
+    expect(card).toContain('dsm-xdpool-dist-option-badge')
   })
 
   it('explains the chosen mode under the row instead of inside every chip', () => {
     // Five chips each carrying a sentence is five paragraphs of prose in a
     // picker; one line under the row says the same thing about the mode that is
     // actually on, and the chips keep the full text as their tooltip.
-    expect(rule('dsm-workbuddy-xdpool-dist-hint')).not.toBe('')
-    expect(card).toContain('dsm-workbuddy-xdpool-dist-hint')
+    expect(rule('dsm-xdpool-dist-hint')).not.toBe('')
+    expect(card).toContain('dsm-xdpool-dist-hint')
     // The hint reads the LIVE distribution of the card that rendered it, which
     // is now `card.status` rather than a page-wide `status` — the picker moved
     // into the domestic region card, so the expression changed shape but the
@@ -131,8 +131,8 @@ describe('the selected mode is unmistakable', () => {
     // "balanced by accident" reading is still there.
     expect(card).toContain('distHint(card.status?.distribution ?? \'priority\', t)')
     // The per-chip hint element is what made each chip two lines tall.
-    expect(rule('dsm-workbuddy-xdpool-dist-option-hint')).toBe('')
-    expect(card).not.toContain('dsm-workbuddy-xdpool-dist-option-hint')
+    expect(rule('dsm-xdpool-dist-option-hint')).toBe('')
+    expect(card).not.toContain('dsm-xdpool-dist-option-hint')
   })
 
   it('lives inside the domestic region card rather than the page header', () => {
@@ -143,12 +143,12 @@ describe('the selected mode is unmistakable', () => {
     // describe a lane it is not inside.
     const paneOpen = card.indexOf('id={distPaneId} open={distOpen}')
     expect(paneOpen, 'the mode picker must be rendered in a region disclosure pane').toBeGreaterThan(-1)
-    const regionStart = card.indexOf('className="dsm-workbuddy-xdpool-region ')
+    const regionStart = card.indexOf('className="dsm-xdpool-region ')
     expect(regionStart, 'the region card must exist').toBeGreaterThan(-1)
     expect(paneOpen).toBeGreaterThan(regionStart)
     // The pane is opened by a CN-only tool button that repeats the active mode,
     // so the mode is legible without expanding anything.
-    expect(card).toContain('dsm-workbuddy-xdpool-region-tool-value')
+    expect(card).toContain('dsm-xdpool-region-tool-value')
     expect(card).toContain("distLabel(card.status?.distribution ?? 'priority', t)")
     // The distribution is genuinely shared between the lanes (one settings key,
     // one pool instance), so the write refreshes both cards.

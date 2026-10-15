@@ -107,7 +107,7 @@ function providerLine() {
 function registerSettings(service: Record<string, unknown>, ctx: { effect: (fn: () => unknown) => void; logger: { warn: (m: string) => void } }) {
   const installed: string[] = []
   if (typeof service.installSection === 'function') {
-    ;(service.installSection as (...args: unknown[]) => unknown)('ctx', 'workbuddy-xdpool', {}, {}, {})
+    ;(service.installSection as (...args: unknown[]) => unknown)('ctx', 'xdpool', {}, {}, {})
     installed.push('installSection')
   }
   if (typeof service.configure === 'function') {
@@ -115,7 +115,7 @@ function registerSettings(service: Record<string, unknown>, ctx: { effect: (fn: 
     installed.push('configure')
   }
   if (typeof service.installSection !== 'function' && typeof service.configure !== 'function') {
-    ctx.logger.warn('dsh-workbuddy-xdpool: settings service exposes neither installSection nor configure; the card will not mount')
+    ctx.logger.warn('dsh-xdpool: settings service exposes neither installSection nor configure; the card will not mount')
     installed.push('none')
   }
   return installed
@@ -143,7 +143,7 @@ describe('settings registration across both host lines', () => {
     const installed = registerSettings(service, { effect: () => {}, logger: { warn: () => {} } })
 
     expect(installed).toEqual(['installSection'])
-    expect(calls).toEqual(['installSection:workbuddy-xdpool'])
+    expect(calls).toEqual(['installSection:xdpool'])
     expect(calls.some(call => call.startsWith('configure'))).toBe(false)
   })
 
@@ -276,9 +276,9 @@ describe('the browser entry stays loadable on both lines', () => {
     // configForms.get() is addressed by the HOST entry id; settingsScope.bind()
     // by the namespace installSection registered. Swapping them binds the card
     // to a namespace nothing serves, so every save silently no-ops.
-    expect(clientSource).toContain('WORKBUDDY_POOL_ENTRY_ID')
-    expect(clientSource).toContain("WORKBUDDY_POOL_SETTINGS_NS")
-    expect(clientSource).toContain("scope.bind({ namespace: WORKBUDDY_POOL_SETTINGS_NS })")
+    expect(clientSource).toContain('XDPOOL_ENTRY_ID')
+    expect(clientSource).toContain("XDPOOL_SETTINGS_NS")
+    expect(clientSource).toContain("scope.bind({ namespace: XDPOOL_SETTINGS_NS })")
   })
 })
 
@@ -312,11 +312,11 @@ describe('the settings page renders on both kernel lines', () => {
     // their own, because a card that duplicated the region's own summary two
     // levels up was the layout the user asked to be replaced.
     const shell = readFileSync(new URL('../src/client/shell.tsx', import.meta.url), 'utf8')
-    expect(shell).toContain('className="dsm-workbuddy-xdpool-body"')
+    expect(shell).toContain('className="dsm-xdpool-body"')
     expect(card).toContain('</PoolShell>')
-    expect(card).toMatch(/dsm-workbuddy-xdpool-card dsm-workbuddy-xdpool-usage/)
-    expect(card).toMatch(/dsm-workbuddy-xdpool-regions/)
-    expect(card).toMatch(/dsm-workbuddy-xdpool-region-grid/)
+    expect(card).toMatch(/dsm-xdpool-card dsm-xdpool-usage/)
+    expect(card).toMatch(/dsm-xdpool-regions/)
+    expect(card).toMatch(/dsm-xdpool-region-grid/)
     // Both lanes render, always — the tab that only appeared after a sign-in
     // is the failure mode here.
     expect(card).toContain('REGION_CARDS.map(region =>')

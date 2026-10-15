@@ -17,7 +17,7 @@
  * different document (`POOL_AGGREGATE_PATH`) and must not be mounted on the
  * pool card's 30-second poll.
  *
- * @module dsh-workbuddy-xdpool/client/AggregatePage
+ * @module dsh-xdpool/client/AggregatePage
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -32,7 +32,7 @@ import {
   type PoolWebAggregateStatus,
   type PoolWebModelProbeResult,
 } from '../status-paths.ts'
-import type { WorkBuddyPoolSettingsKey } from './locales.ts'
+import type { XdPoolSettingsKey } from './locales.ts'
 import { AGGREGATE_CARD_CSS } from './styles.ts'
 import { BrandTile } from './brand-tile.tsx'
 import { channelIcon, channelInitials } from './channel-icons.ts'
@@ -41,7 +41,7 @@ import { ModelFactsRow } from './model-facts-row.tsx'
 import { modelFactsFor, type ModelProbeReading } from './model-facts.ts'
 import { PageHero } from './shell.tsx'
 /** The translator the settings section injects; the page renders every string through it. */
-type Translate = (key: WorkBuddyPoolSettingsKey, params?: Record<string, unknown>) => string
+type Translate = (key: XdPoolSettingsKey, params?: Record<string, unknown>) => string
 /** Props delivered by the slot wrapper in {@link ./PoolCard}. */
 export interface AggregatePageProps {
   t?: Translate | undefined
@@ -49,7 +49,7 @@ export interface AggregatePageProps {
 /** Category order in the filter row, matching the registry's own vocabulary. */
 const CATEGORIES = ['apikey', 'free', 'free-tier', 'local', 'oauth'] as const
 type Category = (typeof CATEGORIES)[number]
-const CATEGORY_LABEL: Readonly<Record<Category, WorkBuddyPoolSettingsKey>> = Object.freeze({
+const CATEGORY_LABEL: Readonly<Record<Category, XdPoolSettingsKey>> = Object.freeze({
   apikey: 'agg.catApikey',
   free: 'agg.catFree',
   'free-tier': 'agg.catFreeTier',
@@ -350,23 +350,23 @@ export function AggregatePage({ t }: AggregatePageProps) {
     return grouped
   }, [status?.models])
   return (
-    <div className="dsm-workbuddy-xdpool-agg">
+    <div className="dsm-xdpool-agg">
       <style>{AGGREGATE_CARD_CSS}</style>
       <PageHero
         title={t?.('agg.title') ?? 'Providers'}
         sub={t?.('agg.sub') ?? ''}
         pills={<>
-          <span className="dsm-workbuddy-xdpool-agg-pill" data-tone={laneEnabled ? 'ok' : 'off'}>
+          <span className="dsm-xdpool-agg-pill" data-tone={laneEnabled ? 'ok' : 'off'}>
             {t?.('agg.laneOn') ?? 'Aggregate lane'}
           </span>
-          <span className="dsm-workbuddy-xdpool-agg-pill" data-tone="info">
+          <span className="dsm-xdpool-agg-pill" data-tone="info">
             {t?.('agg.count', { providers: status?.configured ?? 0, models: status?.modelCount ?? 0 })
               ?? `${status?.configured ?? 0} configured · ${status?.modelCount ?? 0} models`}
           </span>
         </>}
       />
-      <div className="dsm-workbuddy-xdpool-agg-lanebar">
-        <label className="dsm-workbuddy-xdpool-switch">
+      <div className="dsm-xdpool-agg-lanebar">
+        <label className="dsm-xdpool-switch">
           <input
             type="checkbox"
             checked={laneEnabled}
@@ -376,21 +376,21 @@ export function AggregatePage({ t }: AggregatePageProps) {
           <span>{t?.('agg.laneOn') ?? 'Aggregate lane'}</span>
         </label>
         {!laneEnabled
-          ? <span className="dsm-workbuddy-xdpool-agg-hint">{t?.('agg.laneOffHint') ?? ''}</span>
+          ? <span className="dsm-xdpool-agg-hint">{t?.('agg.laneOffHint') ?? ''}</span>
           : null}
       </div>
-      <div className="dsm-workbuddy-xdpool-agg-filter">
+      <div className="dsm-xdpool-agg-filter">
         <input
-          className="dsm-workbuddy-xdpool-agg-search"
+          className="dsm-xdpool-agg-search"
           type="search"
           value={query}
           placeholder={t?.('agg.search') ?? 'Search…'}
           onChange={event => { setQuery(event.target.value) }}
         />
-        <div className="dsm-workbuddy-xdpool-agg-cats" role="group">
+        <div className="dsm-xdpool-agg-cats" role="group">
           <button
             type="button"
-            className="dsm-workbuddy-xdpool-agg-cat"
+            className="dsm-xdpool-agg-cat"
             data-on={category === 'all' ? 'true' : 'false'}
             onClick={() => { setCategory('all') }}
           >
@@ -400,7 +400,7 @@ export function AggregatePage({ t }: AggregatePageProps) {
             <button
               key={value}
               type="button"
-              className="dsm-workbuddy-xdpool-agg-cat"
+              className="dsm-xdpool-agg-cat"
               data-on={category === value ? 'true' : 'false'}
               onClick={() => { setCategory(value) }}
             >
@@ -415,13 +415,13 @@ export function AggregatePage({ t }: AggregatePageProps) {
         </div>
       </div>
       {error !== undefined
-        ? <p className="dsm-workbuddy-xdpool-panel-error">{error}</p>
+        ? <p className="dsm-xdpool-panel-error">{error}</p>
         : null}
       {status === undefined && error === undefined
-        ? <p className="dsm-workbuddy-xdpool-panel-empty">…</p>
+        ? <p className="dsm-xdpool-panel-empty">…</p>
         : visible.length === 0
-          ? <p className="dsm-workbuddy-xdpool-panel-empty">{t?.('agg.empty') ?? 'No vendor matches.'}</p>
-          : <div className="dsm-workbuddy-xdpool-agg-list">
+          ? <p className="dsm-xdpool-panel-empty">{t?.('agg.empty') ?? 'No vendor matches.'}</p>
+          : <div className="dsm-xdpool-agg-list">
               {visible.map(provider => (
                 <ProviderRow
                   key={provider.id}
@@ -556,23 +556,23 @@ function ProviderRow({
   const paneId = `dsm-xdpool-agg-${provider.id}`
   return (
     <article
-      className="dsm-workbuddy-xdpool-agg-row"
+      className="dsm-xdpool-agg-row"
       data-off={effective ? 'false' : 'true'}
       data-open={open ? 'true' : 'false'}
-      style={{ '--dsm-workbuddy-xdpool-agg-accent': accentFor(provider.id) } as Record<string, string>}
+      style={{ '--dsm-xdpool-agg-accent': accentFor(provider.id) } as Record<string, string>}
     >
-      <div className="dsm-workbuddy-xdpool-agg-rowhead">
+      <div className="dsm-xdpool-agg-rowhead">
         {/* The same 40px tile the sign-in page and the pool cards wear, so the
             three lists read as one product. */}
         <BrandTile accent={accentFor(provider.id)} glyph="globe" {...tileMark} />
-        <div className="dsm-workbuddy-xdpool-agg-titles">
-          <span className="dsm-workbuddy-xdpool-agg-name">{provider.name}</span>
-          <span className="dsm-workbuddy-xdpool-agg-org">
+        <div className="dsm-xdpool-agg-titles">
+          <span className="dsm-xdpool-agg-name">{provider.name}</span>
+          <span className="dsm-xdpool-agg-org">
             {category === undefined ? provider.category : (t?.(category) ?? provider.category)}
             {` · ${provider.format}`}
           </span>
         </div>
-        <span className="dsm-workbuddy-xdpool-agg-state" data-tone={enabled ? 'ok' : 'off'}>
+        <span className="dsm-xdpool-agg-state" data-tone={enabled ? 'ok' : 'off'}>
           {enabled
             ? (t?.('agg.stateOn') ?? 'In the pool')
             : (t?.('agg.stateOff') ?? 'Not in the pool')}
@@ -584,23 +584,23 @@ function ProviderRow({
           vendor's line and the row must not pretend it describes a model. */}
       {provider.notes === undefined
         ? null
-        : <p className="dsm-workbuddy-xdpool-agg-note">{provider.notes}</p>}
-      <div className="dsm-workbuddy-xdpool-agg-foot">
-        <div className="dsm-workbuddy-xdpool-agg-tags">
-          <span className="dsm-workbuddy-xdpool-agg-tag" data-tone={provider.configured ? 'ok' : 'off'}>
+        : <p className="dsm-xdpool-agg-note">{provider.notes}</p>}
+      <div className="dsm-xdpool-agg-foot">
+        <div className="dsm-xdpool-agg-tags">
+          <span className="dsm-xdpool-agg-tag" data-tone={provider.configured ? 'ok' : 'off'}>
             {keyState}
           </span>
-          <span className="dsm-workbuddy-xdpool-agg-tag" data-tone="info">
+          <span className="dsm-xdpool-agg-tag" data-tone="info">
             {t?.('agg.models', { count: provider.models.length }) ?? `${provider.models.length} models`}
           </span>
           {contributed > 0
-            ? <span className="dsm-workbuddy-xdpool-agg-tag" data-tone="busy">
+            ? <span className="dsm-xdpool-agg-tag" data-tone="busy">
                 {t?.('agg.contributed', { count: contributed })
                   ?? `contributes ${contributed} models`}
               </span>
             : null}
           {provider.discovered
-            ? <span className="dsm-workbuddy-xdpool-agg-tag" data-tone="live">
+            ? <span className="dsm-xdpool-agg-tag" data-tone="live">
                 {t?.('agg.discoveredTag') ?? 'live'}
               </span>
             : null}
@@ -608,38 +608,38 @@ function ProviderRow({
               what tells the user the "Fetch models" button is worth opening the
               row for in the first place. */}
           {provider.hasListing
-            ? <span className="dsm-workbuddy-xdpool-agg-tag" data-tone="info">
+            ? <span className="dsm-xdpool-agg-tag" data-tone="info">
                 {t?.('agg.listingYes') ?? 'Model list available'}
               </span>
             : null}
         </div>
         <button
           type="button"
-          className="dsm-workbuddy-xdpool-agg-open"
+          className="dsm-xdpool-agg-open"
           aria-expanded={open}
           aria-controls={paneId}
           onClick={onOpen}
         >
-          <span className="dsm-workbuddy-xdpool-agg-open-caret" aria-hidden="true" />
+          <span className="dsm-xdpool-agg-open-caret" aria-hidden="true" />
           {open
             ? (t?.('row.collapse') ?? 'Collapse')
             : (t?.('agg.setup') ?? 'Set up')}
         </button>
       </div>
       <div
-        className="dsm-workbuddy-xdpool-agg-pane"
+        className="dsm-xdpool-agg-pane"
         id={paneId}
         role="group"
         hidden={!open}
       >
         {!provider.supported
-          ? <p className="dsm-workbuddy-xdpool-agg-warn">
+          ? <p className="dsm-xdpool-agg-warn">
               {t?.('agg.unsupported') ?? 'This vendor signs in via OAuth/ADC.'}
             </p>
           : null}
         {provider.authKind !== 'none'
-          ? <div className="dsm-workbuddy-xdpool-agg-fields">
-              <label className="dsm-workbuddy-xdpool-agg-field">
+          ? <div className="dsm-xdpool-agg-fields">
+              <label className="dsm-xdpool-agg-field">
                 <span>{t?.('agg.key') ?? 'API key'}</span>
                 <input
                   type="password"
@@ -649,7 +649,7 @@ function ProviderRow({
                   onChange={event => { onDraft({ apiKey: event.target.value, baseUrl: draft?.baseUrl ?? '' }) }}
                 />
               </label>
-              <label className="dsm-workbuddy-xdpool-agg-field">
+              <label className="dsm-xdpool-agg-field">
                 <span>{t?.('agg.baseUrl') ?? 'Endpoint'}</span>
                 <input
                   type="text"
@@ -664,7 +664,7 @@ function ProviderRow({
             a vendor in the pool — that is the whole point of pasting one — but
             taking a vendor back OUT without throwing the key away is a different
             decision, and it needs its own control. */}
-        <label className="dsm-workbuddy-xdpool-switch dsm-workbuddy-xdpool-agg-switch">
+        <label className="dsm-xdpool-switch dsm-xdpool-agg-switch">
           <input
             type="checkbox"
             checked={enabled}
@@ -673,8 +673,8 @@ function ProviderRow({
           />
           <span>{t?.('agg.enable') ?? 'Add to the pool'}</span>
         </label>
-        <span className="dsm-workbuddy-xdpool-agg-hint">{t?.('agg.enableHint') ?? ''}</span>
-        <div className="dsm-workbuddy-xdpool-agg-actions">
+        <span className="dsm-xdpool-agg-hint">{t?.('agg.enableHint') ?? ''}</span>
+        <div className="dsm-xdpool-agg-actions">
           <button
             type="button"
             className="dsm-btn dsm-btn-primary"
@@ -721,7 +721,7 @@ function ProviderRow({
           </button>
         </div>
         {preview.length > 0
-          ? <p className="dsm-workbuddy-xdpool-agg-models">
+          ? <p className="dsm-xdpool-agg-models">
               {preview.join(' · ')}
               {rest > 0 ? ` +${rest}` : ''}
             </p>
@@ -733,16 +733,16 @@ function ProviderRow({
             than re-fetched, so what is printed is the same numbers the lane
             serves from. */}
         {modelRows.length > 0
-          ? <ul className="dsm-workbuddy-xdpool-agg-facts">
+          ? <ul className="dsm-xdpool-agg-facts">
               {modelRows.map(row => {
                 const key = `${provider.id}/${row.modelId}`
                 return (
                   <li
                     key={row.id}
-                    className="dsm-workbuddy-xdpool-agg-fact"
+                    className="dsm-xdpool-agg-fact"
                     data-live={row.source === 'discovered' ? 'true' : undefined}
                   >
-                    <span className="dsm-workbuddy-xdpool-agg-fact-name">{row.name}</span>
+                    <span className="dsm-xdpool-agg-fact-name">{row.name}</span>
                     <ModelFactsRow
                       t={t}
                       facts={modelFactsFor(row)}
@@ -756,7 +756,7 @@ function ProviderRow({
             </ul>
           : null}
         {flash !== undefined
-          ? <p className="dsm-workbuddy-xdpool-agg-flash">{flash}</p>
+          ? <p className="dsm-xdpool-agg-flash">{flash}</p>
           : null}
       </div>
     </article>

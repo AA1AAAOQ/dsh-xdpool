@@ -101,7 +101,7 @@ describe('the compressor is mounted only when nothing else already has it', () =
 
   it('ignores other plugins that happen to be running', async () => {
     const { loader, created } = fakeLoader([
-      { options: { name: 'dsh-workbuddy-xdpool' }, fiber: { uid: 3 } },
+      { options: { name: 'dsh-xdpool' }, fiber: { uid: 3 } },
       { options: { name: 'dsh-our-free-model' }, fiber: { uid: 4 } },
     ])
     const result = await mountBillionContext(ctxWith(loader), logger)
@@ -193,6 +193,6 @@ describe('the manifest and patch layer say what they do', () => {
     const ids = dataRows
       .filter((line) => line.trim().startsWith('- id:'))
       .map((line) => line.trim().replace('- id:', '').trim())
-    expect(ids).toEqual(['llm-workbuddy-xdpool', 'billion-context-xdpool'])
+    expect(ids).toEqual(['llm-xdpool', 'billion-context-xdpool'])
   })
 })

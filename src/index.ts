@@ -1,9 +1,9 @@
 /**
- * Host-side plugin entry. Registers the `workbuddy-xdpool` provider into the
+ * Host-side plugin entry. Registers the `xdpool` provider into the
  * Harness LLM seam once the loopback shim holds its port, plus the HTTP status
  * routes consumed by the CLI.
  *
- * @module dsh-workbuddy-xdpool/index
+ * @module dsh-xdpool/index
  */
 import { dirname } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -20,10 +20,10 @@ import {
 import {
   POOL_NAME_BY_REGION,
   POOL_PROVIDER_BY_REGION,
-  WORKBUDDY_AGGREGATE_PROVIDER,
-  WORKBUDDY_FREE_PROVIDER,
-  WORKBUDDY_GLOBAL_POOL_PROVIDER,
-  WORKBUDDY_POOL_PROVIDER,
+  XDPOOL_AGGREGATE_PROVIDER,
+  XDPOOL_FREE_PROVIDER,
+  XDPOOL_GLOBAL_PROVIDER,
+  XDPOOL_PROVIDER,
   EXTRA_LANE_NAMES,
   createWorkBuddyAdapter,
   type WorkBuddyAdapter,
@@ -189,6 +189,7 @@ import {
   readIgnoredAccountsSync,
   unignoreAccount,
 } from './ignored.ts'
+import { adoptLegacyDataDir, describeProviderIdRename } from './migrate.ts'
 import { fileURLToPath } from 'node:url'
 /**
  * This plugin's install root, the tree its own provider is assembled from.
@@ -212,7 +213,7 @@ const HOST_MODULE_ROOT = ((): string => {
     return ''
   }
 })()
-export { WORKBUDDY_POOL_PROVIDER, createWorkBuddyAdapter, type WorkBuddyAdapter } from './adapter.ts'
+export { XDPOOL_PROVIDER, createWorkBuddyAdapter, type WorkBuddyAdapter } from './adapter.ts'
 export { createWorkBuddyShim, type WorkBuddyShim } from './shim.ts'
 export {
   WorkBuddyAccountPool,
@@ -284,16 +285,16 @@ export type { ModelSelection } from './catalog.ts'
 // a registration landed outside the teardown closure.
 export { poolWebStatus, registerPoolStatusRoute, type PoolStatusRouteOptions } from './web-status.ts'
 /** Stable Cordis plugin name. */
-export const name = 'llm-workbuddy-xdpool'
+export const name = 'llm-xdpool'
 /** The model registry required before the provider can register. */
 export const inject = ['llm', 'settings']
 /**
- * Settings namespace for the WorkBuddy XD Pool card. Registering a section here
+ * Settings namespace for the XD Pool card. Registering a section here
  * is what makes the provider appear on the Models settings page and causes the
  * Host to mount the plugin's client card under Plugin configuration — exactly
  * the mechanism the single-account connector uses.
  */
-export const WORKBUDDY_POOL_SETTINGS_NS = 'workbuddy-xdpool' as SettingsNamespace
+export const XDPOOL_SETTINGS_NS = 'xdpool' as SettingsNamespace
 /** Plugin configuration. */
 export interface Config {
   /** Explicit WorkBuddy desktop auth-file path override. */
@@ -615,7 +616,7 @@ function warnOnPiAiGenerationMismatch(ctx: Context): void {
   }
 }
 /**
- * Start the loopback endpoint, register the `workbuddy-xdpool` provider, and
+ * Start the loopback endpoint, register the `xdpool` provider, and
  * discover accounts. The provider registers only after `shim.ready` resolves,
  * because its models read the shim origin at construction time.
  */
@@ -632,6 +633,27 @@ export function apply(ctx: Context, config: Config = {}): void {
   // runs, because a mismatch may be benign and a hard failure on a guess would
   // be worse.
   warnOnPiAiGenerationMismatch(ctx)
+  // Adopt state written under the plugin's pre-rename directory, BEFORE anything
+  // reads it.
+  //
+  // This has to happen first, and synchronously: the ignore list, the preferred
+  // account and the aggregate API keys are all read out of the data directory a
+  // few lines below, so an adoption that ran later would leave this boot running
+  // against an empty directory and the user would see their keys as "gone" until
+  // the next restart. Copying (not moving) keeps the old directory intact for a
+  // rollback or a side-by-side install; see `src/migrate.ts`.
+  //
+  // Best-effort by construction: `adoptLegacyDataDir` never throws, because a
+  // failed adoption must not stop the plugin from starting.
+  const migration = adoptLegacyDataDir()
+  if (migration.adopted) {
+    recordStartupNote(
+      `adopted pre-rename state from ${migration.from ?? '(unknown)'} -> ${migration.to} `
+      + `(${migration.files.length} file(s): ${migration.files.join(', ')})`,
+    )
+  } else if (migration.skipped === 'failed') {
+    recordStartupNote(`could not adopt pre-rename state into ${migration.to}; continuing with current data`)
+  }
   // The permanent ignore list, read ONCE here (synchronously) and kept live.
   //
   // Loaded at apply time rather than on the first scan because `apply()` is
@@ -681,18 +703,18 @@ export function apply(ctx: Context, config: Config = {}): void {
       try {
         const credential = accounts.find(account => regionOf(account.credential.domain) === region)?.credential
         if (credential === undefined) {
-          ctx.logger.info?.(`dsh-workbuddy-xdpool: no ${region} account yet; keeping the static ${region} catalog`)
+          ctx.logger.info?.(`dsh-xdpool: no ${region} account yet; keeping the static ${region} catalog`)
           regions[region] = { source: 'fallback', models: core.catalogs[region].current().length }
           continue
         }
         const models = await core.client.fetchModels(credential)
         core.catalogs[region].updateFromUpstream(models)
-        ctx.logger.info?.(`dsh-workbuddy-xdpool: ${region} catalog seeded with ${models.length} model(s)`)
+        ctx.logger.info?.(`dsh-xdpool: ${region} catalog seeded with ${models.length} model(s)`)
         regions[region] = { source: 'live', models: models.length }
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error)
         core.catalogs[region].noteFetchFailure(message)
-        ctx.logger.warn(`dsh-workbuddy-xdpool: ${region} model catalog unavailable; using static fallback`, error)
+        ctx.logger.warn(`dsh-xdpool: ${region} model catalog unavailable; using static fallback`, error)
         regions[region] = {
           source: core.catalogs[region].currentSource(),
           models: core.catalogs[region].current().length,
@@ -716,7 +738,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   let builtAdapter: WorkBuddyAdapter | undefined
   let invalidateCatalog = (): void => {}
   // Effective config: the plugin config, then the settings-scope value once
-  // the WorkBuddy XD Pool settings section joins (so edits made on the card's
+  // the XD Pool settings section joins (so edits made on the card's
   // Models settings page stay authoritative). A dedicated section is also what
   // tells the Host to mount the plugin's client card under Plugin config.
   /**
@@ -852,7 +874,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     // (On 0.1.5 the marker is a no-op, so this is the identity there.)
     settingsService.installSection(
       ctx,
-      WORKBUDDY_POOL_SETTINGS_NS,
+      XDPOOL_SETTINGS_NS,
       Config,
       unwrapVolatileDeep(config),
       sectionHooks,
@@ -865,7 +887,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     ctx.effect(() => settingsService.configure?.({ auto: true }, ctx.fiber) ?? (() => {}))
   }
   if (typeof settingsService.installSection !== 'function' && typeof settingsService.configure !== 'function') {
-    ctx.logger.warn?.('dsh-workbuddy-xdpool: settings service exposes neither installSection nor configure; the card will not mount')
+    ctx.logger.warn?.('dsh-xdpool: settings service exposes neither installSection nor configure; the card will not mount')
   }
   // On 0.1.7 a saved edit lands in the profile patch and is announced as
   // `loader/volatile-update`; the loader then hands the plugin a fresh live
@@ -943,20 +965,20 @@ function canonicalJson(value: unknown): string {
    * `installSection`, so the plugin picks it. 0.1.7 resolves them by the HOST
    * PLUGIN ENTRY ID instead (`configEditor.entries().find(row => row.options.id
    * === ns)`), and the profile patch chooses that id — the live Desktop host
-   * mounts this plugin as `llm-workbuddy-xdpool`, but a marketplace install can
+   * mounts this plugin as `llm-xdpool`, but a marketplace install can
    * wrap it (`mkt-...`) or mount it through an `include` row. Asking the fiber
    * for its own entry id is therefore the only correct answer there; guessing
    * our own namespace makes every save throw `No configurable plugin entry`.
    */
   const settingsWriteNs: SettingsNamespace = typeof settingsService.installSection === 'function'
-    ? WORKBUDDY_POOL_SETTINGS_NS
+    ? XDPOOL_SETTINGS_NS
     : (() => {
         try {
           const entryId = (ctx.fiber as unknown as { entry?: { options?: { id?: string } } })?.entry?.options?.id
-          return (entryId === undefined || entryId === '' ? WORKBUDDY_POOL_SETTINGS_NS : entryId) as SettingsNamespace
+          return (entryId === undefined || entryId === '' ? XDPOOL_SETTINGS_NS : entryId) as SettingsNamespace
         } catch {
           // No fiber entry (a programmatic probe): fall back to the declared id.
-          return WORKBUDDY_POOL_SETTINGS_NS
+          return XDPOOL_SETTINGS_NS
         }
       })()
   const setSetting = async (key: string, value: unknown, expected?: unknown): Promise<void> => {
@@ -1073,7 +1095,7 @@ function canonicalJson(value: unknown): string {
   void relay.ready.catch((error: unknown) => {
     ctx.logger.warn(`xdpool relay: startup failed — ${String(error)}`)
   })
-  // Same-origin routes backing the WorkBuddy XD Pool settings card. `webServer`
+  // Same-origin routes backing the XD Pool settings card. `webServer`
   // is an optional service: on a headless profile without it, no card routes
   // mount and the card shows an offline banner — the provider still works.
   ctx.inject(['webServer'], (webCtx) => registerPoolStatusRoute(webCtx, {
@@ -1149,7 +1171,7 @@ function canonicalJson(value: unknown): string {
     ignoredAccounts: () => ignoredAccounts,
     // Pin one account to be tried first, or clear the pin with null.
     //
-    // Same file-backed reasoning as the ignore list: `dsh-workbuddy-xdpool prefer`
+    // Same file-backed reasoning as the ignore list: `dsh-xdpool prefer`
     // writes this file from a terminal with no host running, and a pin that only
     // the card could set would make the CLI command a lie.
     //
@@ -1368,7 +1390,7 @@ function canonicalJson(value: unknown): string {
     get adapter() { return builtAdapter },
     async rescan() {
       const accounts = await core.pool.scan()
-      ctx.logger.info?.(`dsh-workbuddy-xdpool: discovered ${accounts.length} account(s)`)
+      ctx.logger.info?.(`dsh-xdpool: discovered ${accounts.length} account(s)`)
       // Also re-fetch the catalog. "Detect accounts again" is the button users
       // reach for when the model list looks wrong, and re-scanning accounts
       // alone could never fix a list that had fallen back to the static table —
@@ -1485,7 +1507,7 @@ function canonicalJson(value: unknown): string {
             ctx,
             shim: shims.cn,
             catalog: aggregateCatalog,
-            providerId: WORKBUDDY_AGGREGATE_PROVIDER,
+            providerId: XDPOOL_AGGREGATE_PROVIDER,
             displayName: '聚合渠道',
           }),
           // The免密 lane: a pooled gateway credential with a per-session quota.
@@ -1495,7 +1517,7 @@ function canonicalJson(value: unknown): string {
             ctx,
             shim: shims.cn,
             catalog: core.catalogs.cn,
-            providerId: WORKBUDDY_FREE_PROVIDER,
+            providerId: XDPOOL_FREE_PROVIDER,
             displayName: EXTRA_LANE_NAMES.free,
             extraRows: () => freeCatalog.current(),
           }),
@@ -1526,7 +1548,7 @@ function canonicalJson(value: unknown): string {
             adaptersByRegion.global.adapter,
           )
           releaseAdapterAggregate = ctx.llm.registerAdapter(
-            [WORKBUDDY_AGGREGATE_PROVIDER],
+            [XDPOOL_AGGREGATE_PROVIDER],
             adaptersByRegion.aggregate.adapter,
           )
           // The free lane registers in the SAME try as the three pool adapters,
@@ -1535,14 +1557,14 @@ function canonicalJson(value: unknown): string {
           // longer in a state it should advertise at all, and letting three
           // through would only hide that.
           releaseAdapterFree = ctx.llm.registerAdapter(
-            [WORKBUDDY_FREE_PROVIDER],
+            [XDPOOL_FREE_PROVIDER],
             adaptersByRegion.free.adapter,
           )
         } catch (error: unknown) {
           // An adapter that cannot be created is not survivable — the picker
           // would advertise a provider with nothing behind it — so this is the
           // one path that still unwinds everything and gives up.
-          ctx.logger.error('dsh-workbuddy-xdpool: adapter registration failed', error)
+          ctx.logger.error('dsh-xdpool: adapter registration failed', error)
           recordStartupNote(`adapters REJECTED: ${describeError(error)}`)
           releaseAdapterCn?.()
           releaseAdapterGlobal?.()
@@ -1559,14 +1581,14 @@ function canonicalJson(value: unknown): string {
             {
               provider: POOL_PROVIDER_BY_REGION.cn,
               displayName: POOL_NAME_BY_REGION.cn,
-              settingsNs: WORKBUDDY_POOL_SETTINGS_NS,
+              settingsNs: XDPOOL_SETTINGS_NS,
               settingsPath: [],
               declared: false,
             },
             {
               provider: POOL_PROVIDER_BY_REGION.global,
               displayName: POOL_NAME_BY_REGION.global,
-              settingsNs: WORKBUDDY_POOL_SETTINGS_NS,
+              settingsNs: XDPOOL_SETTINGS_NS,
               settingsPath: [],
               declared: false,
             },
@@ -1574,9 +1596,9 @@ function canonicalJson(value: unknown): string {
               // No settings form: every aggregate provider's key lives in the
               // plugin's own store file, so the host has nothing to render and
               // mounting an empty form would only invite the user to look for it.
-              provider: WORKBUDDY_AGGREGATE_PROVIDER,
+              provider: XDPOOL_AGGREGATE_PROVIDER,
               displayName: '聚合渠道',
-              settingsNs: WORKBUDDY_POOL_SETTINGS_NS,
+              settingsNs: XDPOOL_SETTINGS_NS,
               settingsPath: [],
               declared: false,
             },
@@ -1585,9 +1607,9 @@ function canonicalJson(value: unknown): string {
               // than folding it in: the rows come from a different gateway and
               // spend a different quota, and a user who cannot tell them apart
               // cannot tell which one answered.
-              provider: WORKBUDDY_FREE_PROVIDER,
+              provider: XDPOOL_FREE_PROVIDER,
               displayName: EXTRA_LANE_NAMES.free,
-              settingsNs: WORKBUDDY_POOL_SETTINGS_NS,
+              settingsNs: XDPOOL_SETTINGS_NS,
               settingsPath: [],
               declared: false,
             },
@@ -1598,9 +1620,18 @@ function canonicalJson(value: unknown): string {
           // serving models with no settings form to mount — the user sees a
           // working provider in the picker and can fix the settings entry later,
           // instead of a mounted card with an empty picker.
-          ctx.logger.error('dsh-workbuddy-xdpool: configurable-provider directory rejected; models will still be served', error)
+          ctx.logger.error('dsh-xdpool: configurable-provider directory rejected; models will still be served', error)
           recordStartupNote(`directory REJECTED: ${describeError(error)}`)
         }
+        // The rename note goes in the trace, not the log.
+        //
+        // The only thing a rename can break that the plugin cannot fix itself is
+        // a default model pinned to a pre-rename provider id — that pin lives in
+        // the host profile's own settings, which this plugin must not edit. The
+        // picker would simply show the old id as unavailable, and nothing else
+        // in the running system would say why. One line in the trace file turns
+        // that into a named file and a named replacement.
+        recordStartupNote(describeProviderIdRename())
         builtAdapter = adaptersByRegion.cn
         // From here on a settings change can rebuild the picker. Until this line
         // runs, `invalidateCatalog` is the no-op seeded at the top of apply.
@@ -1643,11 +1674,11 @@ function canonicalJson(value: unknown): string {
         // makes a saved selection visible without a restart. Each region answers
         // from its own catalog — the two gateways do not advertise the same
         // roster, so one shared list would serve the wrong models to one of them.
-        ctx.llm.registerModelDiscovery(WORKBUDDY_POOL_SETTINGS_NS, async (request: { provider?: string }) => {
+        ctx.llm.registerModelDiscovery(XDPOOL_SETTINGS_NS, async (request: { provider?: string }) => {
           // The free lane's mapper: the picker asks for a flat shape and the
           // roster already carries the fields it wants. Narrowed rather than cast
           // so a new field on the row has to be accounted for.
-          if (request.provider === WORKBUDDY_FREE_PROVIDER) {
+          if (request.provider === XDPOOL_FREE_PROVIDER) {
             return freeCatalog.current().map(row => ({
               id: row.modelId,
               name: row.name,
@@ -1656,7 +1687,7 @@ function canonicalJson(value: unknown): string {
               inputModalities: row.vision ? ['text', 'image'] : ['text'],
             }))
           }
-          if (request.provider === WORKBUDDY_AGGREGATE_PROVIDER) {
+          if (request.provider === XDPOOL_AGGREGATE_PROVIDER) {
             // Both row kinds answer here: a chain is a route the user can pick
             // directly, so hiding it from the picker would make it reachable only
             // by typing its id. The shared fields are read off a union rather than
@@ -1669,9 +1700,9 @@ function canonicalJson(value: unknown): string {
               inputModalities: row.supportsImages ? ['text', 'image'] : ['text'],
             }))
           }
-          if (request.provider !== WORKBUDDY_POOL_PROVIDER
-            && request.provider !== WORKBUDDY_GLOBAL_POOL_PROVIDER) return []
-          const region = request.provider === WORKBUDDY_GLOBAL_POOL_PROVIDER ? 'global' : 'cn'
+          if (request.provider !== XDPOOL_PROVIDER
+            && request.provider !== XDPOOL_GLOBAL_PROVIDER) return []
+          const region = request.provider === XDPOOL_GLOBAL_PROVIDER ? 'global' : 'cn'
           return core.catalogs[region].visible().map(model => ({
             id: model.id,
             name: model.name,
@@ -1681,7 +1712,7 @@ function canonicalJson(value: unknown): string {
           }))
         })
         ctx.logger.info?.(
-          `dsh-workbuddy-xdpool: providers registered at cn=${shims.cn.baseUrl()} global=${shims.global.baseUrl()} aggregate=${aggregateCatalog.current().length} free=${freeCatalog.current().length} model(s)`,
+          `dsh-xdpool: providers registered at cn=${shims.cn.baseUrl()} global=${shims.global.baseUrl()} aggregate=${aggregateCatalog.current().length} free=${freeCatalog.current().length} model(s)`,
         )
         recordStartupNote(
           `providers registered cn=${shims.cn.baseUrl()} global=${shims.global.baseUrl()} aggregate=${aggregateCatalog.current().length} free=${freeCatalog.current().length} model(s) directory=${releaseDirectory === undefined ? 'rejected' : 'mounted'}`,
@@ -1697,16 +1728,16 @@ function canonicalJson(value: unknown): string {
         void freeCatalog.refresh().then(
           rows => {
             invalidateCatalog()
-            ctx.logger.info?.(`dsh-workbuddy-xdpool: free lane serves ${rows.length} model(s)`)
+            ctx.logger.info?.(`dsh-xdpool: free lane serves ${rows.length} model(s)`)
             recordStartupNote(`free lane ready rows=${rows.length} live=${freeCatalog.updatedAt() !== undefined}`)
           },
           (error: unknown) => {
-            ctx.logger.warn('dsh-workbuddy-xdpool: free lane listing failed', error)
+            ctx.logger.warn('dsh-xdpool: free lane listing failed', error)
             recordStartupNote(`free lane listing failed: ${describeError(error)}`)
           },
         )
       } catch (error: unknown) {
-        ctx.logger.error('dsh-workbuddy-xdpool: provider registration failed', error)
+        ctx.logger.error('dsh-xdpool: provider registration failed', error)
         recordStartupNote(`registration FAILED: ${describeError(error)}`)
         return
       }
@@ -1714,10 +1745,10 @@ function canonicalJson(value: unknown): string {
       if (stopped) return
       void core.pool.scan().then(
         accounts => {
-          ctx.logger.info?.(`dsh-workbuddy-xdpool: ${accounts.length} WorkBuddy account(s) in rotation`)
+          ctx.logger.info?.(`dsh-xdpool: ${accounts.length} WorkBuddy account(s) in rotation`)
         },
         (error: unknown) => {
-          ctx.logger.warn('dsh-workbuddy-xdpool: account discovery failed', error)
+          ctx.logger.warn('dsh-xdpool: account discovery failed', error)
         },
       )
       // Seed the live model catalog (with per-model credit multipliers and
@@ -1740,10 +1771,10 @@ function canonicalJson(value: unknown): string {
         await seedCatalog()
         invalidateCatalog()
       })().catch((error: unknown) => {
-        ctx.logger.warn('dsh-workbuddy-xdpool: account catalog seed failed', error)
+        ctx.logger.warn('dsh-xdpool: account catalog seed failed', error)
       })
     }, (error: unknown) => {
-      ctx.logger.error('dsh-workbuddy-xdpool: shim failed to listen', error)
+      ctx.logger.error('dsh-xdpool: shim failed to listen', error)
     })
 }
 void ({} as unknown as Context | undefined)

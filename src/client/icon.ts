@@ -7,7 +7,7 @@
  * the line and fill colors stay inside the host’s accent family so the icon
  * sits naturally on the dark Plugin configuration surface.
  *
- * @module dsh-workbuddy-xdpool/client/icon
+ * @module dsh-xdpool/client/icon
  */
 
 export const POOL_PLUGIN_ICON =

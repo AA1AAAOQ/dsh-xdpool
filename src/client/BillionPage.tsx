@@ -32,16 +32,16 @@
  * page is for, and 50 rows of session ids is a wall the user did not ask for.
  * Both are deliberate — one answer, and the summary stays the summary.
  *
- * @module dsh-workbuddy-xdpool/client/BillionPage
+ * @module dsh-xdpool/client/BillionPage
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { POOL_BILLION_PATH } from '../status-paths.ts'
 import type { PoolWebBillionSession, PoolWebBillionStatus } from '../status-paths.ts'
-import type { WorkBuddyPoolSettingsKey } from './locales.ts'
+import type { XdPoolSettingsKey } from './locales.ts'
 import { BILLION_CARD_CSS } from './styles.ts'
 import { KpiCard, PageHero } from './shell.tsx'
 /** The translator the settings section injects. */
-type Translate = (key: WorkBuddyPoolSettingsKey, params?: Record<string, unknown>) => string
+type Translate = (key: XdPoolSettingsKey, params?: Record<string, unknown>) => string
 export interface BillionPageProps {
   t?: Translate | undefined
 }
@@ -215,13 +215,13 @@ export function BillionPage({ t }: BillionPageProps) {
             </button>}
         pills={(
           <>
-            <span className="dsm-workbuddy-xdpool-pill" data-tone={ready ? 'on' : 'off'}>
+            <span className="dsm-xdpool-pill" data-tone={ready ? 'on' : 'off'}>
               {ready
                 ? (t?.('billion.pillRunning', { version: doc?.version ?? '?' }) ?? `running · v${doc?.version ?? '?'}`)
                 : (t?.('billion.pillNotRunning') ?? 'not running')}
             </span>
             {ready
-              ? <span className="dsm-workbuddy-xdpool-pill" data-tone="off">
+              ? <span className="dsm-xdpool-pill" data-tone="off">
                   {t?.('billion.pillReadOnly') ?? 'read-only'}
                 </span>
               : null}
@@ -229,27 +229,27 @@ export function BillionPage({ t }: BillionPageProps) {
         )}
       />
       {failed
-        ? <p className="dsm-workbuddy-xdpool-note" role="alert">
+        ? <p className="dsm-xdpool-note" role="alert">
             {t?.('billion.failed') ?? 'Could not reach the pool relay. The pool itself is unaffected.'}
           </p>
         : null}
       {doc === undefined
-        ? <p className="dsm-workbuddy-xdpool-note">
+        ? <p className="dsm-xdpool-note">
             {t?.('billion.loading') ?? 'Looking for a billion-context proxy on this machine…'}
           </p>
         : <>
             {doc.state !== 'ready'
-        ? <section className="dsm-workbuddy-xdpool-sec">
-            <h3 className="dsm-workbuddy-xdpool-sectitle">
+        ? <section className="dsm-xdpool-sec">
+            <h3 className="dsm-xdpool-sectitle">
               {doc.state === 'missing'
                 ? (t?.('billion.notInstalled') ?? 'billion-context is not installed here')
                 : (t?.('billion.notAnswering') ?? 'billion-context did not answer')}
             </h3>
-            <p className="dsm-workbuddy-xdpool-note">
+            <p className="dsm-xdpool-note">
               {doc.reason ?? ''}
             </p>
             {doc.state === 'missing'
-              ? <ol className="dsm-workbuddy-xdpool-steps">
+              ? <ol className="dsm-xdpool-steps">
                   <li>
                     <code>dsh plugin --profile {dshProfileHint(t)} add billion-context</code>
                   </li>
@@ -261,7 +261,7 @@ export function BillionPage({ t }: BillionPageProps) {
         : null}
             {ready
               ? <>
-                  <div className="dsm-workbuddy-xdpool-kpis">
+                  <div className="dsm-xdpool-kpis">
                     <KpiCard
                       label={t?.('billion.sessions') ?? 'Sessions'}
                       value={fmtInt(doc.totalSessions)}
@@ -297,18 +297,18 @@ export function BillionPage({ t }: BillionPageProps) {
                     />
                   </div>
                   {totals.sessions.length === 0
-                    ? <p className="dsm-workbuddy-xdpool-note">
+                    ? <p className="dsm-xdpool-note">
                         {t?.('billion.empty') ?? 'The proxy is up but has seen no requests yet. Chat and this fills in.'}
                       </p>
-                    : <section className="dsm-workbuddy-xdpool-sec">
-                        <div className="dsm-workbuddy-xdpool-sechead">
-                          <h3 className="dsm-workbuddy-xdpool-sectitle">
+                    : <section className="dsm-xdpool-sec">
+                        <div className="dsm-xdpool-sechead">
+                          <h3 className="dsm-xdpool-sectitle">
                             {t?.('billion.perSession') ?? 'Per session'}
                           </h3>
-                          <div className="dsm-workbuddy-xdpool-secbtns">
+                          <div className="dsm-xdpool-secbtns">
                             <button
                               type="button"
-                              className="dsm-workbuddy-xdpool-secghost"
+                              className="dsm-xdpool-secghost"
                               aria-expanded={rowsOpen}
                               onClick={() => { setRowsOpen(open => !open) }}
                             >
@@ -320,7 +320,7 @@ export function BillionPage({ t }: BillionPageProps) {
                             {dashboard === undefined
                               ? null
                               : <a
-                                  className="dsm-workbuddy-xdpool-secghost"
+                                  className="dsm-xdpool-secghost"
                                   href={dashboard}
                                   target="_blank"
                                   rel="noopener noreferrer"
@@ -330,18 +330,18 @@ export function BillionPage({ t }: BillionPageProps) {
                           </div>
                         </div>
                         {rowsOpen
-                          ? <div className="dsm-workbuddy-xdpool-tablewrap">
-                              <table className="dsm-workbuddy-xdpool-table">
+                          ? <div className="dsm-xdpool-tablewrap">
+                              <table className="dsm-xdpool-table">
                                 <thead>
                                   <tr>
                                     <th>{t?.('billion.colSession') ?? 'Session'}</th>
                                     <th>{t?.('billion.colLast') ?? 'Last seen'}</th>
                                     <th>{t?.('billion.colModel') ?? 'Model'}</th>
-                                    <th className="dsm-workbuddy-xdpool-num">{t?.('billion.colRequests') ?? 'Requests'}</th>
-                                    <th className="dsm-workbuddy-xdpool-num">{t?.('billion.colContext') ?? 'Context'}</th>
-                                    <th className="dsm-workbuddy-xdpool-num">{t?.('billion.colBlocks') ?? 'Blocks'}</th>
-                                    <th className="dsm-workbuddy-xdpool-num">{t?.('billion.colSaved') ?? 'Saved'}</th>
-                                    <th className="dsm-workbuddy-xdpool-num">{t?.('billion.colCache') ?? 'Cache'}</th>
+                                    <th className="dsm-xdpool-num">{t?.('billion.colRequests') ?? 'Requests'}</th>
+                                    <th className="dsm-xdpool-num">{t?.('billion.colContext') ?? 'Context'}</th>
+                                    <th className="dsm-xdpool-num">{t?.('billion.colBlocks') ?? 'Blocks'}</th>
+                                    <th className="dsm-xdpool-num">{t?.('billion.colSaved') ?? 'Saved'}</th>
+                                    <th className="dsm-xdpool-num">{t?.('billion.colCache') ?? 'Cache'}</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -349,11 +349,11 @@ export function BillionPage({ t }: BillionPageProps) {
                                     const detail = proxyLink(doc?.origin, `#/sessions/${encodeURIComponent(row.id)}`)
                                     return (
                                       <tr key={row.id} data-live={row.live}>
-                                        <td className="dsm-workbuddy-xdpool-ellipsis" title={row.id}>
+                                        <td className="dsm-xdpool-ellipsis" title={row.id}>
                                           {detail === undefined
                                             ? <>{row.id}</>
                                             : <a
-                                                className="dsm-workbuddy-xdpool-sesslink"
+                                                className="dsm-xdpool-sesslink"
                                                 href={detail}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
@@ -362,23 +362,23 @@ export function BillionPage({ t }: BillionPageProps) {
                                                 {row.id}
                                               </a>}
                                           {row.live
-                                            ? <span className="dsm-workbuddy-xdpool-live" aria-label="live" />
+                                            ? <span className="dsm-xdpool-live" aria-label="live" />
                                             : null}
                                         </td>
                                         <td>{fmtLastSeen(row.lastSeen)}</td>
-                                        <td className="dsm-workbuddy-xdpool-ellipsis" title={row.lastModel}>
+                                        <td className="dsm-xdpool-ellipsis" title={row.lastModel}>
                                           {row.lastModel === '' ? '—' : row.lastModel}
                                         </td>
-                                        <td className="dsm-workbuddy-xdpool-num">{fmtInt(row.requests)}</td>
-                                        <td className="dsm-workbuddy-xdpool-num" title={t?.('billion.contextTitle', {
+                                        <td className="dsm-xdpool-num">{fmtInt(row.requests)}</td>
+                                        <td className="dsm-xdpool-num" title={t?.('billion.contextTitle', {
                                           source: row.contextTokensSource,
                                           window: row.contextWindow,
                                         }) ?? `source ${row.contextTokensSource} · window ${row.contextWindow}`}>
                                           {tokens(row.contextTokens)}
                                         </td>
-                                        <td className="dsm-workbuddy-xdpool-num">{fmtInt(row.blocks)}</td>
-                                        <td className="dsm-workbuddy-xdpool-num">{compact(row.tokensSaved)}</td>
-                                        <td className="dsm-workbuddy-xdpool-num">
+                                        <td className="dsm-xdpool-num">{fmtInt(row.blocks)}</td>
+                                        <td className="dsm-xdpool-num">{compact(row.tokensSaved)}</td>
+                                        <td className="dsm-xdpool-num">
                                           {row.cacheHitPct < 0 ? '—' : `${row.cacheHitPct}%`}
                                         </td>
                                       </tr>
@@ -387,10 +387,10 @@ export function BillionPage({ t }: BillionPageProps) {
                                 </tbody>
                               </table>
                             </div>
-                          : <p className="dsm-workbuddy-xdpool-note">
+                          : <p className="dsm-xdpool-note">
                               {t?.('billion.rowsHint') ?? 'Hidden by default. The summary above is the whole fleet; open the rows or the proxy’s own dashboard when you need a specific session.'}
                             </p>}
-                        <p className="dsm-workbuddy-xdpool-note">
+                        <p className="dsm-xdpool-note">
                           {t?.('billion.note') ?? 'These numbers are the proxy’s own. Nothing here is an estimate, and this page never changes a setting.'}
                         </p>
                       </section>}

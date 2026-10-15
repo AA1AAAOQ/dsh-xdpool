@@ -11,7 +11,7 @@
  * with whatever the active theme uses for nav text: a filled mask cannot carry
  * its own palette, and a two-tone icon would render as a flat silhouette.
  *
- * @module dsh-workbuddy-xdpool/client/nav-icon
+ * @module dsh-xdpool/client/nav-icon
  */
 
 /**

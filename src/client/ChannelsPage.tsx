@@ -8,7 +8,7 @@
  * is push-driven. A login can take a minute of browser work, so this page owns
  * its own polling and stops it the moment the user leaves.
  *
- * @module dsh-workbuddy-xdpool/client/ChannelsPage
+ * @module dsh-xdpool/client/ChannelsPage
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -24,12 +24,12 @@ import type { ChannelAccount, ChannelRpcEnvelope } from '../channels.ts'
 import { accountsFrom, callPack, channelIdOf, createdFrom, modelListsFrom, pollFrom, type ChannelModel } from './channel-rpc.ts'
 import { ModelFactsRow } from './model-facts-row.tsx'
 import { modelFactsFor, type ModelProbeReading } from './model-facts.ts'
-import type { WorkBuddyPoolSettingsKey } from './locales.ts'
+import type { XdPoolSettingsKey } from './locales.ts'
 import { CHANNEL_CARD_CSS } from './styles.ts'
 import { BrandTile } from './brand-tile.tsx'
 import { channelIcon, channelInitials } from './channel-icons.ts'
 import { PageHero } from './shell.tsx'
-type Translate = (key: WorkBuddyPoolSettingsKey, params?: Record<string, unknown>) => string
+type Translate = (key: XdPoolSettingsKey, params?: Record<string, unknown>) => string
 export interface ChannelsPageProps {
   t?: Translate | undefined
 }
@@ -344,7 +344,7 @@ export function ChannelsPage({ t }: ChannelsPageProps) {
   const state = status?.state ?? 'pending'
   const channels = status?.channels ?? []
   return (
-    <div className="dsm-workbuddy-xdpool-channels">
+    <div className="dsm-xdpool-channels">
       <style>{CHANNEL_CARD_CSS}</style>
       <PageHero
         title={t?.('chan.title') ?? 'Login channels'}
@@ -355,17 +355,17 @@ export function ChannelsPage({ t }: ChannelsPageProps) {
         // rendered at the size of a title inside a box the size of a chip, and
         // the user read the mismatch as "this one never got styled".
         pills={<span
-          className="dsm-workbuddy-xdpool-pill"
+          className="dsm-xdpool-pill"
           data-tone={connectedCount > 0 ? 'ok' : 'off'}
         >
           {t?.('chan.connectedCount', { count: connectedCount }) ?? `${connectedCount} connected`}
         </span>}
       />
       {error !== undefined && (
-        <p className="dsm-workbuddy-xdpool-panel-error">{error}</p>
+        <p className="dsm-xdpool-panel-error">{error}</p>
       )}
       {state === 'pending' && (
-        <p className="dsm-workbuddy-xdpool-panel-empty">{t?.('chan.pending')}</p>
+        <p className="dsm-xdpool-panel-empty">{t?.('chan.pending')}</p>
       )}
       {/*
         Two different failures, two different sentences. A pack that is already
@@ -375,17 +375,17 @@ export function ChannelsPage({ t }: ChannelsPageProps) {
         something was broken when nothing was.
       */}
       {state === 'unavailable' && status?.reason === ROUTE_OWNED_ELSEWHERE && (
-        <p className="dsm-workbuddy-xdpool-panel-empty">
+        <p className="dsm-xdpool-panel-empty">
           {t?.('chan.ownedElsewhere') ?? 'Another plugin already serves these login channels.'}
         </p>
       )}
       {state === 'unavailable' && status?.reason !== ROUTE_OWNED_ELSEWHERE && (
-        <p className="dsm-workbuddy-xdpool-panel-error">
+        <p className="dsm-xdpool-panel-error">
           {t?.('chan.unavailable')}{status?.reason !== undefined ? ` (${status.reason})` : ''}
         </p>
       )}
       {state === 'ready' && channels.length === 0 && (
-        <p className="dsm-workbuddy-xdpool-panel-empty">{t?.('chan.empty')}</p>
+        <p className="dsm-xdpool-panel-empty">{t?.('chan.empty')}</p>
       )}
       {channels.map((channel) => (
         <ChannelRow
@@ -452,30 +452,30 @@ function ChannelRow({
   const tileMark = icon === undefined ? { initials: channelInitials(channel.name) } : { icon }
   return (
     <div
-      className="dsm-workbuddy-xdpool-channel"
-      style={{ '--dsm-workbuddy-xdpool-channel-accent': channel.accent } as Record<string, string>}
+      className="dsm-xdpool-channel"
+      style={{ '--dsm-xdpool-channel-accent': channel.accent } as Record<string, string>}
     >
-      <div className="dsm-workbuddy-xdpool-channel-head">
+      <div className="dsm-xdpool-channel-head">
         <BrandTile accent={channel.accent} glyph="login" {...tileMark} />
-        <span className="dsm-workbuddy-xdpool-channel-name">{channel.name}</span>
-        <span className="dsm-workbuddy-xdpool-channel-org">{channel.org}</span>
+        <span className="dsm-xdpool-channel-name">{channel.name}</span>
+        <span className="dsm-xdpool-channel-org">{channel.org}</span>
         {connectedCount > 0 && (
-          <span className="dsm-workbuddy-xdpool-channel-tag">
+          <span className="dsm-xdpool-channel-tag">
             {t?.('chan.connected', { count: connectedCount }) ?? 'Connected'}
           </span>
         )}
       </div>
-      <p className="dsm-workbuddy-xdpool-channel-note">{channel.note}</p>
+      <p className="dsm-xdpool-channel-note">{channel.note}</p>
       {/* The per-model facts and the test button, from the shared component every
           model page uses — see the module header for why a channel that reports
           nothing is left silent rather than given an empty line. */}
       {models.length > 0
-        ? <ul className="dsm-workbuddy-xdpool-channel-models">
+        ? <ul className="dsm-xdpool-channel-models">
             {models.map(model => {
               const key = `${channel.id}/${model.id}`
               return (
-                <li key={model.id} className="dsm-workbuddy-xdpool-channel-model">
-                  <span className="dsm-workbuddy-xdpool-channel-model-name">{model.name}</span>
+                <li key={model.id} className="dsm-xdpool-channel-model">
+                  <span className="dsm-xdpool-channel-model-name">{model.name}</span>
                   <ModelFactsRow
                     t={t}
                     facts={modelFactsFor(model)}
@@ -489,24 +489,24 @@ function ChannelRow({
           </ul>
         : null}
       {modelsError !== undefined && (
-        <p className="dsm-workbuddy-xdpool-channel-error" title={modelsError}>
+        <p className="dsm-xdpool-channel-error" title={modelsError}>
           {t?.('chan.modelsUnavailable') ?? 'The model list could not be read'}
         </p>
       )}
       {channel.ownedByPool ? (
-        <p className="dsm-workbuddy-xdpool-channel-owned">
+        <p className="dsm-xdpool-channel-owned">
           {t?.('chan.ownedByPool') ?? 'Managed by the pool above'}
         </p>
       ) : (
-        <div className="dsm-workbuddy-xdpool-channel-actions">
+        <div className="dsm-xdpool-channel-actions">
           {busy ? (
             <>
-              <span className="dsm-workbuddy-xdpool-channel-waiting">
+              <span className="dsm-xdpool-channel-waiting">
                 {ui.message ?? t?.('chan.signingIn') ?? 'Waiting for sign-in…'}
               </span>
               {ui.loginUrl !== undefined && (
                 <a
-                  className="dsm-workbuddy-xdpool-btn"
+                  className="dsm-xdpool-btn"
                   href={ui.loginUrl}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -514,19 +514,19 @@ function ChannelRow({
                   {t?.('chan.openLogin') ?? 'Open the sign-in page'}
                 </a>
               )}
-              <button type="button" className="dsm-workbuddy-xdpool-btn" onClick={onCancel}>
+              <button type="button" className="dsm-xdpool-btn" onClick={onCancel}>
                 {t?.('agg.clear') ?? 'Cancel'}
               </button>
             </>
           ) : ui.phase === 'done' ? (
-            <span className="dsm-workbuddy-xdpool-channel-ok">{t?.('chan.done') ?? 'Signed in'}</span>
+            <span className="dsm-xdpool-channel-ok">{t?.('chan.done') ?? 'Signed in'}</span>
           ) : (
             <>
-              <button type="button" className="dsm-workbuddy-xdpool-btn" onClick={onSignIn}>
+              <button type="button" className="dsm-xdpool-btn" onClick={onSignIn}>
                 {t?.('chan.login') ?? 'Sign in'}
               </button>
               {ui.phase === 'failed' && (
-                <span className="dsm-workbuddy-xdpool-channel-error">
+                <span className="dsm-xdpool-channel-error">
                   {ui.message ?? t?.('chan.failed') ?? 'Sign-in failed'}
                 </span>
               )}

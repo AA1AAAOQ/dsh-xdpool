@@ -7,7 +7,7 @@
  * account is keyed by its billing identity (`uin`, falling back to `uid`), so
  * re-logging the same account refreshes in place instead of creating a duplicate.
  *
- * @module dsh-workbuddy-xdpool/accounts
+ * @module dsh-xdpool/accounts
  */
 
 import { createHash } from 'node:crypto'
@@ -192,7 +192,7 @@ export class WorkBuddyEncryptedCredentialError extends Error {
         + ' If the app IS installed, it is simply outside the paths this plugin probes — set '
         + 'WORKBUDDY_APP_EXECUTABLE to its full .exe path (then restart DSH) and the credential will open.'
         + ' Signing in again will not help: the credential itself is intact. '
-        + 'Run `dsh-workbuddy-xdpool doctor` to see which paths were probed — if one of them looks like '
+        + 'Run `dsh-xdpool doctor` to see which paths were probed — if one of them looks like '
         + 'mojibake (e.g. "??" where a Chinese folder name should be), the registry value could not be '
         + 'decoded on this machine; report that line and use the override above in the meantime.',
     )
@@ -863,7 +863,7 @@ export class WorkBuddyAccountPool {
     this.skippedFiles = skipped
     if (skipped.length > 0) {
       this.logger?.warn?.(
-        `dsh-workbuddy-xdpool: ${skipped.length} credential file(s) could not be read; `
+        `dsh-xdpool: ${skipped.length} credential file(s) could not be read; `
         + `${found.length} account(s) still loaded. Reasons: `
         + [...new Set(skipped.map(s => s.reason))].join('; '),
       )
@@ -1375,7 +1375,7 @@ export class WorkBuddyAccountPool {
     const until = Date.now() + this.credentialDeadCooldownMs
     account.credentialDeadUntilMs = Math.max(account.credentialDeadUntilMs ?? 0, until)
     this.logger?.warn(
-      `dsh-workbuddy-xdpool: ${account.label} sign-in was rejected by the upstream; `
+      `dsh-xdpool: ${account.label} sign-in was rejected by the upstream; `
         + `keeping it out of rotation until ${new Date(until).toISOString()} (sign in again to restore it)`,
     )
   }
@@ -1422,7 +1422,7 @@ export class WorkBuddyAccountPool {
       if (credential.refreshToken === '') {
         // Nothing to refresh with; only worth failing if already expired.
         if (credential.expiresAtMs > Date.now() + 30_000) return true
-        this.logger?.warn(`dsh-workbuddy-xdpool: ${account.label} token expired with no refresh token; sign in again`)
+        this.logger?.warn(`dsh-xdpool: ${account.label} token expired with no refresh token; sign in again`)
         this.penalizeCredentialDead(account.id)
         return false
       }
@@ -1440,7 +1440,7 @@ export class WorkBuddyAccountPool {
         // A working refresh is the strongest possible proof the sign-in is
         // alive again — undo any earlier dead mark.
         this.clearCredentialDead(account.id)
-        this.logger?.info?.(`dsh-workbuddy-xdpool: refreshed token for ${account.label}`)
+        this.logger?.info?.(`dsh-xdpool: refreshed token for ${account.label}`)
         return true
       } catch (error: unknown) {
         if (isCredentialDeadError(error)) {
@@ -1450,15 +1450,15 @@ export class WorkBuddyAccountPool {
           // so mark the account dead instead of retrying it forever.
           this.penalizeCredentialDead(account.id)
           this.logger?.warn?.(
-            `dsh-workbuddy-xdpool: ${account.label} refresh token was revoked upstream; sign in again to restore it`,
+            `dsh-xdpool: ${account.label} refresh token was revoked upstream; sign in again to restore it`,
             error,
           )
           return false
         }
         if (credential.expiresAtMs > Date.now() + 30_000) {
-          this.logger?.warn?.(`dsh-workbuddy-xdpool: token refresh failed but token still valid for ${account.label}`, error)
+          this.logger?.warn?.(`dsh-xdpool: token refresh failed but token still valid for ${account.label}`, error)
         } else {
-          this.logger?.error?.(`dsh-workbuddy-xdpool: token refresh failed and token expired for ${account.label}`, error)
+          this.logger?.error?.(`dsh-xdpool: token refresh failed and token expired for ${account.label}`, error)
         }
         return true
       }
@@ -1485,7 +1485,7 @@ export class WorkBuddyAccountPool {
     this.logger?.warn(
       
 `
-dsh-workbuddy-xdpool: account credits exhausted; cooling the whole account until 
+dsh-xdpool: account credits exhausted; cooling the whole account until 
 `
  +
         
@@ -1512,14 +1512,14 @@ ${new Date(until).toISOString()}
     if (modelId !== undefined && modelId !== '') {
       account.modelCooldowns[modelId] = Math.max(account.modelCooldowns[modelId] ?? 0, until)
       this.logger?.warn(
-        `dsh-workbuddy-xdpool: ${account.label} rate-limited on model ${modelId}; ` +
+        `dsh-xdpool: ${account.label} rate-limited on model ${modelId}; ` +
           `cooling that model until ${new Date(until).toISOString()}`,
       )
       return
     }
     account.cooldownUntilMs = Math.max(account.cooldownUntilMs, until)
     this.logger?.warn(
-      `dsh-workbuddy-xdpool: account ${account.label} rate-limited; cooling until ${new Date(until).toISOString()}`,
+      `dsh-xdpool: account ${account.label} rate-limited; cooling until ${new Date(until).toISOString()}`,
     )
   }
 

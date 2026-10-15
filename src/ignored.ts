@@ -9,12 +9,12 @@
  * come back when the desktop app writes a fresh `.info` file for it.
  *
  * It lives in a plugin-owned file rather than in the settings document for one
- * practical reason: the CLI has no settings service. `dsh-workbuddy-xdpool
+ * practical reason: the CLI has no settings service. `dsh-xdpool
  * ignore <id>` runs without a host, so a settings-only list could be written by
  * the card and never by the CLI. One file, read by both halves, keeps the two
  * views of "which accounts are ignored" identical by construction.
  *
- * @module dsh-workbuddy-xdpool/ignored
+ * @module dsh-xdpool/ignored
  */
 
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
@@ -24,7 +24,7 @@ import { dirname, join } from 'node:path'
 import type { PoolWebIgnoredAccount } from './status-paths.ts'
 
 /** Directory holding this plugin's own state (imported snapshots, ignore list). */
-export const PLUGIN_DATA_DIR_NAME = '.workbuddy-xdpool'
+export const PLUGIN_DATA_DIR_NAME = '.xdpool'
 
 /** File holding the permanent ignore list, inside {@link pluginDataDir}. */
 export const IGNORED_FILE_NAME = 'ignored.json'

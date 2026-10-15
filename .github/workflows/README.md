@@ -13,7 +13,7 @@ Trusted Publishing 因此成为唯一无码可用的官方通道，也是 npm �
 1. **npm 侧绑定**：npmjs.com → 该包 → Settings → **Trusted Publisher** →
    选 **GitHub Actions**，填：
    - Organization or user：`XDTrees`
-   - Repository：`dsh-workbuddy-xdpool`
+   - Repository：`dsh-xdpool`
    - Workflow filename：`release.yml`
    - Environment name：留空
    - Allowed actions：按需勾选（**至少保留 `npm stage publish`**；

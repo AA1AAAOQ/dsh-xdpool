@@ -72,18 +72,18 @@ describe('remembered page', () => {
 })
 describe('shell class names', () => {
   it('every class the shell renders is defined in SHELL_CSS', () => {
-    const used = new Set([...shell.matchAll(/dsm-workbuddy-xdpool-[a-z0-9-]+/g)].map(m => m[0]))
+    const used = new Set([...shell.matchAll(/dsm-xdpool-[a-z0-9-]+/g)].map(m => m[0]))
     const shellCss = styles.slice(styles.indexOf('export const SHELL_CSS'))
     const missing = [...used].filter(name => !shellCss.includes(`.${name}`))
     expect(missing, 'shell.tsx renders classes with no CSS rule').toEqual([])
   })
   it('does not collide with the account pool region tabs', () => {
-    // `.dsm-workbuddy-xdpool-tab` / `-tabs` belong to the CN/global region
+    // `.dsm-xdpool-tab` / `-tabs` belong to the CN/global region
     // switch inside the pool page. The nav strip needs its own names, or the
     // two sets of rules merge and the region tabs grow a glider.
-    expect(shell).not.toContain('dsm-workbuddy-xdpool-tabs')
-    expect(shell).not.toContain('"dsm-workbuddy-xdpool-tab"')
-    expect(styles.slice(styles.indexOf('export const SHELL_CSS'))).toContain('.dsm-workbuddy-xdpool-navtab{')
+    expect(shell).not.toContain('dsm-xdpool-tabs')
+    expect(shell).not.toContain('"dsm-xdpool-tab"')
+    expect(styles.slice(styles.indexOf('export const SHELL_CSS'))).toContain('.dsm-xdpool-navtab{')
   })
   it('keeps every shell tab label translated in both locales', () => {
     for (const key of ['shell.tabPool', 'shell.tabChannels', 'shell.tabAggregate']) {
@@ -109,18 +109,18 @@ describe('the account row controls', () => {
 
   it('styles every class the prefer button renders', () => {
     for (const name of [
-      'dsm-workbuddy-xdpool-account-prefer',
-      'dsm-workbuddy-xdpool-account-prefer-on',
-      'dsm-workbuddy-xdpool-account-prefer-star',
+      'dsm-xdpool-account-prefer',
+      'dsm-xdpool-account-prefer-on',
+      'dsm-xdpool-account-prefer-star',
     ]) {
       expect(prefer, `${name} has no CSS rule`).toContain(`.${name}`)
     }
     // The pinned state has to be readable at a glance, not only on hover.
-    expect(prefer).toContain('.dsm-workbuddy-xdpool-account-prefer-on{')
+    expect(prefer).toContain('.dsm-xdpool-account-prefer-on{')
   })
 
   it('keeps the prefer button reachable by keyboard and announces its state', () => {
-    expect(prefer).toContain('.dsm-workbuddy-xdpool-account-prefer:focus-visible{')
+    expect(prefer).toContain('.dsm-xdpool-account-prefer:focus-visible{')
     // aria-pressed, not just a class: a screen reader otherwise reports the same
     // label whether or not this row is the pinned one.
     expect(card).toContain('aria-pressed={isPreferred}')
@@ -173,15 +173,15 @@ describe('the shared per-model component', () => {
     // inject only their own table, so its rules have to live in the one table
     // shell.tsx renders unconditionally.
     for (const name of [
-      'dsm-workbuddy-xdpool-mfacts',
-      'dsm-workbuddy-xdpool-mfacts-note',
-      'dsm-workbuddy-xdpool-mfacts-line',
-      'dsm-workbuddy-xdpool-mfacts-fig',
-      'dsm-workbuddy-xdpool-mfacts-fig-label',
-      'dsm-workbuddy-xdpool-mfacts-fig-value',
-      'dsm-workbuddy-xdpool-mfacts-probe',
-      'dsm-workbuddy-xdpool-mfacts-result',
-      'dsm-workbuddy-xdpool-mfacts-result-error',
+      'dsm-xdpool-mfacts',
+      'dsm-xdpool-mfacts-note',
+      'dsm-xdpool-mfacts-line',
+      'dsm-xdpool-mfacts-fig',
+      'dsm-xdpool-mfacts-fig-label',
+      'dsm-xdpool-mfacts-fig-value',
+      'dsm-xdpool-mfacts-probe',
+      'dsm-xdpool-mfacts-result',
+      'dsm-xdpool-mfacts-result-error',
     ]) {
       expect(targets(shared, name), `${name} has no CSS rule in SHARED_CARD_CSS`).toBe(true)
     }
@@ -192,23 +192,23 @@ describe('the shared per-model component', () => {
   })
 
   it('shows a failed measurement as a failure and a succeeded one as a success', () => {
-    expect(shared).toContain('.dsm-workbuddy-xdpool-mfacts-result[data-ok="true"]{')
-    expect(shared).toContain('.dsm-workbuddy-xdpool-mfacts-result[data-ok="false"]{')
+    expect(shared).toContain('.dsm-xdpool-mfacts-result[data-ok="true"]{')
+    expect(shared).toContain('.dsm-xdpool-mfacts-result[data-ok="false"]{')
   })
 
   it('keeps the test button reachable by keyboard and disabled while running', () => {
-    expect(shared).toContain('.dsm-workbuddy-xdpool-mfacts-probe:focus-visible{')
-    expect(shared).toContain('.dsm-workbuddy-xdpool-mfacts-probe:disabled{')
+    expect(shared).toContain('.dsm-xdpool-mfacts-probe:focus-visible{')
+    expect(shared).toContain('.dsm-xdpool-mfacts-probe:disabled{')
   })
 
   it('styles the two page-local lists that wrap it', () => {
     for (const [table, name] of [
-      [channels, 'dsm-workbuddy-xdpool-channel-models'],
-      [channels, 'dsm-workbuddy-xdpool-channel-model'],
-      [channels, 'dsm-workbuddy-xdpool-channel-model-name'],
-      [aggregate, 'dsm-workbuddy-xdpool-agg-facts'],
-      [aggregate, 'dsm-workbuddy-xdpool-agg-fact'],
-      [aggregate, 'dsm-workbuddy-xdpool-agg-fact-name'],
+      [channels, 'dsm-xdpool-channel-models'],
+      [channels, 'dsm-xdpool-channel-model'],
+      [channels, 'dsm-xdpool-channel-model-name'],
+      [aggregate, 'dsm-xdpool-agg-facts'],
+      [aggregate, 'dsm-xdpool-agg-fact'],
+      [aggregate, 'dsm-xdpool-agg-fact-name'],
     ] as const) {
       expect(targets(table, name), `${name} has no CSS rule in its own page table`).toBe(true)
     }
@@ -243,7 +243,7 @@ describe('the shared per-model component', () => {
 /**
  * Whether the zh table declares a key.
  *
- * The zh table is typed `Record<WorkBuddyPoolSettingsKey, string>` rather than
+ * The zh table is typed `Record<XdPoolSettingsKey, string>` rather than
  * `as const`, so it has no closing `} as const` to slice against -- it runs to
  * the end of the file. Slicing to the end is fine for a membership test, and
  * using the en terminator here would silently match nothing and report every

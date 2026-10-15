@@ -21,7 +21,7 @@
  *    configuring a chain for a key they intend to paste in next. Refusing the
  *    save would be a worse lie than the warning.
  *
- * @module dsh-workbuddy-xdpool/client/RoutingPage
+ * @module dsh-xdpool/client/RoutingPage
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -31,11 +31,11 @@ import {
   type PoolWebComboCandidate,
   type PoolWebCombosStatus,
 } from '../status-paths.ts'
-import type { WorkBuddyPoolSettingsKey } from './locales.ts'
+import type { XdPoolSettingsKey } from './locales.ts'
 import { ROUTING_CARD_CSS } from './styles.ts'
 import { PageHero } from './shell.tsx'
 /** The translator the settings section injects; the page renders every string through it. */
-type Translate = (key: WorkBuddyPoolSettingsKey, params?: Record<string, unknown>) => string
+type Translate = (key: XdPoolSettingsKey, params?: Record<string, unknown>) => string
 /** Props delivered by the slot wrapper in {@link ./PoolCard}. */
 export interface RoutingPageProps {
   t?: Translate | undefined
@@ -199,13 +199,13 @@ export function RoutingPage({ t }: RoutingPageProps) {
     setEditing(draft.key)
   }, [])
   return (
-    <div className="dsm-workbuddy-xdpool-rt">
+    <div className="dsm-xdpool-rt">
       <style>{ROUTING_CARD_CSS}</style>
       <PageHero
         title={t?.('route.title') ?? 'Routing'}
         sub={t?.('route.sub') ?? ''}
         pills={<>
-          <span className="dsm-workbuddy-xdpool-pill" data-tone="ok">
+          <span className="dsm-xdpool-pill" data-tone="ok">
             {t?.('route.memberCount', { count: combos.length }) ?? `${combos.length} chain(s)`}
           </span>
           {/* A COUNT, not the sentence that used to sit here. The user reported
@@ -213,13 +213,13 @@ export function RoutingPage({ t }: RoutingPageProps) {
               search placeholder two hundred pixels below, so the page stated
               one fact twice and showed neither's number. The pill is the
               summary; the box is the control that acts on it. */}
-          <span className="dsm-workbuddy-xdpool-pill" data-tone="off">
+          <span className="dsm-xdpool-pill" data-tone="off">
             {t?.('route.rosterCount', { count: candidates.length }) ?? `${candidates.length} model(s)`}
           </span>
         </>}
       />
-      <div className="dsm-workbuddy-xdpool-rt-new">
-        <span className="dsm-workbuddy-xdpool-rt-hint">{t?.('route.idHint') ?? ''}</span>
+      <div className="dsm-xdpool-rt-new">
+        <span className="dsm-xdpool-rt-hint">{t?.('route.idHint') ?? ''}</span>
         {/*
           A primary button, not the filter chip it used to borrow. `.agg-cat` is
           a *filter* affordance — it sits in a row of mutually exclusive chips
@@ -232,10 +232,10 @@ export function RoutingPage({ t }: RoutingPageProps) {
           {t?.('route.newChain') ?? 'New chain'}
         </button>
       </div>
-      {error !== undefined ? <p className="dsm-workbuddy-xdpool-panel-error">{error}</p> : null}
-      {flash !== undefined ? <p className="dsm-workbuddy-xdpool-rt-flash">{flash}</p> : null}
+      {error !== undefined ? <p className="dsm-xdpool-panel-error">{error}</p> : null}
+      {flash !== undefined ? <p className="dsm-xdpool-rt-flash">{flash}</p> : null}
       {status === undefined && error === undefined
-        ? <p className="dsm-workbuddy-xdpool-panel-empty">{t?.('route.loading') ?? 'Reading…'}</p>
+        ? <p className="dsm-xdpool-panel-empty">{t?.('route.loading') ?? 'Reading…'}</p>
         : null}
       {current !== undefined
         ? <ChainEditor
@@ -260,8 +260,8 @@ export function RoutingPage({ t }: RoutingPageProps) {
       {status === undefined
         ? null
         : drafts.length === 0
-          ? <p className="dsm-workbuddy-xdpool-panel-empty">{t?.('route.empty') ?? 'No chain yet.'}</p>
-          : <div className="dsm-workbuddy-xdpool-rt-list">
+          ? <p className="dsm-xdpool-panel-empty">{t?.('route.empty') ?? 'No chain yet.'}</p>
+          : <div className="dsm-xdpool-rt-list">
               {drafts.map(draft => (
                 <ChainRow
                   key={draft.key}
@@ -276,7 +276,7 @@ export function RoutingPage({ t }: RoutingPageProps) {
                   }}
                 />
               ))}
-              <div className="dsm-workbuddy-xdpool-rt-actions">
+              <div className="dsm-xdpool-rt-actions">
                 {/* The shared button, not the aggregate filter chip this used to
                     borrow. The chip renders here — its rules are in the shared
                     sheet, which the shell injects on every page — but it is a
@@ -322,17 +322,17 @@ function ChainRow({
 }) {
   const missing = draft.models.filter(model => candidateById.has(model) === false)
   return (
-    <div className="dsm-workbuddy-xdpool-rt-row" data-off={draft.enabled ? 'false' : 'true'}>
-      <div className="dsm-workbuddy-xdpool-rt-rowhead">
-        <span className="dsm-workbuddy-xdpool-rt-name">{draft.name === '' ? (t?.('route.newChain') ?? 'New chain') : draft.name}</span>
+    <div className="dsm-xdpool-rt-row" data-off={draft.enabled ? 'false' : 'true'}>
+      <div className="dsm-xdpool-rt-rowhead">
+        <span className="dsm-xdpool-rt-name">{draft.name === '' ? (t?.('route.newChain') ?? 'New chain') : draft.name}</span>
         {draft.id !== undefined
-          ? <span className="dsm-workbuddy-xdpool-rt-cid">{draft.id}</span>
+          ? <span className="dsm-xdpool-rt-cid">{draft.id}</span>
           : null}
-        <span className="dsm-workbuddy-xdpool-pill" data-tone={draft.enabled ? 'ok' : 'off'}>
+        <span className="dsm-xdpool-pill" data-tone={draft.enabled ? 'ok' : 'off'}>
           {draft.enabled ? (t?.('route.enabled') ?? 'Enabled') : (t?.('route.chainDisabled') ?? 'Disabled')}
         </span>
-        <span className="dsm-workbuddy-xdpool-pills">
-          <span className="dsm-workbuddy-xdpool-pill" data-tone="off">
+        <span className="dsm-xdpool-pills">
+          <span className="dsm-xdpool-pill" data-tone="off">
             {t?.('route.strategyLabel', {
               strategy: draft.strategy === 'round-robin'
                 ? (t?.('route.strategyRoundRobin') ?? 'Round robin')
@@ -341,7 +341,7 @@ function ChainRow({
             }) ?? draft.strategy}
           </span>
         </span>
-        <span className="dsm-workbuddy-xdpool-pageactions">
+        <span className="dsm-xdpool-pageactions">
           {/* An outline button, not the aggregate filter chip this borrowed: the
               chip's rule is in the shared sheet, so it renders, but Edit sits in
               a pair of per-row actions and reading as one filter pill among
@@ -350,13 +350,13 @@ function ChainRow({
           <button type="button" className="dsm-btn dsm-btn-outline" onClick={onEdit}>
             {editable ? (t?.('route.editOpen') ?? 'Editing') : (t?.('route.edit') ?? 'Edit')}
           </button>
-          <button type="button" className="dsm-workbuddy-xdpool-rt-drop" onClick={onDelete}>
+          <button type="button" className="dsm-xdpool-rt-drop" onClick={onDelete}>
             {t?.('route.removeMember') ?? 'Remove'}
           </button>
         </span>
       </div>
       {missing.length > 0
-        ? <p className="dsm-workbuddy-xdpool-rt-warn">
+        ? <p className="dsm-xdpool-rt-warn">
             {t?.('route.missing', { models: missing.join(', ') }) ?? missing.join(', ')}
           </p>
         : null}
@@ -388,16 +388,16 @@ function ChainEditor({
   onDropMember: (modelId: string) => void
 }) {
   return (
-    <div className="dsm-workbuddy-xdpool-rt-editor">
-      <div className="dsm-workbuddy-xdpool-rt-editorhead">
-        <span className="dsm-workbuddy-xdpool-rt-edname">{draft.name === '' ? (t?.('route.newChain') ?? 'New chain') : draft.name}</span>
-        <label className="dsm-workbuddy-xdpool-switch">
+    <div className="dsm-xdpool-rt-editor">
+      <div className="dsm-xdpool-rt-editorhead">
+        <span className="dsm-xdpool-rt-edname">{draft.name === '' ? (t?.('route.newChain') ?? 'New chain') : draft.name}</span>
+        <label className="dsm-xdpool-switch">
           <input type="checkbox" checked={draft.enabled} onChange={event => { onChange({ enabled: event.target.checked }) }} />
           <span>{t?.('route.enabled') ?? 'Enabled'}</span>
         </label>
       </div>
-      <div className="dsm-workbuddy-xdpool-rt-fields">
-        <label className="dsm-workbuddy-xdpool-rt-field">
+      <div className="dsm-xdpool-rt-fields">
+        <label className="dsm-xdpool-rt-field">
           <span>{t?.('route.chainName') ?? 'Chain name'}</span>
           <input
             type="text"
@@ -406,7 +406,7 @@ function ChainEditor({
             onChange={event => { onChange({ name: event.target.value }) }}
           />
         </label>
-        <label className="dsm-workbuddy-xdpool-rt-field">
+        <label className="dsm-xdpool-rt-field">
           <span>{t?.('route.strategy') ?? 'Strategy'}</span>
           <select
             value={draft.strategy}
@@ -416,7 +416,7 @@ function ChainEditor({
             <option value="round-robin">{t?.('route.strategyRoundRobin') ?? 'Round robin'}</option>
           </select>
         </label>
-        <label className="dsm-workbuddy-xdpool-rt-field">
+        <label className="dsm-xdpool-rt-field">
           <span>{t?.('route.stickyLimit') ?? 'Turns per member'}</span>
           <input
             type="number"
@@ -432,26 +432,26 @@ function ChainEditor({
           />
         </label>
       </div>
-      <p className="dsm-workbuddy-xdpool-rt-hint">{t?.('route.stickyHint') ?? ''}</p>
+      <p className="dsm-xdpool-rt-hint">{t?.('route.stickyHint') ?? ''}</p>
       <div>
-        <span className="dsm-workbuddy-xdpool-rt-hint">{t?.('route.members') ?? 'Members'}</span>
+        <span className="dsm-xdpool-rt-hint">{t?.('route.members') ?? 'Members'}</span>
         {draft.models.length === 0
-          ? <p className="dsm-workbuddy-xdpool-rt-warn">{t?.('route.noMembers') ?? ''}</p>
-          : <ol className="dsm-workbuddy-xdpool-rt-members">
+          ? <p className="dsm-xdpool-rt-warn">{t?.('route.noMembers') ?? ''}</p>
+          : <ol className="dsm-xdpool-rt-members">
               {draft.models.map((modelId, index) => {
                 const candidate = candidateById.get(modelId)
                 return (
-                  <li className="dsm-workbuddy-xdpool-rt-member" key={`${modelId}-${index}`}>
-                    <span className="dsm-workbuddy-xdpool-rt-ord">{index + 1}</span>
-                    <span className="dsm-workbuddy-xdpool-rt-mid" title={modelId}>{modelId}</span>
+                  <li className="dsm-xdpool-rt-member" key={`${modelId}-${index}`}>
+                    <span className="dsm-xdpool-rt-ord">{index + 1}</span>
+                    <span className="dsm-xdpool-rt-mid" title={modelId}>{modelId}</span>
                     {candidate === undefined
-                      ? <span className="dsm-workbuddy-xdpool-agg-tag dsm-workbuddy-xdpool-rt-mtag" data-tone="busy">
+                      ? <span className="dsm-xdpool-agg-tag dsm-xdpool-rt-mtag" data-tone="busy">
                           {t?.('route.unusable') ?? 'needs a key'}
                         </span>
-                      : <span className="dsm-workbuddy-xdpool-agg-tag dsm-workbuddy-xdpool-rt-mtag" data-tone="ok">
+                      : <span className="dsm-xdpool-agg-tag dsm-xdpool-rt-mtag" data-tone="ok">
                           {compact(candidate.contextWindow)}
                         </span>}
-                    <button type="button" className="dsm-workbuddy-xdpool-rt-drop" onClick={() => { onDropMember(modelId) }}>
+                    <button type="button" className="dsm-xdpool-rt-drop" onClick={() => { onDropMember(modelId) }}>
                       {t?.('route.removeMember') ?? 'Remove'}
                     </button>
                   </li>
@@ -467,9 +467,9 @@ function ChainEditor({
           label-field selector's rules only match `.rt-field input, .rt-field
           select`, and this control IS the `.rt-field`; borrowing it left a bare
           browser dropdown in the middle of a restyled row. */}
-      <div className="dsm-workbuddy-xdpool-rt-addrow">
+      <div className="dsm-xdpool-rt-addrow">
         <select
-          className="dsm-workbuddy-xdpool-rt-pick"
+          className="dsm-xdpool-rt-pick"
           value={picked}
           onChange={event => { onPick(event.target.value) }}
         >

@@ -298,7 +298,7 @@ describe('adapter', () => {
     expect(models.length).toBeGreaterThan(0)
     for (const model of models) {
       expect((model as Record<string, unknown>)['baseUrl']).toBe(`${shim.baseUrl()}/v1`)
-      expect((model as Record<string, unknown>)['provider']).toBe('workbuddy-xdpool')
+      expect((model as Record<string, unknown>)['provider']).toBe('xdpool')
       expect(JSON.stringify(model)).not.toContain('token-')
     }
 

@@ -9,13 +9,13 @@
  *
  * It is a plugin-owned file for the same reason the ignore list is one: the CLI
  * has no settings service, so a settings-backed pin could be set from the card
- * and never from `dsh-workbuddy-xdpool prefer`. Both halves read this file.
+ * and never from `dsh-xdpool prefer`. Both halves read this file.
  *
  * The value is deliberately NOT a credential, a token, or anything secret. It is
  * an account id the plugin already prints on the card, so there is nothing here
  * that a hand-edited file could leak.
  *
- * @module dsh-workbuddy-xdpool/preferred
+ * @module dsh-xdpool/preferred
  */
 
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'

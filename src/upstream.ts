@@ -9,7 +9,7 @@
  *     X-Refresh-Token 头、错误分类、积分按套餐聚合）经 dingminhua 实测
  *     验证，此处沿用并适配本插件的凭据接口与多账户池。
  *
- * @module dsh-workbuddy-xdpool/upstream
+ * @module dsh-xdpool/upstream
  */
 
 import type { WorkBuddyCredential } from './accounts.ts'
@@ -454,7 +454,7 @@ async function readEnvelope(response: Response): Promise<Envelope> {
       `${GATEWAY_REJECTION_MESSAGE} This usually means the ` +
       'account is using a stale sign-in the upstream no longer accepts: sign in again in ' +
       'the WorkBuddy desktop app, then pick the account on the plugin card. ' +
-      'Run `dsh-workbuddy-xdpool doctor` to list every credential found.',
+      'Run `dsh-xdpool doctor` to list every credential found.',
     )
   }
   let parsed: unknown
@@ -1206,7 +1206,7 @@ export class WorkBuddyUpstreamClient {
         const wait = this.catalogRetryBackoffMs[attempt]
         if (wait === undefined) break
         this.logger?.warn?.(
-          `dsh-workbuddy-xdpool: model catalog fetch failed (attempt ${attempt + 1}/${attempts}), retrying in ${wait}ms`,
+          `dsh-xdpool: model catalog fetch failed (attempt ${attempt + 1}/${attempts}), retrying in ${wait}ms`,
           error,
         )
         await delay(wait)

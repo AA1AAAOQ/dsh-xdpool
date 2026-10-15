@@ -1,9 +1,9 @@
 /**
- * Plugin-card copy registered under the `settings.workbuddy-xdpool` locale
+ * Plugin-card copy registered under the `settings.xdpool` locale
  * namespace. Key lists in `en` and `zh` are kept 1:1 by typing `zh` against
  * the key set of `en`.
  *
- * @module dsh-workbuddy-xdpool/client/locales
+ * @module dsh-xdpool/client/locales
  */
 export const en = {
   // The Settings nav row. Short by design: the nav column is narrow and the
@@ -450,8 +450,8 @@ export const en = {
   'billion.colCache': 'Cache',
   'billion.contextTitle': 'measured {source} · model window {window}',
 } as const
-export type WorkBuddyPoolSettingsKey = keyof typeof en
-export const zh: Record<WorkBuddyPoolSettingsKey, string> = {
+export type XdPoolSettingsKey = keyof typeof en
+export const zh: Record<XdPoolSettingsKey, string> = {
   'row.navLabel': 'XD Pool',
   'row.title': '账号池',
   'row.desc': '',

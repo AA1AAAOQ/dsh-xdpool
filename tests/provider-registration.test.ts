@@ -139,7 +139,7 @@ describe('the startup trace distinguishes the two failure shapes', () => {
     process.env.DSH_HOME = home
     try {
       const path = startupLogPath()
-      expect(path).toBe(join(home, '.workbuddy-xdpool', 'startup.log'))
+      expect(path).toBe(join(home, '.xdpool', 'startup.log'))
       recordStartupNote('apply entered')
       recordStartupNote('directory REJECTED: LlmError: nope (INVALID_DIRECTORY)')
       const lines = readFile(path, 'utf8').trimEnd().split('\n')
@@ -182,13 +182,13 @@ describe('the host really is all-or-nothing (the reason for the split)', () => {
       }
       for (const entry of entries) directory.add(entry.provider)
     }
-    commit([{ provider: 'workbuddy-xdpool', displayName: 'WorkBuddy 池', settingsNs: 'ns', owned: false }])
-    expect(() => commit([{ provider: 'workbuddy-xdpool', displayName: 'WorkBuddy 池', settingsNs: 'ns', owned: false }]))
+    commit([{ provider: 'xdpool', displayName: 'WorkBuddy 池', settingsNs: 'ns', owned: false }])
+    expect(() => commit([{ provider: 'xdpool', displayName: 'WorkBuddy 池', settingsNs: 'ns', owned: false }]))
       .toThrow(/duplicate configurable provider/)
     // And a rejected group registers NOTHING: the second provider is still absent.
     const fresh = new Set<string>()
     void fresh
-    expect(directory.has('workbuddy-xdpool')).toBe(true)
+    expect(directory.has('xdpool')).toBe(true)
     expect(directory.size).toBe(1)
   })
 })

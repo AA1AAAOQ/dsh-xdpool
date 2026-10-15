@@ -12,7 +12,7 @@
  * the source contract (the same approach `card-shell.test.ts` takes) while every
  * derived figure is checked against the real `UsageRecorder`.
  *
- * @module dsh-workbuddy-xdpool/tests/ledger-page
+ * @module dsh-xdpool/tests/ledger-page
  */
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
@@ -149,7 +149,7 @@ describe('ledger page: wiring', () => {
   it('carries its own stylesheet and every class it renders is defined', () => {
     expect(page).toContain('LEDGER_CARD_CSS')
     const ledgerCss = styles.slice(styles.indexOf('export const LEDGER_CARD_CSS'))
-    const used = new Set([...page.matchAll(/dsm-workbuddy-xdpool-(?:sec|sectitle|table|tablewrap|num|ellipsis|kpis)\b/g)].map(m => m[0]))
+    const used = new Set([...page.matchAll(/dsm-xdpool-(?:sec|sectitle|table|tablewrap|num|ellipsis|kpis)\b/g)].map(m => m[0]))
     const missing = [...used].filter(name => !ledgerCss.includes(`.${name}`))
     expect(missing, 'LedgerPage renders classes with no CSS rule').toEqual([])
   })

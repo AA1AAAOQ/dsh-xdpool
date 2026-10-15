@@ -20,7 +20,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
  *
  * `src/index.ts` compiles to `lib/index.js`, so from there `vendor/` is one level
  * up. Kept as a computed path rather than `import.meta.resolve` because the
- * installed layout is a flat `node_modules/dsh-workbuddy-xdpool/{lib,vendor}`,
+ * installed layout is a flat `node_modules/dsh-xdpool/{lib,vendor}`,
  * which is not resolvable as a bare specifier.
  */
 const PACK_ENTRY = join(HERE, '..', 'vendor', 'channel-pack', 'pack.js')

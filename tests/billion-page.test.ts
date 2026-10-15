@@ -31,8 +31,8 @@ const readCode = (relative: string): string =>
     .replaceAll(/^[ \t]*\/\/.*$/gmu, '')
 describe('the billion-context relay route', () => {
   it('lives under the plugin namespace so it cannot collide with another one', () => {
-    expect(POOL_BILLION_PATH).toBe('/plugins/dsh-workbuddy-xdpool/billion')
-    expect(POOL_BILLION_PATH.startsWith('/plugins/dsh-workbuddy-xdpool/')).toBe(true)
+    expect(POOL_BILLION_PATH).toBe('/plugins/dsh-xdpool/billion')
+    expect(POOL_BILLION_PATH.startsWith('/plugins/dsh-xdpool/')).toBe(true)
   })
   it('is answered by GET only, behind the loopback-origin guard', () => {
     const source = read('../src/web-status.ts')

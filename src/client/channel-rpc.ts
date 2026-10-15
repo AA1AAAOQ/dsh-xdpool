@@ -11,7 +11,7 @@
  * returns a credential, and none of these parsers invent a field the pack did not
  * send: an answer we cannot read becomes "not connected", never a guessed zero.
  *
- * @module dsh-workbuddy-xdpool/client/channel-rpc
+ * @module dsh-xdpool/client/channel-rpc
  */
 import { CHANNEL_PACK_RPC_PATH } from '../status-paths.ts'
 import type {

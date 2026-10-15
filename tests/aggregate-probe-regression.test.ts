@@ -121,12 +121,12 @@ describe('createWorkBuddyAdapter with an empty aggregate catalog', () => {
       shim: shim as Parameters<typeof createWorkBuddyAdapter>[0]['shim'],
       catalog,
       ctx,
-      providerId: 'workbuddy-xdpool-aggregate',
+      providerId: 'xdpool-aggregate',
     })
     // An empty aggregate store advertises nothing, which is CORRECT: it is not
     // a crash, it is "no third-party provider configured". The card stays up and
     // the two pool lanes keep their models.
-    expect(adapter.providerId).toBe('workbuddy-xdpool-aggregate')
+    expect(adapter.providerId).toBe('xdpool-aggregate')
     expect(() => adapter.buildModels()).not.toThrow()
     expect(adapter.buildModels()).toHaveLength(0)
   }, SLOW)
