@@ -14,10 +14,13 @@ coverage/
 .ghtok
 .gh-token.tmp
 release-body.md
+release-title.txt
 .releases.json
 .release-bodies.json
 .m.txt
 .cm.txt
+NPM-FIRST-PUBLISH.md
+*.tgz
 
 # 待处理的截图暂存
 .shot-*.png

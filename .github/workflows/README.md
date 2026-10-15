@@ -21,7 +21,7 @@ Trusted Publishing 因此成为唯一无码可用的官方通道，也是 npm �
 2. **GitHub 侧**：确认仓库的 Actions 有写权限（默认有），然后推送一个 tag 即可。
 ## 发布一个新版本
 ```powershell
-cd D:\DSH\dsh-workbuddy-pool
+cd D:\DSH\dsh-xdpool
 # 1. 改 package.json 的 version，并同步写 CHANGELOG
 # 2. 提交
 git add -A
