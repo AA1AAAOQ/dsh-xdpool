@@ -229,7 +229,6 @@ export const POOL_CARD_CSS = `
    sharing a line with a total. */
 .dsm-xdpool-packages li{display:inline-flex;align-items:baseline;gap:5px;min-width:0;padding:1px 8px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1,#2f3035);background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 62%, transparent);color:var(--dsw-alias-label-secondary,#c6c9d0);font-size:11px;line-height:17px}
 .dsm-xdpool-packages-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dsm-xdpool-packages-value{color:var(--dsw-alias-label-tertiary,#999);font-variant-numeric:tabular-nums}
 /* Per-package deadline: the upstream grants one-off packs at arbitrary clock
    times, so each pack carries its own timestamp. It sits inside its own chip on
    its own line — a pack name plus two timestamps did not fit on one line, and
@@ -237,8 +236,17 @@ export const POOL_CARD_CSS = `
 .dsm-xdpool-packages-when{color:var(--dsw-alias-label-tertiary,#9aa0a8);font-size:10.5px;line-height:15px;font-variant-numeric:tabular-nums}
 .dsm-xdpool-packages-when-soon{color:var(--dsw-alias-state-warning-primary,#d97706)}
 /* The balance. Still the most important figure on the row — colour and weight,
-   not size: at 28px it outweighed the account name it belongs to. */
-.dsm-xdpool-total-value{color:var(--dsw-alias-state-success-primary,#22a06b);font-size:16px;line-height:22px;font-weight:700;letter-spacing:-.2px;white-space:nowrap;font-variant-numeric:tabular-nums}
+   not size: at 28px it outweighed the account name it belongs to. The green is
+   pinned rather than taken from the theme alias: at 16px/700 the alias green
+   read darker than the 11px figures beside it on the same row — the same hex
+   looks dimmer in large bold type than in small text — and the user read the
+   balance as grey next to the bright green streak chips. A slightly brighter
+   literal keeps the two readings of "green" on this row identical. */
+.dsm-xdpool-total-value{color:#2fbf7f;font-size:16px;line-height:22px;font-weight:700;letter-spacing:-.2px;white-space:nowrap;font-variant-numeric:tabular-nums}
+/* Per-package figures share the balance's green: they are the same credit
+   balance broken down, and rendering them in grey made the packages look
+   spent while the total looked alive. */
+.dsm-xdpool-packages-value{color:#2fbf7f;font-variant-numeric:tabular-nums}
 /* Model directory list. */
 .dsm-xdpool-models{gap:10px}
 .dsm-xdpool-models-head{display:flex;align-items:center;justify-content:space-between;gap:12px}

@@ -2,9 +2,13 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/dsh-xdpool"><img src="https://img.shields.io/npm/v/dsh-xdpool?style=flat-square&label=npm&color=cb3837" alt="npm version"></a>
-  <a href="https://www.npmjs.com/package/dsh-xdpool"><img src="https://img.shields.io/npm/d18m/dsh-xdpool?style=flat-square&label=downloads&color=cb3837" alt="npm downloads"></a>
+  <a href="https://www.npmjs.com/package/dsh-workbuddy-xdpool"><img src="https://img.shields.io/npm/d18m/dsh-workbuddy-xdpool?style=flat-square&label=downloads%20(prev%20name)&color=cb3837" alt="npm downloads under the previous name"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/XDTrees/dsh-xdpool?style=flat-square" alt="MIT license"></a>
   <a href="https://github.com/XDTrees/dsh-xdpool/stargazers"><img src="https://img.shields.io/github/stars/XDTrees/dsh-xdpool?style=flat-square" alt="GitHub stars"></a>
+</p>
+
+<p align="center">
+  <sub>Download stats still come from the previous package name <code>dsh-workbuddy-xdpool</code> (every download before the rename). The new <code>dsh-xdpool</code> package just published; the badge switches to it once npm's download stats catch up.</sub>
 </p>
 
 English | [中文](./README.md)
@@ -46,9 +50,9 @@ Then it grew into seven pages. Beyond the account pool: sign in to thirteen vend
 
 ![Aggregate channels: the aggregate switch, a search box, and the category filters — all 76 / API key 60 / free 1 / has free quota 10 / local 3 / needs authorization 2](assets/aggregate-channels.png)
 
-**The plugin card (Settings → Plugins → DSH WorkBuddy XD Pool)**
+**Account credit detail (a pool account: credit packages, streak, today's check-in, the credit reserve)**
 
-![WorkBuddy pool card: CN/global tabs, pool health, account panels with credit packages, per-account check-in, the points-automation panel, and the model directory](assets/settings-card.png)
+![Account credit detail: the active account expanded shows the credit total, a 16-day streak, the daily +100 credits, a checked-in-today button, CodeBuddy package balances with their expiry dates, and the credit-reserve input](assets/account-credits.png)
 
 **The points-automation panel**
 
