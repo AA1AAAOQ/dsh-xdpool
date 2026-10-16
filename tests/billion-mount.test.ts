@@ -1,43 +1,45 @@
+/**
+ * What the billion-context card knows about the compressor, and what we no
+ * longer do about it.
+ *
+ * This file used to assert the opposite contract: that `mountBillionContext`
+ * would create a missing mount through the host loader. Every test here that
+ * expected a `create()` call was pinning the behaviour that put a permanently
+ * `failed` entry into the plugin list of every user who had installed
+ * billion-context themselves — the host does not disable a duplicate row for
+ * the same module name, it runs its fiber to failure. Those assertions are now
+ * inverted: the strongest statement this file can make is that NO `create()`
+ * call happens, on ANY input.
+ *
+ * The fake loader deliberately still implements `create`, and every test asserts
+ * it was never reached. If the mounting behaviour ever comes back, the failure
+ * is not "a test expectation changed" — it is "the loader was asked to register
+ * a second billion-context", which is the exact bug.
+ */
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { mountBillionContext } from '../src/billion-mount.ts'
 
 type FakeEntry = {
-  options?: { name?: unknown } | undefined
+  options?: { name?: unknown; id?: unknown } | undefined
   fiber?: { uid?: unknown } | undefined
 }
 
 /**
- * A stand-in for the host loader.
+ * A stand-in for the host loader, with a `create` that records being called.
  *
- * Only the two members `mountBillionContext` touches are implemented, because
- * only those two are the contract: `entries()` to ask what is running, and
- * `create()` to bring up something that is not. If the function ever reaches for
- * a third member, the absence here is the failure this fake is meant to surface.
- *
- * `create` reproduces the host's two idempotence guarantees, because both are
- * load-bearing for the call site: it reuses an entry that already holds the id
- * rather than making a second one, and an entry that exists without a fiber is
- * started rather than duplicated.
+ * `create` is implemented so a regression cannot pass silently: if the module
+ * ever calls it, `created` gains an entry and the assertion below fails with the
+ * options that were about to become a duplicate mount.
  */
 function fakeLoader(entries: FakeEntry[]) {
   const created: { id?: string; name?: string }[] = []
-  const reused: string[] = []
   return {
     created,
-    reused,
     loader: {
       entries: () => entries,
       create: async (options: { id: string; name: string }) => {
         created.push(options)
-        const existing = entries.find(
-          (entry) => entry.options?.name === options.name && entry.options?.id === options.id,
-        )
-        if (existing !== undefined) {
-          reused.push(options.id)
-          return options.id
-        }
-        entries.push({ options: { name: options.name, id: options.id }, fiber: { uid: 'new' } })
         return options.id
       },
     },
@@ -56,15 +58,15 @@ function ctxWith(loader: unknown): never {
   } as never
 }
 
-describe('the compressor is mounted only when nothing else already has it', () => {
-  it('mounts billion-context on a profile where it is not running', async () => {
+describe('the compressor is detected, never mounted', () => {
+  it('a profile with nothing installed reports not-required and creates nothing', async () => {
     const { loader, created } = fakeLoader([])
     const result = await mountBillionContext(ctxWith(loader), logger)
-    expect(result).toEqual({ state: 'mounted' })
-    expect(created).toEqual([{ id: 'billion-context-xdpool', name: 'billion-context' }])
+    expect(result).toEqual({ state: 'not-required' })
+    expect(created).toEqual([])
   })
 
-  it('does not mount a second copy, which would throw inside its own apply', async () => {
+  it('a running billion-context is reported as already-mounted, untouched', async () => {
     const { loader, created } = fakeLoader([
       { options: { name: 'billion-context' }, fiber: { uid: 12 } },
     ])
@@ -73,40 +75,46 @@ describe('the compressor is mounted only when nothing else already has it', () =
     expect(created).toEqual([])
   })
 
-  it('mounts when a row exists but never finished starting', async () => {
-    // An entry with no uid is an import in flight, not a second mount. Racing it
-    // would produce exactly the duplicate we are here to prevent — so the call is
-    // still made, and the host's own idempotence is what makes it safe.
-    const { loader, created, reused } = fakeLoader([
+  it('an entry still importing is NOT treated as absent — that was the race', async () => {
+    // An entry with no uid is an import in flight. Treating it as absent is what
+    // made a second mount look safe: the loader would reuse the row rather than
+    // duplicate it, and the duplicate service registration then killed the
+    // second fiber. Now nothing is mounted, so the distinction only decides
+    // which label the card shows — but the check stays, because reporting
+    // "not installed" while billion-context is mid-import would be a lie.
+    const { loader, created } = fakeLoader([
       { options: { name: 'billion-context' }, fiber: {} },
       { options: { name: 'billion-context' }, fiber: { uid: undefined } },
     ])
     const result = await mountBillionContext(ctxWith(loader), logger)
-    expect(result).toEqual({ state: 'mounted' })
-    expect(created).toHaveLength(1)
-    expect(reused).toEqual([])
+    expect(result).toEqual({ state: 'already-mounted' })
+    expect(created).toEqual([])
   })
 
-  it('asks the host to reuse our own row instead of adding a second one', async () => {
-    // The row our patch layer inserts is already in the tree with this exact id.
-    // The host resolves that by reusing the entry, which is why create() is safe
-    // to call unconditionally rather than only when the row is absent.
-    const { loader, reused } = fakeLoader([
-      { options: { id: 'billion-context-xdpool', name: 'billion-context' }, fiber: {} },
+  it('our own disabled patch row does not read as a running mount', async () => {
+    // The row carries the id and the name but is `disabled: true`, and the host
+    // still yields disabled rows from entries() — it skips starting them, it
+    // does not drop them. Counting it would make every profile that never
+    // installed billion-context read as installed.
+    const { loader, created } = fakeLoader([
+      {
+        options: { id: 'billion-context-xdpool', name: 'billion-context', disabled: true },
+        fiber: {},
+      },
     ])
     const result = await mountBillionContext(ctxWith(loader), logger)
-    expect(result).toEqual({ state: 'mounted' })
-    expect(reused).toEqual(['billion-context-xdpool'])
+    expect(result).toEqual({ state: 'not-required' })
+    expect(created).toEqual([])
   })
 
-  it('ignores other plugins that happen to be running', async () => {
+  it('other plugins running are irrelevant', async () => {
     const { loader, created } = fakeLoader([
       { options: { name: 'dsh-xdpool' }, fiber: { uid: 3 } },
       { options: { name: 'dsh-our-free-model' }, fiber: { uid: 4 } },
     ])
     const result = await mountBillionContext(ctxWith(loader), logger)
-    expect(result).toEqual({ state: 'mounted' })
-    expect(created).toHaveLength(1)
+    expect(result).toEqual({ state: 'not-required' })
+    expect(created).toEqual([])
   })
 
   it('reports an unavailable loader rather than throwing', async () => {
@@ -122,8 +130,7 @@ describe('the compressor is mounted only when nothing else already has it', () =
 
   it('swallows a loader that refuses, because the pool must still boot', async () => {
     const loader = {
-      entries: () => [],
-      create: async () => {
+      entries: () => {
         throw new Error('service "billion" has been registered at <billion-context>')
       },
     }
@@ -132,9 +139,28 @@ describe('the compressor is mounted only when nothing else already has it', () =
     expect((result as { reason: string }).reason).toContain('has been registered at')
   })
 
-  it('logs the outcome when the host offers an info sink', async () => {
+  it('never reaches create() on ANY input — the regression this file exists to catch', async () => {
+    // A mix of every loader state the host can present. One assertion, applied
+    // to all of them: the loader is read, never written.
+    const cases: FakeEntry[][] = [
+      [],
+      [{ options: { name: 'billion-context' }, fiber: { uid: 1 } }],
+      [{ options: { name: 'billion-context' }, fiber: {} }],
+      [{ options: { id: 'billion-context-xdpool', name: 'billion-context', disabled: true }, fiber: {} }],
+      [{ options: { name: 'billion-context' } }, { options: { name: 'other' }, fiber: { uid: 2 } }],
+    ]
+    for (const entries of cases) {
+      const { loader, created } = fakeLoader(entries)
+      await mountBillionContext(ctxWith(loader), logger)
+      expect(created, `create() was called for entries: ${JSON.stringify(entries)}`).toEqual([])
+    }
+  })
+
+  it('logs the already-mounted outcome when the host offers an info sink', async () => {
     const info = vi.fn()
-    const { loader } = fakeLoader([])
+    const { loader } = fakeLoader([
+      { options: { name: 'billion-context' }, fiber: { uid: 9 } },
+    ])
     await mountBillionContext(ctxWith(loader), { warn: () => {}, info })
     expect(info).toHaveBeenCalledTimes(1)
   })
@@ -146,26 +172,36 @@ describe('the manifest and patch layer say what they do', () => {
   )
   const patch = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
 
-  it('carries billion-context as an ordinary dependency so pnpm installs it', () => {
-    // The loader resolves bundle packages out of the profile's node_modules,
-    // which is exactly where a declared dependency lands.
-    expect(manifest.dependencies['billion-context']).toBeTypeOf('string')
+  it('carries billion-context as an OPTIONAL dependency', () => {
+    // Moving it out of `dependencies` is the other half of not mounting it: a
+    // hard dependency would still install the compressor for every pool user
+    // and drag its version along on every pool upgrade — the exact coupling the
+    // patch comment always promised to avoid.
+    expect(manifest.dependencies).toBeUndefined()
+    expect(manifest.optionalDependencies['billion-context']).toBeTypeOf('string')
   })
 
-  it('inserts a row rather than restating a config the host would replace whole', () => {
+  it('the patch row exists but is disabled', () => {
     expect(patch).toContain('- id: billion-context-xdpool')
-    expect(patch).toContain('name: billion-context')
-    // billion-context's own row is `bili-native`. Addressing it here would
-    // replace its config wholesale — the patch engine does no deep merge — so our
-    // row must carry a different id.
-    expect(patch).not.toContain('id: bili-native')
-    expect(patch).not.toMatch(/^- id: billion-context$/mu)
+    expect(patch).toContain('disabled: true')
   })
 
-  it('uses the same row id in the patch and at runtime', () => {
-    const source = readFileSync(new URL('../src/billion-mount.ts', import.meta.url), 'utf8')
-    expect(source).toContain("'billion-context-xdpool'")
-    expect(patch).toContain('- id: billion-context-xdpool')
+  it('the patch no longer mounts billion-context', () => {
+    // The old assertion checked that our row was an `insert`. It is now a
+    // disable, and that is the point: this layer must not be able to bring the
+    // module up even by accident. Read the way the loader does — non-comment
+    // lines only, and per-line rather than across the document, because the
+    // comment above the row explains the history and names the module.
+    const dataRows = patch
+      .split(/\r?\n/u)
+      .filter((line) => line.trim() !== '' && !line.trim().startsWith('#'))
+    expect(dataRows).not.toContain('name: billion-context')
+    expect(dataRows).not.toContain('  name: billion-context')
+    // Our row is a bare disable: no name, so the loader has nothing to start.
+    const ourRow = dataRows.findIndex((line) => line.trim() === '- id: billion-context-xdpool')
+    expect(ourRow).toBeGreaterThan(-1)
+    const following = dataRows[ourRow + 1] ?? ''
+    expect(following.trim()).toBe('disabled: true')
   })
 
   it('parses as the top-level array the host loader requires', () => {
@@ -176,20 +212,16 @@ describe('the manifest and patch layer say what they do', () => {
       .split(/\r?\n/u)
       .filter((line) => line.trim() !== '' && !line.trim().startsWith('#'))
     expect(dataRows.length).toBeGreaterThan(0)
-    // Top-level elements (column zero) must all be sequence items: `- insert:`
-    // or `- id:`. A mapping key at column zero would turn the document into a
-    // mapping, which the loader rejects outright.
     const topLevel = dataRows.filter((line) => !/^\s/u.test(line))
     expect(topLevel).toHaveLength(2)
     for (const line of topLevel) {
       expect(line).toMatch(/^- (insert|id):/u)
     }
-    // Ours is the second element, and it is an insert — never a config
-    // replacement. The patch engine assigns whole rows with no deep merge, so a
-    // restated config would silently drop every option the host ships with.
-    expect(topLevel[1]).toBe('- insert:')
-    // Our row is the only id this layer owns; anything else at column zero would
-    // be a second target we would be overwriting rather than adding.
+    // The first row is our own plugin's insert; the second is the disabled
+    // billion marker. Neither may be a mapping key, which would turn the whole
+    // document into a mapping and fail the loader's array check.
+    expect(topLevel[0]).toBe('- insert:')
+    expect(topLevel[1]).toBe('- id: billion-context-xdpool')
     const ids = dataRows
       .filter((line) => line.trim().startsWith('- id:'))
       .map((line) => line.trim().replace('- id:', '').trim())

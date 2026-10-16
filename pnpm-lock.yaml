@@ -7,10 +7,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      billion-context:
-        specifier: ^0.1.197
-        version: 0.1.197(@types/node@26.4.1)
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 4.0.2
@@ -78,6 +74,10 @@ importers:
       vitest:
         specifier: ^5.0.0
         version: 5.0.0(@types/node@26.4.1)(vite@8.3.0(@types/node@26.4.1))
+    optionalDependencies:
+      billion-context:
+        specifier: ^0.1.197
+        version: 0.1.197(@types/node@26.4.1)
 
 packages:
 
@@ -2444,6 +2444,7 @@ snapshots:
       sharp: 0.35.5(@types/node@26.4.1)
     transitivePeerDependencies:
       - '@types/node'
+    optional: true
 
   bowser@2.14.1: {}
 
@@ -2984,7 +2985,8 @@ snapshots:
       '@yuku-parser/binding-win32-arm64': 0.9.3
       '@yuku-parser/binding-win32-x64': 0.9.3
 
-  zod@4.1.8: {}
+  zod@4.1.8:
+    optional: true
 
   zod@4.5.4: {}
 

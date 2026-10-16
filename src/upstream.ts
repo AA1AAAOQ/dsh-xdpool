@@ -337,6 +337,35 @@ function chatHeaders(credential: WorkBuddyCredential): Record<string, string> {
   return headers
 }
 
+/**
+ * The client-identity headers the desktop app puts on every chat completion.
+ *
+ * WHY THESE EXIST AND WHY THEY BELONG ON /v2/chat/completions ONLY
+ *
+ * The gateway attributes each request to a client, and that attribution is what
+ * surfaces in the user's billing console as the "使用端" column. The desktop app
+ * (`buildVlmGatewayHeaders` in its bundled `main/server.js`) sends
+ * `X-IDE-Type`/`X-IDE-Name`/`X-IDE-Version` on every `/v2/chat/completions`, so
+ * its traffic reads as "WorkBuddy". Our chat requests sent none of them, so the
+ * same spend attributed to nothing — the column showed "–" and the user's
+ * billing page looked like the requests had come from nowhere.
+ *
+ * They are deliberately NOT part of `chatHeaders()`, which is shared with the
+ * points-automation endpoints (`listTasks` / `acceptTasks`). Those are not chat
+ * completions, and the evidence for the desktop app sending identity headers on
+ * them is nil — adding identity headers to an endpoint that never carried them
+ * risks changing how that traffic is attributed or filtered, and the automation
+ * was never reported broken. Only the two chat completions get these.
+ *
+ * The version is the same literal `openConversation()` already sends, so both
+ * chat paths — the pool's and the automation's — claim the same client.
+ */
+const CHAT_IDENTITY_HEADERS: Readonly<Record<string, string>> = Object.freeze({
+  'X-IDE-Name': 'WorkBuddy',
+  'X-IDE-Type': 'WorkBuddy',
+  'X-IDE-Version': '5.5.6',
+})
+
 /** Refresh-endpoint headers; X-Refresh-Token appears here and nowhere else. */
 function refreshHeaders(credential: WorkBuddyCredential): Record<string, string> {
   const headers: Record<string, string> = {
@@ -1115,7 +1144,7 @@ export class WorkBuddyUpstreamClient {
   ): Promise<string> {
     const response = await this.fetchImpl(`${chatBase(credential)}/v2/chat/completions`, {
       method: 'POST',
-      headers: chatHeaders(credential),
+      headers: { ...chatHeaders(credential), ...CHAT_IDENTITY_HEADERS },
       body: prepared,
       ...signal === undefined ? {} : { signal },
     })
@@ -1137,7 +1166,7 @@ export class WorkBuddyUpstreamClient {
     try {
       response = await this.fetchImpl(`${chatBase(credential)}/v2/chat/completions`, {
         method: 'POST',
-        headers: chatHeaders(credential),
+        headers: { ...chatHeaders(credential), ...CHAT_IDENTITY_HEADERS },
         body: prepared,
         ...signal === undefined ? {} : { signal },
       })
@@ -1661,15 +1690,13 @@ export class WorkBuddyUpstreamClient {
         method: 'POST',
         headers: {
           ...chatHeaders(credential),
+          ...CHAT_IDENTITY_HEADERS,
           'Accept': 'text/event-stream',
           'User-Agent': DESKTOP_TASK_UA,
           'X-Conversation-ID': conversationId,
           'X-Request-ID': String(Date.now()) + '000000',
           'X-Agent-Intent': 'craft',
           'X-Agent-Type': 'main',
-          'X-IDE-Name': 'WorkBuddy',
-          'X-IDE-Type': 'WorkBuddy',
-          'X-IDE-Version': '5.5.6',
           'x-codebuddy-request': '1',
           ...expertId === '' ? {} : { 'X-Expert-Id': expertId },
         },

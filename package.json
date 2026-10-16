@@ -75,7 +75,7 @@
       "platform": "web"
     }
   },
-  "dependencies": {
+  "optionalDependencies": {
     "billion-context": "^0.1.197"
   },
   "devDependencies": {
