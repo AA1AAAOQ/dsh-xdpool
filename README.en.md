@@ -2,13 +2,13 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/dsh-xdpool"><img src="https://img.shields.io/npm/v/dsh-xdpool?style=flat-square&label=npm&color=cb3837" alt="npm version"></a>
-  <a href="https://www.npmjs.com/package/dsh-workbuddy-xdpool"><img src="https://img.shields.io/npm/d18m/dsh-workbuddy-xdpool?style=flat-square&label=downloads%20(prev%20name)&color=cb3837" alt="npm downloads under the previous name"></a>
+  <a href="https://www.npmjs.com/package/dsh-workbuddy-xdpool"><img src="https://img.shields.io/badge/downloads-9k%2Fmo%20%28prev%20name%29-cb3837?style=flat-square" alt="npm downloads under the previous name"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/XDTrees/dsh-xdpool?style=flat-square" alt="MIT license"></a>
   <a href="https://github.com/XDTrees/dsh-xdpool/stargazers"><img src="https://img.shields.io/github/stars/XDTrees/dsh-xdpool?style=flat-square" alt="GitHub stars"></a>
 </p>
 
 <p align="center">
-  <sub>Download stats still come from the previous package name <code>dsh-workbuddy-xdpool</code> (every download before the rename). The new <code>dsh-xdpool</code> package just published; the badge switches to it once npm's download stats catch up.</sub>
+  <sub>Download stats still come from the previous package name <code>dsh-workbuddy-xdpool</code> (8,976/month as of 2026-10-12 — every download before the rename; the live shields badge kept getting rate-limited by the npm upstream, hence the snapshot figure). The new <code>dsh-xdpool</code> package accumulates its own stats, and the badge switches back to live data later.</sub>
 </p>
 
 English | [中文](./README.md)

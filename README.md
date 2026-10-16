@@ -2,13 +2,13 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/dsh-xdpool"><img src="https://img.shields.io/npm/v/dsh-xdpool?style=flat-square&label=npm&color=cb3837" alt="npm version"></a>
-  <a href="https://www.npmjs.com/package/dsh-workbuddy-xdpool"><img src="https://img.shields.io/npm/d18m/dsh-workbuddy-xdpool?style=flat-square&label=downloads%20(旧名)&color=cb3837" alt="npm downloads under the previous name"></a>
+  <a href="https://www.npmjs.com/package/dsh-workbuddy-xdpool"><img src="https://img.shields.io/badge/downloads-9k%2F%E6%9C%88%20%28%E6%97%A7%E5%90%8D%29-cb3837?style=flat-square" alt="npm downloads under the previous name"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/XDTrees/dsh-xdpool?style=flat-square" alt="MIT license"></a>
   <a href="https://github.com/XDTrees/dsh-xdpool/stargazers"><img src="https://img.shields.io/github/stars/XDTrees/dsh-xdpool?style=flat-square" alt="GitHub stars"></a>
 </p>
 
 <p align="center">
-  <sub>下载量统计沿用旧包名 <code>dsh-workbuddy-xdpool</code> 的历史计数（改名前的全部下载）；新包 <code>dsh-xdpool</code> 刚发布，等 npm 的下载统计更新后徽章会换成新包。</sub>
+  <sub>下载量统计沿用旧包名 <code>dsh-workbuddy-xdpool</code>（截至 2026-10-12 为 8,976 次/月，改名前的全部下载；shields 的实时徽章常被 npm 上游限流，所以这里用了快照数字）。新包 <code>dsh-xdpool</code> 的统计会随时间累积，之后徽章会换回实时数据。</sub>
 </p>
 
 [English](./README.en.md) | 中文
