@@ -31,7 +31,7 @@ Then it grew into seven pages. Beyond the account pool: sign in to thirteen vend
 
 **It also throws in a full points-automation suite**: check-ins, task rewards, streak redemption, the buddy trip — all the chores you'd otherwise click through every day, done in the background.
 
-> **How this differs from the single-account connectors**: plugins like `dsh-workbuddy-connect` handle one account at a time. XD Pool treats **multiple accounts as the normal case** — it doesn't pick favourites or ask you to import anything. Every sign-in snapshot on this machine goes into one shared pool, exposed as a single `xdpool` provider group, with automatic failover inside.
+> **How this differs from the single-account connectors**: plugins like `dsh-workbuddy-connect` handle one account at a time. XD Pool treats **multiple accounts as the normal case** — it doesn't pick favourites or ask you to import anything. Every account you've switched through on the desktop app is remembered across restarts, exposed as a single `xdpool` provider group, with automatic failover inside.
 
 > **Upgrading from the old name**: this plugin used to be `dsh-workbuddy-xdpool`. Your data is **carried over automatically** (API keys, ignore list, account pin). The one thing you may need to do by hand is a default model pinned to an old id — see [Upgrading from an older version](#upgrading-from-an-older-version).
 
@@ -214,7 +214,7 @@ dsh plugin --profile desktop exec dsh-xdpool login     # guide to adding another
 
 ## How accounts get into the pool
 
-Auto-discovery. Every sign-in on the WorkBuddy desktop app leaves a token-bearing snapshot; XD Pool scans them and absorbs each into the pool. So multi-account = sign in / switch accounts in the desktop app, then hit "Detect accounts again" or restart DSH.
+The desktop app keeps only the **currently signed-in** account on disk (each switch overwrites the same file), so XD Pool remembers accounts itself: every time you switch sign-ins in the desktop app, the outgoing account is captured into `~/.dsh/.xdpool/accounts.json` and **survives restarts**. Hit "Detect accounts again" or just start using the pool — every historical account comes back.
 
 To snapshot an extra login explicitly (e.g. to pin one account for verification):
 
@@ -224,7 +224,7 @@ dsh plugin --profile desktop exec dsh-xdpool accounts
 dsh plugin --profile desktop exec dsh-xdpool remove myKey
 ```
 
-Snapshots are stored under `~/.dsh/.xdpool/` named by the **MD5-8 prefix** of their key (so keys with Chinese, `/`, or spaces are safe). Long-lived use relies on refresh-token auto-renewal; if it lapses, re-sign-in on the desktop and `import <key> --force`.
+Imported snapshots live in the same directory, `~/.dsh/.xdpool/`, and every scan absorbs them into the pool — they are no longer written and never read back. Snapshots are named by the **MD5-8 prefix** of their key (so keys with Chinese, `/`, or spaces are safe). Long-lived use relies on refresh-token auto-renewal; if it lapses, re-sign-in on the desktop and `import <key> --force`.
 
 ## Configuration
 
@@ -246,7 +246,7 @@ xdpool:
 
 - **Host side** (`src/`, inside the DSH main process)
   - `index.ts` — registers the `xdpool` provider, the `xdpool` settings section, the same-origin routes (status / re-scan / clear cooldowns / check-in / automation run / credit reserve), plus account discovery and catalog seeding.
-  - `accounts.ts` — `WorkBuddyAccountPool`: reads the desktop auth snapshots, 429 cooldowns, rotation and token refresh; account disabling and credit reserves live here too.
+  - `accounts.ts` — `WorkBuddyAccountPool`: discovers and durably stores local WorkBuddy accounts (`account-store.ts`), 429 cooldowns, rotation and token refresh; account disabling and credit reserves live here too.
   - `scheduler.ts` — the points-automation scheduler: runs five jobs on local time points (check-in / report / tasks / streak / travel), persists the daily earnings ledger, and backs the card's "Run now" button with the same code path.
   - `task-events.ts` — builds the 13 task event chains. Each chain is plain data plus the fingerprint channel it must go out on (desktop or web); the tasks that need a REAL conversation (skill, experts) open one here to get the server-side id.
   - `catalog.ts` / `upstream.ts` — the upstream client: model catalog (with per-model multipliers and free / image tags), credits, check-in, and every automation endpoint, switching CN/global by credential domain.

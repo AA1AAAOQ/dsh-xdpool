@@ -886,6 +886,21 @@ interface AccountPoolOptions {
    *   behaves like `priority`.
    */
   distribution?: AccountDistribution;
+  /**
+   * Enable the durable account store.
+   *
+   * When on, `scan()` seeds its merge from `~/.dsh/.xdpool/accounts.json` and
+   * writes the merged list back, so accounts gathered by switching desktop
+   * sign-ins survive a restart, and the plugin's snapshot directory becomes a
+   * scan source.
+   *
+   * DEFAULT OFF, on purpose: the 70+ existing pool tests build fixtures over
+   * temp auth dirs, and a store that wrote by default would flush those
+   * fixtures into the user's real `~/.dsh/.xdpool/accounts.json`. Production
+   * assembles the pool through `createCore()`, which passes `persistent: true`;
+   * tests opt in explicitly.
+   */
+  persistent?: boolean;
 }
 export declare class WorkBuddyAccountPool {
   private readonly logger;
@@ -1001,6 +1016,18 @@ export declare class WorkBuddyAccountPool {
    */
   private lastUsedAt;
   private refreshInflight;
+  /**
+   * Whether `scan()` seeds from and writes back the durable account store.
+   *
+   * Off by default (tests build fixtures over temp dirs and must not touch the
+   * user's real store); `createCore()` turns it on for production, which is
+   * what makes accounts gathered by switching desktop sign-ins survive a
+   * restart — the desktop app keeps only the current sign-in's credential file
+   * on disk.
+   */
+  private readonly persistent;
+  /** Path of the durable store; computed once so tests can pin it. */
+  private readonly storePath;
   constructor(options?: AccountPoolOptions);
   /**
    * Re-apply configuration that only affects discovery and cooldown policy,

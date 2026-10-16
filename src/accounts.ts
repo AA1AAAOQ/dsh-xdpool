@@ -15,6 +15,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { regionOf, type WorkBuddyRegion } from './upstream.ts'
+import { accountStorePath, isStateFile, loadStoredAccounts, saveStoredAccounts, snapshotDirPath } from './account-store.ts'
 import {
   encryptedFieldKeyId,
   isEncryptedFieldWrapper,
@@ -386,6 +387,28 @@ async function authFilesIn(dir: string): Promise<string[]> {
 }
 
 /**
+ * Snapshot files in the plugin data directory that are account snapshots.
+ *
+ * Every `*.info` file there is one (the importer keeps that extension for
+ * uniformity with the auth dirs it copies from); the plugin's own JSON state
+ * files (`accounts.json`, `ignored.json`, `preferred.json`) are NOT and must
+ * never reach the credential parser.
+ */
+export async function snapshotFilesIn(dir: string): Promise<string[]> {
+  let entries: string[]
+  try {
+    entries = await readdir(dir)
+  } catch {
+    return []
+  }
+  return entries
+    .filter(name => name.endsWith('.info'))
+    .filter(name => !isStateFile(name))
+    .sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
+    .map(name => join(dir, name))
+}
+
+/**
  * One credential file, or undefined when it cannot be used.
  *
  * Returns undefined — rather than throwing — for every failure mode, so ONE bad
@@ -575,6 +598,21 @@ export interface AccountPoolOptions {
    *   behaves like `priority`.
    */
   distribution?: AccountDistribution
+  /**
+   * Enable the durable account store.
+   *
+   * When on, `scan()` seeds its merge from `~/.dsh/.xdpool/accounts.json` and
+   * writes the merged list back, so accounts gathered by switching desktop
+   * sign-ins survive a restart, and the plugin's snapshot directory becomes a
+   * scan source.
+   *
+   * DEFAULT OFF, on purpose: the 70+ existing pool tests build fixtures over
+   * temp auth dirs, and a store that wrote by default would flush those
+   * fixtures into the user's real `~/.dsh/.xdpool/accounts.json`. Production
+   * assembles the pool through `createCore()`, which passes `persistent: true`;
+   * tests opt in explicitly.
+   */
+  persistent?: boolean
 }
 
 /**
@@ -748,6 +786,18 @@ export class WorkBuddyAccountPool {
    */
   private lastUsedAt = new Map<string, number>()
   private refreshInflight = new Map<string, Promise<boolean>>()
+  /**
+   * Whether `scan()` seeds from and writes back the durable account store.
+   *
+   * Off by default (tests build fixtures over temp dirs and must not touch the
+   * user's real store); `createCore()` turns it on for production, which is
+   * what makes accounts gathered by switching desktop sign-ins survive a
+   * restart — the desktop app keeps only the current sign-in's credential file
+   * on disk.
+   */
+  private readonly persistent: boolean
+  /** Path of the durable store; computed once so tests can pin it. */
+  private readonly storePath: string
 
   constructor(options: AccountPoolOptions = {}) {
     this.logger = options.logger
@@ -760,6 +810,8 @@ export class WorkBuddyAccountPool {
     // Priority is the default: users pool their own accounts to spend one
     // before touching the next, not to split every request evenly.
     this.distribution = options.distribution ?? 'priority'
+    this.persistent = options.persistent ?? false
+    this.storePath = accountStorePath()
   }
 
   /**
@@ -834,8 +886,18 @@ export class WorkBuddyAccountPool {
   async scan(): Promise<WorkBuddyAccount[]> {
     const found: WorkBuddyCredential[] = []
     const skipped: WorkBuddySkippedFile[] = []
-    for (const dir of this.authDirs) {
-      for (const file of await authFilesIn(dir)) {
+    // The plugin's own data directory is a scan source too: `import` writes
+    // `<md5prefix>.json` snapshots there, and every credential in it is an
+    // account the user deliberately parked. Without this the snapshots were
+    // written and never read back.
+    const scanDirs: readonly string[] = this.persistent
+      ? [...this.authDirs, snapshotDirPath()]
+      : this.authDirs
+    for (const dir of scanDirs) {
+      const files = dir === snapshotDirPath()
+        ? await snapshotFilesIn(dir)
+        : await authFilesIn(dir)
+      for (const file of files) {
         // Honour the ignore list BEFORE reading the document's key material.
         // `cheapIdentityId` reads only the plain `uin`/`uid` fields, so an
         // ignored account is skipped without spawning the desktop app for its
@@ -872,6 +934,26 @@ export class WorkBuddyAccountPool {
     const byId = new Map<string, WorkBuddyAccount>()
     // Seed with existing accounts so cooldown state survives a rescan.
     for (const account of this.accounts) byId.set(account.id, account)
+
+    // Seed from the durable store so accounts gathered in a previous process
+    // (by switching desktop sign-ins) come back after a restart. Seeded
+    // accounts are inserted FIRST so a credential freshly read from disk wins
+    // the freshness comparison below — the store is memory, the auth dir is
+    // the truth.
+    if (this.persistent && this.accounts.length === 0) {
+      const stored = await loadStoredAccounts(this.storePath)
+      for (const entry of stored) {
+        if (byId.has(entry.id)) continue
+        byId.set(entry.id, {
+          id: entry.id,
+          label: entry.label,
+          credential: entry.credential,
+          cooldownUntilMs: 0,
+          modelCooldowns: {},
+          rateLimitHits: 0,
+        })
+      }
+    }
 
     for (const credential of found) {
       const id = workbuddyAccountId(credential)
@@ -913,6 +995,17 @@ export class WorkBuddyAccountPool {
     ordered.sort((a, b) => compareFreshness(a.credential, b.credential))
     this.accounts = ordered
     this.lastScanAtMs = Date.now()
+    // Persist the merged list so the next process starts from it. Written on
+    // every scan: scans are event-driven (login, card refresh), not per-request,
+    // so the write cost is negligible next to the at-rest key spawns a scan
+    // already pays.
+    if (this.persistent) {
+      try {
+        await saveStoredAccounts(this.storePath, this.accounts)
+      } catch (error: unknown) {
+        this.logger?.warn?.('dsh-xdpool: could not persist the account store', error)
+      }
+    }
     return this.accounts
   }
 

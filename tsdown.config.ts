@@ -43,6 +43,18 @@ export default defineConfig([
     outExtensions: () => ({ js: '.js' }),
     clean: false,
     sourcemap: false,
+    // The CLI runs standalone before any argument is parsed. Bundling inlined
+    // `createCore`'s whole dependency graph, whose adapter carries side-effect
+    // imports of host-injected optional peers (`@earendil-works/pi-ai` etc.) —
+    // those imports landed at the top of bin.js and every CLI command died with
+    // ERR_MODULE_NOT_FOUND before `main()` ever ran. Keeping them external
+    // means they resolve only if a command actually reaches the adapter path.
+    deps: { neverBundle: [
+      '@earendil-works/pi-ai',
+      '@earendil-works/pi-ai/api/openai-completions.lazy',
+      '@deepseek-ai/dsh-llm',
+      '@deepseek-ai/dsh-llm-pi-ai',
+    ] },
   },
   {
     // Browser half: emits lib/client.js as a CJS bundle that registers itself

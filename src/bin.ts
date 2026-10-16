@@ -3,6 +3,11 @@
  *
  *   dsh plugin --profile desktop exec dsh-xdpool <command>
  *
+ * The CLI is packaged as a separate entry (`lib/bin.js`) and must stay free of
+ * host-injected optional-peer imports: it runs standalone, before any argument
+ * is parsed, so a single side-effect import of `@earendil-works/pi-ai` made
+ * every command die with ERR_MODULE_NOT_FOUND.
+ *
  * @module dsh-xdpool/bin
  */
 
@@ -43,7 +48,7 @@ async function cliCore() {
 
 /** Snapshot files are named by the md5 prefix of their key, so any key is safe. */
 function snapshotPath(key: string, dir: string): string {
-  return join(dir, `${createHash('md5').update(key).digest('hex').slice(0, 8)}.json`)
+  return join(dir, `${createHash('md5').update(key).digest('hex').slice(0, 8)}.info`)
 }
 
 function dshHome(): string {

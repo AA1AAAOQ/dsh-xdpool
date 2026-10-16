@@ -584,7 +584,12 @@ export function setApi(next: WorkBuddyPoolApi | undefined): void {
  */
 export function createCore(logger?: { warn(...args: unknown[]): void; info?(...args: unknown[]): void }) {
   const client = new WorkBuddyUpstreamClient()
-  const pool = new WorkBuddyAccountPool({ ...logger === undefined ? {} : { logger }, client })
+  // `persistent: true` is the production behaviour: without it the pool's
+  // account list is pure memory, and because the desktop app keeps only the
+  // CURRENT sign-in's credential file on disk, every account gathered by
+  // switching sign-ins evaporated on restart. The store seeds `scan()` from
+  // `~/.dsh/.xdpool/accounts.json` and writes the merged list back.
+  const pool = new WorkBuddyAccountPool({ ...logger === undefined ? {} : { logger }, client, persistent: true })
   const catalogs = {
     cn: new WorkBuddyCatalog('cn'),
     global: new WorkBuddyCatalog('global'),
