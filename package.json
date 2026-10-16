@@ -5,13 +5,13 @@
   "version": "2.0.1",
   "license": "MIT",
   "author": "XDTrees",
-  "homepage": "https://github.com/XDTrees/dsh-workbuddy-xdpool#readme",
+  "homepage": "https://github.com/XDTrees/dsh-xdpool#readme",
   "bugs": {
-    "url": "https://github.com/XDTrees/dsh-workbuddy-xdpool/issues"
+    "url": "https://github.com/XDTrees/dsh-xdpool/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/XDTrees/dsh-workbuddy-xdpool.git"
+    "url": "git+https://github.com/XDTrees/dsh-xdpool.git"
   },
   "keywords": [
     "dsh-plugin",
