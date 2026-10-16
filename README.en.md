@@ -1,5 +1,17 @@
 # DSH WorkBuddy XD Pool
 
+> ### ⚠️ This plugin has been renamed; this package is no longer updated
+>
+> As of 2.1.0 the project is **`dsh-xdpool`** (display name **DSH XD Pool**). All later versions publish there — **this package stops at 2.0.1**.
+>
+> **Switch to the new package:**
+>
+> ```sh
+> dsh plugin --profile desktop add dsh-xdpool
+> ```
+>
+> Switching loses nothing: your third-party API keys, ignore list and account pin live on this machine, and the new plugin picks them up automatically on first start. The one manual step is the default model — if it points at an old provider id (`workbuddy-xdpool*`), the new plugin writes the exact replacement into its startup log. See [the new repo's README](https://github.com/XDTrees/dsh-xdpool#upgrading-from-an-older-version).
+
 <p align="center">
   <a href="https://www.npmjs.com/package/dsh-workbuddy-xdpool"><img src="https://img.shields.io/npm/v/dsh-workbuddy-xdpool?style=flat-square&label=npm&color=cb3837" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/dsh-workbuddy-xdpool"><img src="https://img.shields.io/npm/d18m/dsh-workbuddy-xdpool?style=flat-square&label=downloads&color=cb3837" alt="npm downloads"></a>

@@ -1,5 +1,17 @@
 # DSH WorkBuddy XD Pool
 
+> ### ⚠️ 本插件已改名，此包不再更新
+>
+> 从 2.1.0 起本项目改名为 **`dsh-xdpool`**（显示名 **DSH XD Pool**），此后所有版本都发到新包下，**这个包停在 2.0.1,不会再有更新**。
+>
+> **请改用新包：**
+>
+> ```sh
+> dsh plugin --profile desktop add dsh-xdpool
+> ```
+>
+> 换包**不丢数据**：你的第三方 API key、忽略名单、账号 pin 都在本机，新插件启动时会自动接过来。唯一需要你动手的是「默认模型」——如果它指向旧 provider id（`workbuddy-xdpool*`），新插件会在启动日志里告诉你改成什么。详见[新仓库的 README](https://github.com/XDTrees/dsh-xdpool#从旧版升级)。
+
 <p align="center">
   <a href="https://www.npmjs.com/package/dsh-workbuddy-xdpool"><img src="https://img.shields.io/npm/v/dsh-workbuddy-xdpool?style=flat-square&label=npm&color=cb3837" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/dsh-workbuddy-xdpool"><img src="https://img.shields.io/npm/d18m/dsh-workbuddy-xdpool?style=flat-square&label=downloads&color=cb3837" alt="npm downloads"></a>
