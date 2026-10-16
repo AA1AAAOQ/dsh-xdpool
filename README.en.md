@@ -259,7 +259,7 @@ xdpool:
 
 ## Known limitations
 
-- **Only accounts on THIS machine's desktop app**: the pool cannot — and will not — sign you in or scan a QR code (tokens are minted by the WorkBuddy desktop app's own Tencent SSO and bound to the device). Adding an account = signing in on the desktop app; XD Pool absorbs it.
+- **The WorkBuddy sign-in itself still goes through the desktop app**: XD Pool can launch QR sign-in for its own thirteen login channels, but WorkBuddy's own token is minted by the desktop app's Tencent SSO and bound to the device — the pool will not sign you in to WorkBuddy. Adding an account = signing in on the desktop app; XD Pool absorbs it.
 
 - **A few automation tasks are deliberately not implemented**
   - `Expert_Philanthropy` (charity expert): requires a real donation; there is no way around it.

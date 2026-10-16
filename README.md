@@ -272,7 +272,7 @@ xdpool:
 
 ## 已知限制
 
-- **只能用本机桌面 App 里的账号**：池不会、也没法替你发起 WorkBuddy 的登录或扫码（token 由 WorkBuddy 桌面 App 自己的腾讯 SSO 铸造并和设备绑定）。加号 = 在桌面 App 里登录 / 切换，XD Pool 自动吸收。
+- **WorkBuddy 主账号的登录仍走桌面 App**：XD Pool 可以为插件自己的十三家扫码登录渠道发起扫码，但 WorkBuddy 本体的 token 由桌面 App 的腾讯 SSO 铸造并和设备绑定，池不会替你登录 WorkBuddy。加号 = 在桌面 App 里登录 / 切换，XD Pool 自动吸收。
 
 - **自动化里有几个任务刻意没做**
   - `Expert_Philanthropy`（公益专家）：需要真捐钱，绕不过去。
