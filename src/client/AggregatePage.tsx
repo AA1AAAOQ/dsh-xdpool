@@ -38,7 +38,9 @@ import { BrandTile } from './brand-tile.tsx'
 import { channelIcon, channelInitials } from './channel-icons.ts'
 import { providerIcon } from './provider-icons.ts'
 import { ModelFactsRow } from './model-facts-row.tsx'
-import { modelFactsFor, type ModelProbeReading } from './model-facts.ts'
+import { modelFactsFor, type ModelFacts, type ModelProbeReading } from './model-facts.ts'
+import { knownCapabilities, isFreeLane } from '../free-catalog.ts'
+import { recommendUse } from './recommend-use.ts'
 import { PageHero } from './shell.tsx'
 /** The translator the settings section injects; the page renders every string through it. */
 type Translate = (key: XdPoolSettingsKey, params?: Record<string, unknown>) => string
@@ -85,6 +87,14 @@ function accentFor(id: string): string {
 /** How many model ids a row may print before it collapses into "and N more". */
 const MODEL_PREVIEW = 4
 /**
+ * How many models a vendor must offer before the per-vendor chooser is drawn.
+ *
+ * The whole point of this page's model picker is a roster too long to read at a
+ * glance, so a threshold is what keeps the short ones looking like the short
+ * ones. Eight is where scrolling starts to beat scanning.
+ */
+const MODEL_CHOOSER_THRESHOLD = 8
+/**
  * Per-provider edit buffer.
  *
  * The key is never echoed back by the read route — `aggregateStatusOf` reports
@@ -113,6 +123,21 @@ export function AggregatePage({ t }: AggregatePageProps) {
    * would hide the confirmation line it just produced.
    */
   const [opened, setOpened] = useState<Record<string, boolean>>({})
+  /**
+   * providerId -> the model's ticked state while the chooser is being edited.
+   *
+   * Separate from the server document on purpose, exactly as the key draft is:
+   * this is a BUFFER, and it is only ever sent when the user presses Save. A
+   * chooser that wrote on every click would need a write per tick, would fight
+   * the `load()` that follows each save, and would leave the roster disagreeing
+   * with the boxes whenever the request failed.
+   *
+   * Absent means "no unsaved edit here", which is what makes the Save button
+   * able to say whether there is anything to save.
+   */
+  const [modelDrafts, setModelDrafts] = useState<Record<string, readonly string[]>>({})
+  /** providerId -> the filter typed into that vendor's model list. */
+  const [modelQueries, setModelQueries] = useState<Record<string, string>>({})
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<Category | 'all'>('all')
   /**
@@ -294,6 +319,20 @@ export function AggregatePage({ t }: AggregatePageProps) {
       }
     }
   }, [load, t])
+  /**
+   * The ticked ids for one vendor: the unsaved buffer if there is one, else the
+   * server's own `models`.
+   *
+   * The fallback is `models` and not `availableModels` on purpose. A vendor with
+   * no stored choice is exposing its whole roster, so the boxes must start full;
+   * reading the roster here and then saving "everything" would be right too, but
+   * it would mark every untouched vendor dirty the moment the page opened.
+   */
+  const chosenFor = useCallback(
+    (provider: PoolWebAggregateProvider): ReadonlySet<string> =>
+      new Set(modelDrafts[provider.id] ?? provider.models),
+    [modelDrafts],
+  )
   const laneBusy = busyIds.has('lane')
   const providers = status?.providers ?? []
   const laneEnabled = status?.enabled !== false
@@ -475,6 +514,49 @@ export function AggregatePage({ t }: AggregatePageProps) {
                   onTest={() => { void test(provider.id) }}
                   onDiscover={() => { void discover(provider.id) }}
                   onTestModel={(model) => { void testModel(provider.id, model) }}
+                  chosen={chosenFor(provider)}
+                  onToggleModel={(modelId, on) => {
+                    // The first tick opens the buffer from the saved set, so a
+                    // user who never pressed "Choose…" still gets a working
+                    // chooser instead of boxes that refuse to move.
+                    setModelDrafts(prev => {
+                      const base = prev[provider.id] ?? [...chosenFor(provider)]
+                      const next = new Set(base)
+                      if (on) next.add(modelId)
+                      else next.delete(modelId)
+                      return { ...prev, [provider.id]: [...next] }
+                    })
+                  }}
+                  modelQuery={modelQueries[provider.id] ?? ''}
+                  onModelQuery={value => { setModelQueries(prev => ({ ...prev, [provider.id]: value })) }}
+                  onEditModels={() => { setModelDrafts(prev => ({ ...prev, [provider.id]: [...chosenFor(provider)] })) }}
+                  onDiscardModels={() => {
+                    setModelDrafts(prev => {
+                      const next = { ...prev }
+                      delete next[provider.id]
+                      return next
+                    })
+                  }}
+                  onSelectAllModels={on => {
+                    const freeOnly = isFreeLane(provider.id) || provider.id === 'opencode'
+                    const roster = freeOnly
+                      ? provider.availableModels.filter(id => isFreeLane(id))
+                      : provider.availableModels
+                    setModelDrafts(prev => ({ ...prev, [provider.id]: on ? [...roster] : [] }))
+                  }}
+                  onSaveModels={async () => {
+                    const draft = modelDrafts[provider.id]
+                    if (draft === undefined) return
+                    const ok = await patch({ kind: 'provider', providerId: provider.id, models: draft })
+                    if (ok) {
+                      setModelDrafts(prev => {
+                        const next = { ...prev }
+                        delete next[provider.id]
+                        return next
+                      })
+                      setFlash(prev => ({ ...prev, [provider.id]: t?.('agg.modelsSaved') ?? 'Model selection saved' }))
+                    }
+                  }}
                 />
               ))}
             </div>}
@@ -501,6 +583,14 @@ function ProviderRow({
   onTest,
   onDiscover,
   onTestModel,
+  chosen,
+  onToggleModel,
+  modelQuery,
+  onModelQuery,
+  onEditModels,
+  onSelectAllModels,
+  onSaveModels,
+  onDiscardModels,
 }: {
   provider: PoolWebAggregateProvider
   /** How many model rows this provider contributes to the picker right now. */
@@ -534,6 +624,19 @@ function ProviderRow({
   onDiscover: () => void
   /** Run one connectivity test against one of this vendor's models. */
   onTestModel: (modelId: string) => void
+  /** The model ids currently ticked — the unsaved buffer, or the saved set. */
+  chosen: ReadonlySet<string>
+  /** Tick or untick one model id, creating no buffer if none exists yet. */
+  onToggleModel: (modelId: string, on: boolean) => void  /** The filter typed into this vendor's model list. */
+  modelQuery: string
+  onModelQuery: (value: string) => void
+  /** Start editing: snapshot the saved set into the buffer so Save can tell. */
+  onEditModels: () => void
+  /** Tick the whole roster, or clear the buffer entirely. */
+  onSelectAllModels: (on: boolean) => void
+  onSaveModels: () => Promise<void>
+  /** Throw the buffer away and go back to what the server is serving. */
+  onDiscardModels: () => void
 }) {
   const enabled = provider.enabled
   const effective = enabled && laneEnabled
@@ -554,6 +657,128 @@ function ProviderRow({
   const tileMark =
     icon === undefined ? { initials: channelInitials(provider.name) } : { icon }
   const paneId = `dsm-xdpool-agg-${provider.id}`
+  /**
+   * How many model ids a chooser is worth showing.
+   *
+   * Below this the list is short enough to read without a filter, and a search
+   * box over six entries is noise. Eighty-five is the case this exists for: a
+   * free vendor that advertises everything it has, paid rows included.
+   */
+  /**
+   * Capabilities for one model id, or undefined when it is not being served.
+   *
+   * `modelRows` carries the registry's declared figures, which is the right
+   * answer wherever the registry declares one. Where it declares none — 456 of
+   * 504 rows, and every id a "Fetch models" discovered — the row gets nothing
+   * invented for it: the local capability table is consulted only for ids it
+   * actually covers, and `knownCapabilities` answers `undefined` for the rest
+   * rather than falling back to a generic row. A blank beside a real model name
+   * is a gap; "128K" that we guessed would be a lie the user cannot see.
+   *
+   * It is consulted for ids on the keyless free lane and for OpenCode Free,
+   * where the same table is the authority the lane itself builds its catalogue
+   * from — those ids carry no registry row at all, so this is their best
+   * published answer rather than a guess about it.
+   */
+  const factsOf = (modelId: string): ModelFacts | undefined => {
+    const row = modelRows.find(candidate => candidate.modelId === modelId)
+    if (row === undefined) return undefined
+    const declared = modelFactsFor(row)
+    if (declared.contextWindow !== undefined) return declared
+    if (!usesLocalCapabilities(provider)) return declared
+    const local = knownCapabilities(modelId)
+    if (local === undefined) return declared
+    return {
+      ...declared,
+      contextWindow: local.contextWindow,
+      maxOutputTokens: declared.maxOutputTokens ?? local.maxOutput,
+      vision: local.vision,
+      ...(local.reasoning
+        ? { supportedEfforts: [...(declared.supportedEfforts ?? ['thinking'])] }
+        : {}),
+    }
+  }
+  /**
+   * Whether this vendor's rows may fall back to the local capability table.
+   *
+   * Only the two keyless lanes qualify. Every other vendor has a registry, and a
+   * locally-guessed window for a paid id would contradict whatever that vendor
+   * actually serves.
+   */
+  const usesLocalCapabilities = (vendor: PoolWebAggregateStatus['providers'][number]): boolean =>
+    isFreeLane(vendor.id) || vendor.id === 'opencode'
+  /**
+   * OpenCode's keyless free pool advertises every model it has, paid rows
+   * included, and the plugin's own免密 lane is free by construction. For both,
+   * the chooser shows only the free rows — the user asked that the free fetch
+   * surface free models and nothing else — and the "select all" button is capped
+   * to that free roster so it cannot quietly tick a paid id.
+   */
+  const freeOnly = usesLocalCapabilities(provider)
+  const roster = freeOnly
+    ? provider.availableModels.filter(id => isFreeLane(id))
+    : provider.availableModels
+  const rosterSize = roster.length
+  const chooserWorthIt = rosterSize >= MODEL_CHOOSER_THRESHOLD
+  const needle = modelQuery.trim().toLowerCase()
+  const listedModels = (
+    chooserWorthIt && needle === ''
+      ? roster
+      : roster.filter(id => id.toLowerCase().includes(needle))
+  )
+    .slice()
+    /*
+     * The roster arrives in whatever order the vendor listed or the registry
+     * declared it, and that order answers no question. Rank it the way the
+     * channel cards rank: free first, then the widest window, then image
+     * support, then name. On a keyless lane that puts the handful of models
+     * that actually answer above seventy that return 401 for want of a key.
+     */
+    .sort((a, b) => {
+      const freeA = isFreeLane(a)
+      const freeB = isFreeLane(b)
+      if (freeA !== freeB) return freeA ? -1 : 1
+      const windowA = factsOf(a)?.contextWindow ?? 0
+      const windowB = factsOf(b)?.contextWindow ?? 0
+      if (windowA !== windowB) return windowB - windowA
+      const visionA = factsOf(a)?.vision === true
+      const visionB = factsOf(b)?.vision === true
+      if (visionA !== visionB) return visionA ? -1 : 1
+      return a.localeCompare(b)
+    })
+  /**
+   * The same roster ranked, joined back onto its registry rows.
+   *
+   * The fact list below used to walk `modelRows` in whatever order the registry
+   * happened to hold, which meant the rows a user reads to judge a vendor were
+   * ordered by nothing at all while the picker above them was ordered by
+   * capability. Ranking once and deriving both from it keeps the two in step.
+   */
+  const sortedModelRows = modelRows
+    .filter(row => !freeOnly || isFreeLane(row.modelId))
+    .slice()
+    .sort((a, b) => {
+      const freeA = isFreeLane(a.modelId)
+      const freeB = isFreeLane(b.modelId)
+      if (freeA !== freeB) return freeA ? -1 : 1
+      const windowA = factsOf(a.modelId)?.contextWindow ?? 0
+      const windowB = factsOf(b.modelId)?.contextWindow ?? 0
+      if (windowA !== windowB) return windowB - windowA
+      const visionA = factsOf(a.modelId)?.vision === true
+      const visionB = factsOf(b.modelId)?.vision === true
+      if (visionA !== visionB) return visionA ? -1 : 1
+      return a.modelId.localeCompare(b.modelId)
+    })
+  /**
+   * Whether the boxes differ from what the server is serving right now.
+   *
+   * Compared as a set, not as a list: the order the buffer holds is whatever
+   * order the user clicked in, and a save that only reordered the list must not
+   * present itself as a change worth writing.
+   */
+  const modelSelectionDirty =
+    chosen.size !== provider.models.length ||
+    provider.models.some(id => !chosen.has(id))
   return (
     <article
       className="dsm-xdpool-agg-row"
@@ -593,6 +818,15 @@ function ProviderRow({
           <span className="dsm-xdpool-agg-tag" data-tone="info">
             {t?.('agg.models', { count: provider.models.length }) ?? `${provider.models.length} models`}
           </span>
+          {/* Only worth its own chip once the roster is bigger than the exposed
+              set: "3 of 85" is the answer to "why does this vendor only show
+              three", and at 3 of 3 it would just repeat the count beside it. */}
+          {rosterSize > provider.models.length
+            ? <span className="dsm-xdpool-agg-tag" data-tone="busy">
+                {t?.('agg.chosenOf', { chosen: provider.models.length, total: rosterSize })
+                  ?? `${provider.models.length} of ${rosterSize} chosen`}
+              </span>
+            : null}
           {contributed > 0
             ? <span className="dsm-xdpool-agg-tag" data-tone="busy">
                 {t?.('agg.contributed', { count: contributed })
@@ -734,15 +968,23 @@ function ProviderRow({
             serves from. */}
         {modelRows.length > 0
           ? <ul className="dsm-xdpool-agg-facts">
-              {modelRows.map(row => {
+              {sortedModelRows.map(row => {
                 const key = `${provider.id}/${row.modelId}`
+                const recuse = isFreeLane(row.modelId) ? recommendUse(factsOf(row.modelId)) : undefined
                 return (
                   <li
                     key={row.id}
                     className="dsm-xdpool-agg-fact"
                     data-live={row.source === 'discovered' ? 'true' : undefined}
                   >
-                    <span className="dsm-xdpool-agg-fact-name">{row.name}</span>
+                    <span className="dsm-xdpool-agg-fact-name">
+                      {row.name}
+                      {isFreeLane(row.modelId) && (
+                        <span className="dsm-xdpool-cpool-tag" data-tone="free">
+                          {t?.('agg.modelFreeTag') ?? 'free'}
+                        </span>
+                      )}
+                    </span>
                     <ModelFactsRow
                       t={t}
                       facts={modelFactsFor(row)}
@@ -750,10 +992,132 @@ function ProviderRow({
                         ? { onTest: () => { onTestModel(row.modelId) } }
                         : { probe: probes[key], probing: probing === key }}
                     />
+                    {recuse === undefined ? null : (
+                      <p className="dsm-xdpool-recuse">
+                        <span className="dsm-xdpool-recuse-label">{t?.('recuse.label') ?? '推荐用途'}</span>
+                        {recuse}
+                      </p>
+                    )}
                   </li>
                 )
               })}
             </ul>
+          : null}
+        {/* The model chooser. Rendered whenever the vendor offers more than the
+            collapsed "first four" line can show, because that is the point at
+            which the ids on screen stop being readable — the ids list stays as
+            the summary, and this is where they become choices. */}
+        {rosterSize > MODEL_PREVIEW
+          ? <div className="dsm-xdpool-agg-picker">
+              <div className="dsm-xdpool-agg-pickerhead">
+                <span className="dsm-xdpool-agg-pickerlabel">
+                  {t?.('agg.modelPick') ?? 'Choose which models this vendor contributes'}
+                </span>
+                <button
+                  type="button"
+                  className="dsm-xdpool-btn"
+                  data-tone="quiet"
+                  onClick={onEditModels}
+                >
+                  {t?.('agg.editModels') ?? 'Choose…'}
+                </button>
+              </div>
+              <p className="dsm-xdpool-agg-hint">
+                {t?.('agg.modelPickHint') ?? ''}
+              </p>
+              {chooserWorthIt || modelQuery !== ''
+                ? <input
+                    className="dsm-xdpool-cpool-searchbox"
+                    type="search"
+                    value={modelQuery}
+                    placeholder={t?.('agg.modelSearch') ?? 'Filter models…'}
+                    onChange={event => { onModelQuery(event.target.value) }}
+                  />
+                : null}
+              <ul className="dsm-xdpool-agg-modellist">
+                {listedModels.map(id => {
+                  const on = chosen.has(id)
+                  const recuse = isFreeLane(id) ? recommendUse(factsOf(id)) : undefined
+                  return (
+                    <li key={id} className="dsm-xdpool-agg-modelrow">
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={event => { onToggleModel(id, event.target.checked) }}
+                        />
+                        <span className="dsm-xdpool-agg-modelid">{id}</span>
+                        {isFreeLane(id) && (
+                          <span className="dsm-xdpool-cpool-tag" data-tone="free">
+                            {t?.('agg.modelFreeTag') ?? 'free'}
+                          </span>
+                        )}
+                      </label>
+                      {/* The capabilities a registry row does know, when this
+                          vendor is actually serving the model right now. For an
+                          id that is not exposed there is no row to join on, and
+                          a blank would be a lie rather than a gap. */}
+                      {factsOf(id) === undefined
+                        ? null
+                        : <ModelFactsRow t={t} facts={factsOf(id) ?? {}} />}
+                      {recuse === undefined ? null : (
+                        <p className="dsm-xdpool-recuse">
+                          <span className="dsm-xdpool-recuse-label">{t?.('recuse.label') ?? '推荐用途'}</span>
+                          {recuse}
+                        </p>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+              {listedModels.length === 0
+                ? <p className="dsm-xdpool-agg-hint">
+                    {rosterSize === 0
+                      ? (t?.('agg.modelNoneAtAll') ?? 'This vendor lists no models.')
+                      : (t?.('agg.modelNone') ?? 'No model matches that filter.')}
+                  </p>
+                : null}
+              {modelSelectionDirty
+                ? <div className="dsm-xdpool-agg-pickeracts">
+                    <button
+                      type="button"
+                      className="dsm-xdpool-btn"
+                      data-tone="quiet"
+                      disabled={busy}
+                      onClick={() => { onSelectAllModels(false) }}
+                    >
+                      {t?.('agg.selectNone') ?? 'Clear all'}
+                    </button>
+                    <button
+                      type="button"
+                      className="dsm-xdpool-btn"
+                      data-tone="quiet"
+                      disabled={busy}
+                      onClick={() => { onSelectAllModels(true) }}
+                    >
+                      {t?.('agg.selectAll') ?? 'Select all'}
+                    </button>
+                    <button
+                      type="button"
+                      className="dsm-xdpool-btn"
+                      data-tone="quiet"
+                      disabled={busy}
+                      onClick={onDiscardModels}
+                    >
+                      {t?.('agg.discardModels') ?? 'Discard'}
+                    </button>
+                    <button
+                      type="button"
+                      className="dsm-xdpool-btn"
+                      data-tone="primary"
+                      disabled={busy}
+                      onClick={() => { void onSaveModels() }}
+                    >
+                      {busy ? (t?.('agg.savingModels') ?? 'Saving…') : (t?.('agg.saveModels') ?? 'Save models')}
+                    </button>
+                  </div>
+                : null}
+            </div>
           : null}
         {flash !== undefined
           ? <p className="dsm-xdpool-agg-flash">{flash}</p>

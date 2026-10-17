@@ -63,6 +63,7 @@ import type { PaidSibling } from '../siblings.ts'
 import { ModelFactsRow } from './model-facts-row.tsx'
 import type { ModelProbeReading } from './model-facts.ts'
 import type { UsageSummary } from '../stats.ts'
+import { ChannelPoolSection } from './ChannelPoolSection.tsx'
 import { POOL_VERSION } from '../version.ts'
 import type { XdPoolSettingsKey } from './locales.ts'
 /** Localized copy injected by the browser-plugin registration. */
@@ -152,7 +153,7 @@ const AUTOMATION_POLL_ATTEMPTS = 90
 // The card renders one row per kind, and the list must match the scheduler's
 // `AUTOMATION_JOB_KINDS` exactly — they are two hand-written lists that have to
 // agree, and a kind missing here is invisible (the job runs, nothing shows it).
-export const AUTOMATION_JOBS = ['checkin', 'report', 'tasks', 'streak', 'travel'] as const
+export const AUTOMATION_JOBS = ['checkin', 'report', 'tasks', 'streak', 'travel', 'compensation'] as const
 export type AutomationJobKind = typeof AUTOMATION_JOBS[number]
 /**
  * The hour list to save for one job: what the card holds, or the default.
@@ -175,6 +176,7 @@ function automationHours(status: PoolWebStatus, kind: AutomationJobKind): readon
     case 'checkin': return automation.checkinHours
     case 'streak': return automation.streakHours
     case 'travel': return automation.travelHours
+    case 'compensation': return automation.compensationHours
   }
 }
 /** Read one job's last-run record off the status document. */
@@ -280,6 +282,7 @@ interface AutomationTotals {
   readonly checkinCredit: number
   readonly bonusCredit: number
   readonly travelCredit: number
+  readonly compensationCredit: number
 }
 /**
  * Sum one region's daily automation earnings.
@@ -298,7 +301,8 @@ function automationTotalsOf(status: PoolWebStatus | undefined): AutomationTotals
       checkinCredit: sum.checkinCredit + entry.checkinCredit,
       bonusCredit: sum.bonusCredit + entry.bonusCredit,
       travelCredit: sum.travelCredit + entry.travelCredit,
-    }), { credit: 0, energy: 0, claimed: 0, checkinCredit: 0, bonusCredit: 0, travelCredit: 0 })
+      compensationCredit: sum.compensationCredit + entry.compensationCredit,
+    }), { credit: 0, energy: 0, claimed: 0, checkinCredit: 0, bonusCredit: 0, travelCredit: 0, compensationCredit: 0 })
 }
 /**
  * How much credit is left in this lane, already formatted.
@@ -1184,6 +1188,7 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
         taskHours: hoursOrDefault(existing?.taskHours, DEFAULT_AUTOMATION_HOURS.tasks),
         streakHours: hoursOrDefault(existing?.streakHours, DEFAULT_AUTOMATION_HOURS.streak),
         travelHours: hoursOrDefault(existing?.travelHours, DEFAULT_AUTOMATION_HOURS.travel),
+        compensationHours: hoursOrDefault(existing?.compensationHours, DEFAULT_AUTOMATION_HOURS.compensation),
         enabled,
       })
       for (const other of REGION_CARDS) await refresh(other)
@@ -1892,6 +1897,7 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                               </p>
                               {card.automationTotals.credit === 0 && card.automationTotals.checkinCredit === 0
                                 && card.automationTotals.bonusCredit === 0 && card.automationTotals.travelCredit === 0
+                                && card.automationTotals.compensationCredit === 0
                                 ? null
                                 : <div className="dsm-xdpool-auto-total">
                                     <span className="dsm-xdpool-auto-total-label">
@@ -1923,6 +1929,12 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                                         ? <span className="dsm-xdpool-auto-total-row">
                                             {t?.('row.autoFromTravel', { credit: card.automationTotals.travelCredit })
                                               ?? `Buddy +${card.automationTotals.travelCredit}`}
+                                          </span>
+                                        : null}
+                                      {card.automationTotals.compensationCredit > 0
+                                        ? <span className="dsm-xdpool-auto-total-row">
+                                            {t?.('row.autoFromCompensation', { credit: card.automationTotals.compensationCredit })
+                                              ?? `Compensation +${card.automationTotals.compensationCredit}`}
                                           </span>
                                         : null}
                                     </span>
@@ -1966,6 +1978,7 @@ export function PoolCard({ t, settingsScope }: PoolCardProps) {
                 })}
               </div>
               </section>
+              <ChannelPoolSection t={t} />
               {flash === undefined ? null
                 : <p className="dsm-xdpool-note">{flash}</p>}
               {error === undefined ? null
@@ -2209,6 +2222,12 @@ function AccountBlock({
                   ? <span className="dsm-xdpool-earned-row">
                       {t?.('row.autoFromTravel', { credit: account.automationToday.travelCredit })
                         ?? `Buddy +${account.automationToday.travelCredit}`}
+                    </span>
+                  : null}
+                {account.automationToday.compensationCredit > 0
+                  ? <span className="dsm-xdpool-earned-row">
+                      {t?.('row.autoFromCompensation', { credit: account.automationToday.compensationCredit })
+                        ?? `Compensation +${account.automationToday.compensationCredit}`}
                     </span>
                   : null}
               </span>

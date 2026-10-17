@@ -103,6 +103,7 @@ describe('automation earnings per account', () => {
       checkinCredit: 0,
       bonusCredit: 0,
       travelCredit: 0,
+      compensationCredit: 0,
       date: '2026-09-23',
     })
     // The other account earned nothing, so it is absent rather than zeroed.
@@ -126,6 +127,7 @@ describe('automation earnings per account', () => {
       checkinCredit: 0,
       bonusCredit: 0,
       travelCredit: 0,
+      compensationCredit: 0,
       date: '2026-09-23',
     })
   })
@@ -154,6 +156,7 @@ describe('automation earnings per account', () => {
       checkinCredit: 0,
       bonusCredit: 0,
       travelCredit: 0,
+      compensationCredit: 0,
       date: '2026-09-24',
     })
   })
@@ -200,6 +203,7 @@ describe('earnings by source', () => {
     recorder.recordEarnings(id, '2026-09-23', { credit: 300, energy: 8, claimed: 2 })
     recorder.recordEarnings(id, '2026-09-23', { bonusCredit: 50 })
     recorder.recordEarnings(id, '2026-09-23', { travelCredit: 20 })
+    recorder.recordEarnings(id, '2026-09-23', { compensationCredit: 500 })
 
     expect(scheduler.status().earningsToday[id]).toEqual({
       credit: 300,
@@ -208,6 +212,7 @@ describe('earnings by source', () => {
       checkinCredit: 100,
       bonusCredit: 50,
       travelCredit: 20,
+      compensationCredit: 500,
       date: '2026-09-23',
     })
   })

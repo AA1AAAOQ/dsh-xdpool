@@ -24,7 +24,7 @@
 
 import type { WorkBuddyAccount, WorkBuddyAccountPool, WorkBuddyCredential } from './accounts'
 import { randomUUID } from 'node:crypto'
-import { isAlreadyCheckin, regionOf } from './upstream'
+import { isAlreadyCheckin, isNoCompensation, regionOf } from './upstream'
 import type { WorkBuddyTask, WorkBuddyUpstreamClient } from './upstream'
 import {
   APPEARANCE_THEME_KEY, LIGHTHOUSE_EXPERT_ID, automationChain, appearanceChain, buddyAppChain,
@@ -126,6 +126,8 @@ export interface AutomationOptions {
   streakHours?: readonly number[]
   /** Hour list for the buddy travel job. */
   travelHours?: readonly number[]
+  /** Hour list for the outage-compensation claim. */
+  compensationHours?: readonly number[]
   /** Per-account serial delay, in milliseconds. */
   accountDelayMs?: number
   /** Override the gap between expert chains, in milliseconds (tests use 0). */
@@ -255,6 +257,14 @@ export interface AutomationAccountEarnings {
   bonusCredit: number
   /** Credits from the buddy adoption / travel loop today. */
   travelCredit: number
+  /**
+   * Credits collected from the outage-compensation offer today.
+   *
+   * Its own column for the same reason as `checkinCredit`: a 500-credit
+   * outage refund is a different thing from a 100-credit daily check-in, and
+   * the card lists what earned what.
+   */
+  compensationCredit: number
   /** Local date the counters belong to. */
   date: string
 }
@@ -266,6 +276,7 @@ export interface AutomationAccountGain {
   checkinCredit: number
   bonusCredit: number
   travelCredit: number
+  compensationCredit: number
 }
 
 /** Totals from running the whole ordered pass at once. */
@@ -296,12 +307,14 @@ export interface AutomationStatus {
   reportHours: readonly number[]
   streakHours: readonly number[]
   travelHours: readonly number[]
+  compensationHours: readonly number[]
   jobs: {
     checkin: AutomationJobState
     report: AutomationJobState
     tasks: AutomationJobState
     streak: AutomationJobState
     travel: AutomationJobState
+    compensation: AutomationJobState
   }
   /** Claimable tasks seen on the most recent task pass, across accounts. */
   claimableSeen: number
@@ -322,10 +335,10 @@ export interface AutomationStatus {
 }
 
 /** The three plus one job kinds, in a stable order. */
-export type AutomationJobKind = 'checkin' | 'tasks' | 'report' | 'streak' | 'travel'
+export type AutomationJobKind = 'checkin' | 'tasks' | 'report' | 'streak' | 'travel' | 'compensation'
 
-/** The four jobs in the order a tick runs them: report before tasks, always. */
-export const AUTOMATION_JOB_KINDS: readonly AutomationJobKind[] = ['checkin', 'report', 'tasks', 'streak', 'travel']
+/** The jobs in the order a tick runs them: report before tasks, always. */
+export const AUTOMATION_JOB_KINDS: readonly AutomationJobKind[] = ['checkin', 'report', 'tasks', 'streak', 'travel', 'compensation']
 
 /** Reject anything that is not a job kind, so a route cannot name an unknown job. */
 export function isAutomationJobKind(value: unknown): value is AutomationJobKind {
@@ -381,9 +394,11 @@ function diffEarnings(
       checkinCredit: entry.checkinCredit - (was?.checkinCredit ?? 0),
       bonusCredit: entry.bonusCredit - (was?.bonusCredit ?? 0),
       travelCredit: entry.travelCredit - (was?.travelCredit ?? 0),
+      compensationCredit: entry.compensationCredit - (was?.compensationCredit ?? 0),
     }
     const empty = gain.credit === 0 && gain.energy === 0 && gain.claimed === 0
       && gain.checkinCredit === 0 && gain.bonusCredit === 0 && gain.travelCredit === 0
+      && gain.compensationCredit === 0
     // An account that gained nothing is left out entirely, so the card can
     // list just the accounts that actually earned this run.
     if (empty) continue
@@ -506,6 +521,7 @@ export class WorkBuddyScheduler {
 
   private streakHours: readonly number[]
   private travelHours: readonly number[]
+  private compensationHours: readonly number[]
 
   private timer: NodeJS.Timeout | undefined
 
@@ -531,6 +547,7 @@ export class WorkBuddyScheduler {
     tasks: { ...EMPTY_JOB_STATE },
     streak: { ...EMPTY_JOB_STATE },
     travel: { ...EMPTY_JOB_STATE },
+    compensation: { ...EMPTY_JOB_STATE },
   }
 
   private claimableSeen = 0
@@ -576,6 +593,10 @@ export class WorkBuddyScheduler {
     // tomorrow. Morning out, evening back — the reference panel settled on the
     // same pair for the same reason.
     this.travelHours = hoursOrDefault(options.travelHours, DEFAULT_AUTOMATION_HOURS.travel)
+    // Late in the morning, on purpose: the compensation offer appears when the
+    // outage is announced, so an early slot would find nothing. By mid-morning a
+    // fresh offer is live and the deadline (typically days out) still has room.
+    this.compensationHours = hoursOrDefault(options.compensationHours, DEFAULT_AUTOMATION_HOURS.compensation)
   }
 
   /** Apply a new configuration; safe to call while running. */
@@ -626,6 +647,9 @@ export class WorkBuddyScheduler {
     if (options.travelHours !== undefined) {
       this.travelHours = hoursOrDefault(options.travelHours, DEFAULT_AUTOMATION_HOURS.travel)
     }
+    if (options.compensationHours !== undefined) {
+      this.compensationHours = hoursOrDefault(options.compensationHours, DEFAULT_AUTOMATION_HOURS.compensation)
+    }
   }
 
   /** Hours for one job, used by the loop and the status document. */
@@ -636,6 +660,7 @@ export class WorkBuddyScheduler {
       case 'tasks': return this.taskHours
       case 'streak': return this.streakHours
       case 'travel': return this.travelHours
+      case 'compensation': return this.compensationHours
     }
   }
 
@@ -773,6 +798,7 @@ export class WorkBuddyScheduler {
       reportHours: this.reportHours,
       streakHours: this.streakHours,
       travelHours: this.travelHours,
+      compensationHours: this.compensationHours,
       jobs,
       claimableSeen: this.claimableSeen,
       earningsToday: this.earningsSnapshot(),
@@ -916,8 +942,10 @@ export class WorkBuddyScheduler {
     const checkinCredit = delta.checkinCredit ?? 0
     const bonusCredit = delta.bonusCredit ?? 0
     const travelCredit = delta.travelCredit ?? 0
+    const compensationCredit = delta.compensationCredit ?? 0
     const empty = credit === 0 && energy === 0 && claimed === 0
       && checkinCredit === 0 && bonusCredit === 0 && travelCredit === 0
+      && compensationCredit === 0
     if (empty) return
     const existing = this.earnings.get(accountId)
     this.earnings.set(accountId, {
@@ -927,6 +955,7 @@ export class WorkBuddyScheduler {
       checkinCredit: (existing?.checkinCredit ?? 0) + checkinCredit,
       bonusCredit: (existing?.bonusCredit ?? 0) + bonusCredit,
       travelCredit: (existing?.travelCredit ?? 0) + travelCredit,
+      compensationCredit: (existing?.compensationCredit ?? 0) + compensationCredit,
       date: today,
     })
     // Persisted on every write: a restart mid-day must not wipe what was
@@ -1060,6 +1089,24 @@ export class WorkBuddyScheduler {
           }
           case 'travel': {
             await this.runTravel(account)
+            break
+          }
+          case 'compensation': {
+            try {
+              const outcome = await this.runCompensation(account)
+              // Only an offer that was actually collectable counts as earnings;
+              // "no offer right now" is a successful no-op, not a failure.
+              if (outcome.credit > 0) {
+                detail.push(`补偿 +${outcome.credit}`)
+                this.logger.info?.(`automation compensation ${account.label}: +${outcome.credit} credit`)
+              }
+            } catch (error: unknown) {
+              // No offer for this account is the normal state for most of the
+              // time, and upstream reports it as an error. Treating that as a
+              // failure would make every healthy account look broken.
+              if (!isNoCompensation(error)) throw error
+              this.logger.info?.(`automation compensation ${account.label}: no offer to collect`)
+            }
             break
           }
 
@@ -1509,5 +1556,31 @@ export class WorkBuddyScheduler {
     }
 
     this.logger.info?.(`automation travel ${account.label}: nothing to do (state=${travel.state})`)
+  }
+
+  /**
+   * Collect the running service-outage compensation offer, if any.
+   *
+   * Read-then-claim, rather than claim-blind: a claim costs one mutation the
+   * upstream may reject, and the status call is a free read that also tells us
+   * the size on offer so the ledger records the real number instead of
+   * assuming the usual 500.
+   *
+   * Returns the credits collected — 0 when there was nothing to collect, which
+   * is the normal case for most of the year.
+   */
+  private async runCompensation(account: WorkBuddyAccount): Promise<{ credit: number }> {
+    const credential = account.credential
+    const status = await this.client.fetchCompensationStatus(credential)
+    if (!status.active || status.claimed || status.creditNum <= 0) {
+      return { credit: 0 }
+    }
+    const claim = await this.client.claimCompensation(credential)
+    if (!claim.claimed) return { credit: 0 }
+    // Upstream repeats the amount on the claim response; fall back to the
+    // status read when it does not, since the status number is authoritative.
+    const credit = claim.creditNum > 0 ? claim.creditNum : status.creditNum
+    this.recordEarnings(account.id, dayKey(this.now()), { compensationCredit: credit })
+    return { credit }
   }
 }

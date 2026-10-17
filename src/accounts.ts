@@ -798,6 +798,15 @@ export class WorkBuddyAccountPool {
   private readonly persistent: boolean
   /** Path of the durable store; computed once so tests can pin it. */
   private readonly storePath: string
+  /**
+   * Optional second source of credentials: the channel pack's account pool,
+   * which holds the accounts the user signed in through the scan-login page.
+   *
+   * A function rather than a list because that pool is mounted asynchronously
+   * and can be re-read on demand; `undefined` means "no such source", which is
+   * the state every test and every pre-mount startup is in.
+   */
+  private externalSource?: () => Promise<readonly WorkBuddyCredential[]>
 
   constructor(options: AccountPoolOptions = {}) {
     this.logger = options.logger
@@ -845,6 +854,15 @@ export class WorkBuddyAccountPool {
     }
     // Reserves are replaced wholesale so the map mirrors the saved document.
     if (options.creditReserves !== undefined) this.setCreditReserves(options.creditReserves)
+  }
+
+  /**
+   * Register (or clear, with `undefined`) the extra credential source that
+   * `scan()` merges alongside the auth directories. Rescanning is the caller's
+   * job: this only changes where the next scan looks.
+   */
+  applyExternalSource(source?: () => Promise<readonly WorkBuddyCredential[]>): void {
+    this.externalSource = source
   }
 
   /**
@@ -929,6 +947,25 @@ export class WorkBuddyAccountPool {
         + `${found.length} account(s) still loaded. Reasons: `
         + [...new Set(skipped.map(s => s.reason))].join('; '),
       )
+    }
+
+    // Accounts that signed in through the scan-login page never touch an auth
+    // directory — the channel pack keeps their credentials under its own
+    // namespace — so they are collected here and merged by the same identity
+    // rule as desktop sign-ins. That merge is the whole point: one person who
+    // signed in both ways must show up as one account, on the same card.
+    if (this.externalSource !== undefined) {
+      try {
+        const external = await this.externalSource()
+        for (const credential of external) {
+          if (this.ignoredIds.size > 0 && this.ignoredIds.has(workbuddyAccountId(credential))) continue
+          found.push(credential)
+        }
+      } catch (error: unknown) {
+        // A source that cannot answer is a missing pool, not a broken one: the
+        // desktop accounts found above are still valid and still usable.
+        this.logger?.warn?.('dsh-xdpool: could not read channel-pack accounts; desktop accounts only', error)
+      }
     }
 
     const byId = new Map<string, WorkBuddyAccount>()

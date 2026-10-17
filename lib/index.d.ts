@@ -273,6 +273,29 @@ interface WorkBuddyCheckinClaim {
   streakDays: number;
   isStreakDay: boolean;
 }
+/**
+ * Service-outage compensation offer (the "500 credits" banner on
+ * /profile/plans-usage).
+ *
+ * Upstream shape, verified live on 2026-10-16:
+ *   `{active: true, claimed: false, credit_num: 500, validity_period: 1,
+ *     end_time: "2026-10-22 23:59:59"}`
+ */
+interface WorkBuddyCompensationStatus {
+  /** An offer is running for this account (independent of claimability). */
+  active: boolean;
+  /** This account already collected the current offer. */
+  claimed: boolean;
+  /** Credits on offer — 500 for the DeepSeek-outage compensation. */
+  creditNum: number;
+  /** Claim deadline, upstream's own string, absent when there is no offer. */
+  endTime?: string;
+}
+/** Compensation claim result. Upstream returns the same envelope shape. */
+interface WorkBuddyCompensationClaim {
+  claimed: boolean;
+  creditNum: number;
+}
 /** Result of one upstream chat attempt. */
 type ChatStreamResult = {
   ok: true;
@@ -503,6 +526,22 @@ export declare class WorkBuddyUpstreamClient {
   fetchCheckinStatus(credential: WorkBuddyCredential): Promise<WorkBuddyCheckinStatus>;
   /** Claim today's check-in reward. The browser route guards this mutation. */
   claimDailyCheckin(credential: WorkBuddyCredential): Promise<WorkBuddyCheckinClaim>;
+  /**
+   * Read the service-outage compensation offer, if any.
+   *
+   * NOTE the missing `/v2`: unlike the check-in routes, this one lives at
+   * `/billing/meter/compensation-status` and the `/v2` variant answers a plain
+   * 404 (verified on both billing hosts). The web client calls it that way too.
+   */
+  fetchCompensationStatus(credential: WorkBuddyCredential): Promise<WorkBuddyCompensationStatus>;
+  /**
+   * Collect the running compensation offer.
+   *
+   * Idempotent upstream: a repeat claim answers `code: 0` with
+   * `claimed: true` rather than an error, so a second pass in the same day
+   * records as a no-op instead of a failure.
+   */
+  claimCompensation(credential: WorkBuddyCredential): Promise<WorkBuddyCompensationClaim>;
   /**
    * Public fingerprint fields every desktop event carries.
    *
@@ -1028,6 +1067,15 @@ export declare class WorkBuddyAccountPool {
   private readonly persistent;
   /** Path of the durable store; computed once so tests can pin it. */
   private readonly storePath;
+  /**
+   * Optional second source of credentials: the channel pack's account pool,
+   * which holds the accounts the user signed in through the scan-login page.
+   *
+   * A function rather than a list because that pool is mounted asynchronously
+   * and can be re-read on demand; `undefined` means "no such source", which is
+   * the state every test and every pre-mount startup is in.
+   */
+  private externalSource?;
   constructor(options?: AccountPoolOptions);
   /**
    * Re-apply configuration that only affects discovery and cooldown policy,
@@ -1043,6 +1091,12 @@ export declare class WorkBuddyAccountPool {
     /** Per-account credit floor, keyed by account id. Absent keeps the current map. */
     creditReserves?: Readonly<Record<string, number>>;
   }): void;
+  /**
+   * Register (or clear, with `undefined`) the extra credential source that
+   * `scan()` merges alongside the auth directories. Rescanning is the caller's
+   * job: this only changes where the next scan looks.
+   */
+  applyExternalSource(source?: () => Promise<readonly WorkBuddyCredential[]>): void;
   /**
    * Replace the permanent ignore list.
    *
@@ -1454,6 +1508,17 @@ type PoolWebAggregatePatch = {
   enabled?: boolean;
   apiKey?: string;
   baseUrl?: string;
+  /**
+   * The chosen model set, replacing whatever this provider exposed before.
+   *
+   * This is a REPLACEMENT, not a delta, because the card sends the whole
+   * selection in one go: the browser half holds no server-side roster to
+   * patch against, and a delta would let two open tabs silently interleave
+   * into a set neither of them chose. An empty array is not "zero models" —
+   * `updateProviderSetting` drops the field, which returns the provider to
+   * its discovered listing or the registry's own.
+   */
+  models?: readonly string[];
 } |
 /** Flip the lane's own master switch; `false` contributes no models at all. */
 {
@@ -1500,8 +1565,16 @@ interface PoolWebAggregateProvider {
   baseUrl?: string;
   /** True when the provider declares a model listing this lane can read. */
   hasListing: boolean;
-  /** Model ids currently exposed: the chosen set, or the registry's own. */
+  /** Model ids currently exposed: the chosen set, or the whole roster. */
   models: readonly string[];
+  /**
+   * Every id this provider could offer, which is the roster after a fetch.
+   *
+   * Equal to `models` until the user narrows the choice. It exists so the card
+   * can offer a checkbox per id — without it, choosing could only ever remove
+   * rows and never put one back.
+   */
+  availableModels: readonly string[];
   /** True when the exposed set came from a live listing rather than the registry. */
   discovered: boolean;
   /** When the provider was first configured. */
@@ -1557,6 +1630,34 @@ interface PoolWebChannel {
   loginKind: 'browser';
   /** True when this plugin's own account pool already serves this channel. */
   ownedByPool: boolean;
+  /**
+   * True when the vendor's own login page offers a phone-code path.
+   *
+   * Not a capability this plugin provides — the pack drives the page, and all
+   * this says is that the page behind the button holds a second door. Raccoon's
+   * does (QR and SMS on one screen), and its QR is the one that goes stale while
+   * the user reads the message.
+   */
+  smsHint?: boolean;
+  /**
+   * What the pack can report about this vendor's credits, when it can report
+   * something at all.
+   *
+   * Absent is meaningful: it means `credits.balances` has no branch for this
+   * provider, so no balance exists to show. Present-but-empty means balances
+   * work but there is no daily check-in behind them.
+   *
+   * `unit` is the vendor's own currency and is never normalised across
+   * vendors: Cline pays US dollars and ZCode pays token buckets, so a single
+   * "credits" label would be wrong for a third of the roster.
+   */
+  credits?: {
+    claim?: boolean;
+    status?: boolean;
+    unit?: 'tokens' | 'dollars';
+    /** Percentages per quota bucket rather than a credit total. */
+    quota?: boolean;
+  };
 }
 /** The document {@link POOL_CHANNELS_PATH} answers with. */
 interface PoolWebChannelsStatus {
@@ -1984,12 +2085,14 @@ interface PoolWebAutomation {
   taskHours: readonly number[];
   streakHours: readonly number[];
   travelHours: readonly number[];
+  compensationHours: readonly number[];
   jobs: {
     checkin: PoolWebAutomationJob;
     report: PoolWebAutomationJob;
     tasks: PoolWebAutomationJob;
     streak: PoolWebAutomationJob;
     travel: PoolWebAutomationJob;
+    compensation: PoolWebAutomationJob;
   };
   /** Claimable tasks seen on the most recent task pass, across accounts. */
   claimableSeen: number;
@@ -2019,6 +2122,8 @@ interface PoolWebAutomationEarnings {
   bonusCredit: number;
   /** Credits from buddy adoption and the travel loop today. */
   travelCredit: number;
+  /** Credits collected from the outage-compensation offer today. */
+  compensationCredit: number;
   /** Local date the counters belong to (YYYY-MM-DD). */
   date: string;
 }
@@ -2051,6 +2156,7 @@ export declare const DEFAULT_AUTOMATION_HOURS: {
   readonly tasks: readonly [11];
   readonly streak: readonly [12];
   readonly travel: readonly [9, 21];
+  readonly compensation: readonly [13];
 };
 //#endregion
 //#region src/catalog.d.ts
@@ -2197,9 +2303,26 @@ interface ProviderSetting {
   apiKey?: string;
   /** User override for the base URL, for providers whose host is per-deployment. */
   baseUrl?: string;
-  /** Model ids the user chose to expose, when narrower than the registry's. */
+  /**
+   * Model ids the user chose to expose, when narrower than the whole roster.
+   *
+   * This is the CHOICE and nothing else. It deliberately does not hold what a
+   * listing round returned: a vendor that advertises eighty-five models and whose
+   * user ticks two must be able to press "Fetch models" again next month and
+   * still be choosing from eighty-five, not from the two they kept. Keeping both
+   * in one field made the fetch overwrite the choice and left no way back.
+   *
+   * An empty or absent value means "expose everything the provider offers" — see
+   * `modelIdsFor`.
+   */
   models?: readonly string[];
-  /** Model ids a listing round discovered, kept so a later save is not a guess. */
+  /**
+   * The full roster a listing round last returned, kept as the universe the
+   * choice is drawn from.
+   *
+   * Never surfaced as the exposed set on its own; it exists so the card can show
+   * "2 of 85 chosen" and re-widen a narrowed set after a refetch.
+   */
   discovered?: readonly string[];
   addedAt?: string;
 }
@@ -2771,6 +2894,8 @@ interface AutomationOptions {
   streakHours?: readonly number[];
   /** Hour list for the buddy travel job. */
   travelHours?: readonly number[];
+  /** Hour list for the outage-compensation claim. */
+  compensationHours?: readonly number[];
   /** Per-account serial delay, in milliseconds. */
   accountDelayMs?: number;
   /** Override the gap between expert chains, in milliseconds (tests use 0). */
@@ -2896,6 +3021,14 @@ interface AutomationAccountEarnings {
   bonusCredit: number;
   /** Credits from the buddy adoption / travel loop today. */
   travelCredit: number;
+  /**
+   * Credits collected from the outage-compensation offer today.
+   *
+   * Its own column for the same reason as `checkinCredit`: a 500-credit
+   * outage refund is a different thing from a 100-credit daily check-in, and
+   * the card lists what earned what.
+   */
+  compensationCredit: number;
   /** Local date the counters belong to. */
   date: string;
 }
@@ -2907,6 +3040,7 @@ interface AutomationAccountGain {
   checkinCredit: number;
   bonusCredit: number;
   travelCredit: number;
+  compensationCredit: number;
 }
 /** Totals from running the whole ordered pass at once. */
 interface AutomationRunSummary {
@@ -2935,12 +3069,14 @@ interface AutomationStatus {
   reportHours: readonly number[];
   streakHours: readonly number[];
   travelHours: readonly number[];
+  compensationHours: readonly number[];
   jobs: {
     checkin: AutomationJobState;
     report: AutomationJobState;
     tasks: AutomationJobState;
     streak: AutomationJobState;
     travel: AutomationJobState;
+    compensation: AutomationJobState;
   };
   /** Claimable tasks seen on the most recent task pass, across accounts. */
   claimableSeen: number;
@@ -2960,8 +3096,8 @@ interface AutomationStatus {
   runInProgress: boolean;
 }
 /** The three plus one job kinds, in a stable order. */
-type AutomationJobKind = 'checkin' | 'tasks' | 'report' | 'streak' | 'travel';
-/** The four jobs in the order a tick runs them: report before tasks, always. */
+type AutomationJobKind = 'checkin' | 'tasks' | 'report' | 'streak' | 'travel' | 'compensation';
+/** The jobs in the order a tick runs them: report before tasks, always. */
 export declare const AUTOMATION_JOB_KINDS: readonly AutomationJobKind[];
 /** Reject anything that is not a job kind, so a route cannot name an unknown job. */
 export declare function isAutomationJobKind(value: unknown): value is AutomationJobKind;
@@ -3005,6 +3141,7 @@ export declare class WorkBuddyScheduler {
   private reportHours;
   private streakHours;
   private travelHours;
+  private compensationHours;
   private timer;
   private running;
   /** Guards against a slow run overlapping the next tick. */
@@ -3262,6 +3399,18 @@ export declare class WorkBuddyScheduler {
    * bookkeeping.
    */
   private runTravel;
+  /**
+   * Collect the running service-outage compensation offer, if any.
+   *
+   * Read-then-claim, rather than claim-blind: a claim costs one mutation the
+   * upstream may reject, and the status call is a free read that also tells us
+   * the size on offer so the ledger records the real number instead of
+   * assuming the usual 500.
+   *
+   * Returns the credits collected — 0 when there was nothing to collect, which
+   * is the normal case for most of the year.
+   */
+  private runCompensation;
 }
 //#endregion
 //#region src/status.d.ts
@@ -3595,7 +3744,7 @@ interface PoolStatusRouteOptions {
    * Providers the host cannot answer for are omitted from the returned record;
    * see {@link PoolWebChannelModels} for why that distinction is load-bearing.
    */
-  channelModels?: (providers: readonly string[]) => Promise<Readonly<Record<string, readonly PoolWebChannelModel[]>>>;
+  channelModels?: (providers: readonly string[], ids?: Readonly<Record<string, readonly string[]>>) => Promise<Readonly<Record<string, readonly PoolWebChannelModel[]>>>;
   /**
    * Fetch one provider's live model list, write it back as its discovered set,
    * and refresh the catalog.
@@ -3779,6 +3928,8 @@ export interface AutomationConfig {
   streakHours?: number[];
   /** Hours at which the buddy travel loop runs. */
   travelHours?: number[];
+  /** Hours at which the outage-compensation claim runs. */
+  compensationHours?: number[];
   /** How long an account rests after its credits run out, in milliseconds. */
   exhaustCooldownMs?: number;
 }

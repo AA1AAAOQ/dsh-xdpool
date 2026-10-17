@@ -283,19 +283,47 @@ export interface AggregateModelRow {
   /** `static` from the registry, `discovered` from a live listing. */
   source: 'static' | 'discovered'
 }
-/** The ids a provider should be served with, and where that list came from. */
+/**
+ * The ids a provider should be served with, and where that list came from.
+ *
+ * `discovered` is the roster a fetch returned, `models` is the subset the user
+ * kept, and the choice is applied LAST so it wins over both — otherwise pressing
+ * "Fetch models" would silently undo the narrowing the card just saved.
+ */
 function modelIdsFor(provider: ProviderRecord, setting: ProviderSetting): {
   ids: string[]
   source: 'static' | 'discovered'
 } {
+  const universe = modelChoicesFor(provider, setting)
+  const source: 'static' | 'discovered' = rosterIsDiscovered(provider, setting) ? 'discovered' : 'static'
   const override = stringList(setting.models)
-  if (override.length > 0) return { ids: override, source: 'static' }
-  // `discovered` is the optional cache a listing round writes back. Rows built
-  // from it are the only ones marked `discovered`, so the picker can tell a
-  // live roster from a configured one.
+  if (override.length === 0) return { ids: universe, source }
+  // Intersect rather than trust the choice outright: an id the provider dropped
+  // must not linger in the picker because an old save still names it. A choice
+  // that names nothing yields nothing, which is how "expose none of this
+  // vendor" stays expressible.
+  const available = new Set(universe)
+  return { ids: override.filter(id => available.has(id)), source }
+}
+/**
+ * Whether the roster came from a live fetch rather than the registry.
+ *
+ * A pre-split install has `models` and no `discovered`, because until the
+ * chooser existed the only writer of `models` WAS the fetch button. Those ids
+ * are a roster, not a choice, and treating them as one would shrink the vendor
+ * to whatever handful the registry happens to declare.
+ */
+function rosterIsDiscovered(provider: ProviderRecord, setting: ProviderSetting): boolean {
+  if ((setting.discovered?.length ?? 0) > 0) return true
+  return stringList(setting.models).length > provider.models.length
+}
+/** Every id a provider could offer: its roster, for the card's chooser. */
+export function modelChoicesFor(provider: ProviderRecord, setting: ProviderSetting): string[] {
   const discovered = stringList(setting.discovered)
-  if (discovered.length > 0) return { ids: discovered, source: 'discovered' }
-  return { ids: provider.models.map(model => model.id), source: 'static' }
+  // A legacy `models`-only install is its own roster, kept until the next fetch
+  // rewrites it into `discovered`.
+  if (discovered.length === 0 && rosterIsDiscovered(provider, setting)) return stringList(setting.models)
+  return discovered.length > 0 ? discovered : provider.models.map(model => model.id)
 }
 /** A de-duplicated list of non-empty trimmed strings from an untrusted array. */
 function stringList(value: readonly string[] | undefined): string[] {
@@ -490,6 +518,16 @@ export function classifyUpstream(status: number, bodyText: string, retryAfter: n
   } catch {
     // A body that is not JSON is a proxy speaking for the provider; the snippet
     // below is the best available answer.
+  }
+  // A free-tier refusal arrives as 403, which the table below would file under
+  // `session_dead` — the class every caller reads as "this credential is spent,
+  // stop using it". Nothing here is spent: the request was well-formed and the
+  // lane simply does not serve it from this client. Filing it as a dead session
+  // makes the pool penalize a credential that is fine, so it is separated out
+  // and answered as what it is, with the provider's own sentence kept.
+  if (status === 403 && /FreeTierError/u.test(safe)) {
+    const why = message === '' ? 'the free tier is locked to this client' : message
+    return new AggregateError('client', `the provider locked its free tier to its own client: ${why}`, status)
   }
   const suffix = message === '' ? safe.slice(0, BODY_SNIPPET_CHARS) : message
   const kind: AggregateError['kind'] = status === 401 || status === 403

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import {
   POOL_CHANNELS_PATH,
   CHANNEL_PACK_RPC_PATH,
@@ -66,22 +66,44 @@ describe('channel route contract', () => {
     expect(POOL_CHANNELS_PATH).toBe('/plugins/dsh-xdpool/channels')
     expect(CHANNEL_PACK_RPC_PATH).toBe('/api/channel-pack')
   })
-  it('forwards only the three methods the UI actually calls', () => {
-    // The pack answers far more (credits.claim, opencode.*, model management).
-    // Anything wider puts its whole surface on the card's loopback origin for
-    // no benefit, so the allowlist is asserted rather than left to review.
-    expect([...CHANNEL_PACK_METHODS].sort()).toEqual(['account.create', 'account.list', 'login.poll'])
+  it('forwards exactly the methods the UI actually calls', () => {
+    // Not an enforcement mechanism — the vendored pack registers the route
+    // itself and accepts everything it implements. This is a claim about our
+    // own usage: the pack answers far more (credits.claim, opencode.*), and
+    // this set is what we claim to need. Asserted so widening it is a
+    // deliberate edit rather than a quiet one.
+    expect([...CHANNEL_PACK_METHODS].sort()).toEqual([
+      'account.create',
+      'account.delete',
+      'account.list',
+      'account.refresh',
+      'account.test',
+      'account.update',
+      'credits.balances',
+      'credits.claimAll',
+      'credits.status',
+      'login.poll',
+      'model.list',
+      'model.setAllDisabled',
+      'model.setContextBudget',
+      'model.setDisabled',
+      'provider.status',
+      'usage.autoCheckin',
+    ])
   })
-  it('is not widened by a call site behind the route doc comment', () => {
-    // The route doc claims three methods; if someone adds a fourth call without
-    // adding it here, this fails and the comment stops being a claim. Every
-    // page that talks to the pack is scanned, not just the first one — the
-    // pool page used to read per-vendor counts here too, and that call site is
-    // exactly the kind of thing a single-file scan would have missed.
-    const called = ['ChannelsPage.tsx', 'PoolCard.tsx'].flatMap((name) => [
-      ...readFileSync(new URL(`../src/client/${name}`, import.meta.url), 'utf8')
-        .matchAll(/callPack\('([^']+)'/gu),
-    ]).map((match) => match[1] as string)
+  it('is not widened by a call site outside the list', () => {
+    // The route doc claims a set; if someone adds a call without adding it
+    // here, this fails and the doc comment stops being a claim. Every page that
+    // talks to the pack is scanned from the whole client directory, not a
+    // hand-picked list — the pool page reads provider counts and model
+    // blacklists here too, and a single-file scan already missed those once.
+    const called = readdirSync(new URL('../src/client', import.meta.url))
+      .filter(name => name.endsWith('.ts') || name.endsWith('.tsx'))
+      .flatMap(name => [
+        ...readFileSync(new URL(`../src/client/${name}`, import.meta.url), 'utf8')
+          .matchAll(/callPack\('([^']+)'/gu),
+      ])
+      .map((match) => match[1] as string)
     expect(called.length).toBeGreaterThan(0)
     for (const method of called) expect(CHANNEL_PACK_METHODS.has(method)).toBe(true)
   })

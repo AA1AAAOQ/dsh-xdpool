@@ -394,6 +394,128 @@ export const POOL_CARD_CSS = `
    the user signs into and reads on its own, and side-by-side columns made the
    shorter lane look like it was missing something. */
 .dsm-xdpool-region-grid{display:flex;flex-direction:column;gap:12px;min-width:0}
+/* ── Scan-channel cards on the pool page (ChannelPoolSection) ──
+   One card per scan channel that holds an account, laid out like the
+   reference build's channel card: identity, the vendor's own note, a numbers
+   row, then two collapsible lists. The shell mirrors the region lane above
+   (13px radius, translucent layer-3 fill) so the pool page reads as one
+   family; the accent comes from the channel's own colour.
+
+   The class is "cpool", not "channelpool", because these rules are a
+   different vocabulary: the earlier ones described a flat card with every
+   model always visible, and keeping the old names on the new shapes would
+   leave two rule sets fighting over one element. */
+.dsm-xdpool-cpool{display:flex;flex-direction:column;gap:10px}
+.dsm-xdpool-cpool-grid{display:flex;flex-direction:column;gap:12px;min-width:0}
+.dsm-xdpool-cpool-card{--dsm-xdpool-cpool-accent:var(--dsw-alias-brand-primary,#5686fe);position:relative;display:flex;flex-direction:column;gap:8px;padding:12px 13px 12px 15px;overflow:hidden;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:13px;background:color-mix(in srgb, var(--dsw-alias-bg-layer-3,#2a2c33) 80%, transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 6%), 0 1px 2px rgb(0 0 0 / 6%);transition:transform .22s cubic-bezier(.32,.72,0,1),box-shadow .24s ease,border-color .2s ease}
+.dsm-xdpool-cpool-card:hover{transform:translateY(-3px);border-color:color-mix(in srgb, var(--dsm-xdpool-cpool-accent,#5686fe) 55%, var(--dsw-alias-border-l2,#36373b));box-shadow:inset 0 1px 0 rgb(255 255 255 / 8%),0 18px 40px rgb(0 0 0 / 15%)}
+.dsm-xdpool-cpool-card:hover .dsm-xdpool-tile{transform:scale(1.06) rotate(-3deg);transition:transform .35s cubic-bezier(.34,1.56,.64,1)}
+.dsm-xdpool-cpool-card::before{content:"";position:absolute;left:0;top:0;right:0;height:2px;background:linear-gradient(90deg,var(--dsm-xdpool-cpool-accent,#5686fe),color-mix(in srgb,var(--dsm-xdpool-cpool-accent,#5686fe) 30%,transparent));opacity:.85;transition:opacity .24s ease}
+.dsm-xdpool-cpool-card:hover::before{opacity:1}
+/* Identity row. The name is a block so the org sits under it, which keeps a
+   long vendor name from pushing the state text off the card. */
+.dsm-xdpool-cpool-head{display:flex;align-items:center;gap:11px}
+.dsm-xdpool-cpool-id{display:flex;flex-direction:column;gap:1px;min-width:0}
+.dsm-xdpool-cpool-id b{font-size:14px;font-weight:600;line-height:19px;color:var(--dsw-alias-label-primary,#f2f3f5)}
+.dsm-xdpool-cpool-id span{font-size:11px;line-height:15px;color:var(--dsw-alias-label-tertiary,#9aa0a8)}
+.dsm-xdpool-cpool-state{margin-left:auto;flex:none;font-size:11px;padding:2px 8px;border-radius:9px;border:1px solid var(--dsw-alias-border-l2,#36373b);color:var(--dsw-alias-label-tertiary,#9aa0a8)}
+.dsm-xdpool-cpool-state[data-on=true]{border-color:color-mix(in srgb, var(--dsm-xdpool-cpool-accent,#5686fe) 45%, transparent);color:color-mix(in srgb, var(--dsm-xdpool-cpool-accent,#5686fe) 70%, var(--dsw-alias-label-primary,#f2f3f5))}
+.dsm-xdpool-cpool-note{margin:0;font-size:12px;line-height:17px;color:var(--dsw-alias-label-tertiary,#9aa0a8)}
+.dsm-xdpool-cpool-meta{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--dsw-alias-label-secondary,#c9ccd1)}
+.dsm-xdpool-cpool-credit{color:var(--dsw-alias-label-primary,#f2f3f5);font-variant-numeric:tabular-nums}
+.dsm-xdpool-cpool-acts{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.dsm-xdpool-cpool-fold{font:inherit;font-size:12px;padding:4px 10px;border-radius:9px;border:1px solid var(--dsw-alias-border-l2,#36373b);background:transparent;color:var(--dsw-alias-label-secondary,#c9ccd1);cursor:pointer;transition:border-color .2s ease,color .2s ease,transform .18s cubic-bezier(.32,.72,0,1),box-shadow .22s ease}
+.dsm-xdpool-cpool-fold:hover:not(:disabled){transform:translateY(-1px);border-color:color-mix(in srgb, var(--dsm-xdpool-cpool-accent,#5686fe) 55%, var(--dsw-alias-border-l2,#36373b));color:var(--dsw-alias-label-primary,#f2f3f5);box-shadow:0 3px 8px rgb(0 0 0 / 9%)}
+.dsm-xdpool-cpool-fold[aria-expanded=true]{border-color:color-mix(in srgb, var(--dsm-xdpool-cpool-accent,#5686fe) 62%, transparent);color:var(--dsw-alias-label-primary,#f2f3f5)}
+.dsm-xdpool-cpool-fold:active:not(:disabled){transform:scale(.985)}
+.dsm-xdpool-cpool-fold:disabled{opacity:.45;cursor:default}
+.dsm-xdpool-minibtn{font:inherit;font-size:11px;padding:3px 8px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,#36373b);background:transparent;color:var(--dsw-alias-label-secondary,#c9ccd1);cursor:pointer;transition:border-color .18s ease,color .18s ease,background-color .18s ease}
+.dsm-xdpool-minibtn:hover:not(:disabled){border-color:color-mix(in srgb, var(--dsm-xdpool-cpool-accent,#5686fe) 55%, var(--dsw-alias-border-l2,#36373b));color:var(--dsw-alias-label-primary,#f2f3f5);background:color-mix(in srgb, var(--dsm-xdpool-cpool-accent,#5686fe) 7%, transparent)}
+.dsm-xdpool-minibtn:disabled{opacity:.45;cursor:default}
+.dsm-xdpool-minibtn[data-tone=danger]:hover:not(:disabled){border-color:color-mix(in srgb, #e5484d 55%, var(--dsw-alias-border-l2,#36373b));color:#ff8a8f;background:color-mix(in srgb, #e5484d 9%, transparent)}
+.dsm-xdpool-cpool-balanceerror{margin:0;font-size:12px;line-height:17px;color:#ff8a8f}
+/* Accounts fold. One row per sign-in: who it is, whether it is live, today's
+   credit badge, the balance in the vendor's own unit, then four actions. The
+   row wraps instead of scrolling sideways so a long balance line cannot push
+   the delete button out of reach. */
+.dsm-xdpool-cpool-acctlist{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.dsm-xdpool-cpool-acct{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:7px 9px;border:1px solid var(--dsw-alias-border-l1,#2f3034);border-radius:10px;background:color-mix(in srgb, var(--dsw-alias-bg-layer-2,#24262b) 60%, transparent)}
+.dsm-xdpool-cpool-acct[data-off=true]{opacity:.6}
+.dsm-xdpool-cpool-acctname{font-size:13px;font-weight:500;color:var(--dsw-alias-label-primary,#f2f3f5)}
+.dsm-xdpool-cpool-acctmeta{font-size:11px;color:var(--dsw-alias-label-tertiary,#9aa0a8)}
+.dsm-xdpool-cpool-creditbadge{font-size:11px;padding:1px 7px;border-radius:9px;border:1px solid color-mix(in srgb, #2fbf7f 45%, transparent);color:#2fbf7f;background:color-mix(in srgb, #2fbf7f 10%, transparent)}
+.dsm-xdpool-cpool-acctbalance{font-size:12px;color:var(--dsw-alias-label-secondary,#c9ccd1);font-variant-numeric:tabular-nums}
+.dsm-xdpool-cpool-acctbalance[data-tone=err]{color:#ff8a8f}
+.dsm-xdpool-cpool-acctacts{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto}
+/* Models fold. The description line is the reason this list is a fold and not
+   a grid of checkboxes: a thirty-model channel with descriptions is a wall of
+   text unless it opens. */
+.dsm-xdpool-cpool-models{display:flex;flex-direction:column;gap:8px}
+.dsm-xdpool-cpool-modelhead{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dsw-alias-label-tertiary,#9aa0a8)}
+.dsm-xdpool-cpool-modelhead button{margin-left:auto}
+.dsm-xdpool-cpool-modelhead button+button{margin-left:0}
+.dsm-xdpool-cpool-modellist{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.dsm-xdpool-cpool-modelrow{display:flex;flex-direction:column;gap:2px;padding:6px 8px;border:1px solid var(--dsw-alias-border-l1,#2f3034);border-radius:10px}
+.dsm-xdpool-cpool-modelrow[data-off=true]{opacity:.62}
+.dsm-xdpool-cpool-modelrow-toggle{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--dsw-alias-label-secondary,#c9ccd1);cursor:pointer}
+.dsm-xdpool-cpool-modelname{user-select:none;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsm-xdpool-cpool-tag{font-size:10px;padding:1px 6px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,#36373b);color:var(--dsw-alias-label-tertiary,#9aa0a8);flex:none}
+.dsm-xdpool-cpool-tag[data-tone=free]{border-color:color-mix(in srgb, #2fbf7f 45%, transparent);color:#2fbf7f}
+.dsm-xdpool-cpool-tag[data-tone=dead]{border-color:color-mix(in srgb, #e5484d 45%, transparent);color:#ff8a8f}
+/* One line under an empty or fully-filtered list. Both cases print it, because
+   "nothing published" and "nothing matched your search" must not look alike. */
+.dsm-xdpool-cpool-empty{margin:0;font-size:13px;color:var(--dsw-alias-label-tertiary,#9aa0a8)}
+/* Model figures ride inside the row they describe, indented to clear the
+   checkbox column so the numbers line up with the model name above them.
+   The description itself is printed by ModelFactsRow in its own style — this
+   block only places the block. */
+.dsm-xdpool-cpool-mfacts{margin:2px 0 0 22px;padding:0}
+/* The per-model window cap, on the same control the region cards use. It sits
+   one level further in (indented under the row) because a channel list holds up
+   to thirty rows and an un-indented radio pair would read as a setting for the
+   whole list rather than for the model above it. */
+.dsm-xdpool-cpool-budget{margin:1px 0 0 22px}
+.dsm-xdpool-cpool-modeltools{display:flex;align-items:center;gap:6px;margin-left:auto}
+/* The search row pairs the field with a live count, because "nothing matched"
+   is otherwise indistinguishable from "the list is empty". */
+.dsm-xdpool-cpool-search{display:flex;align-items:center;gap:9px;margin:1px 0 3px}
+.dsm-xdpool-cpool-searchbox{flex:1 1 auto;min-width:0;appearance:none;font:inherit;font-size:12px;line-height:18px;padding:5px 10px;border-radius:9px;border:1px solid var(--dsw-alias-border-l2,#36373b);background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 78%,transparent);box-shadow:inset 0 1px 2px rgb(0 0 0/5%);color:var(--dsw-alias-label-primary,#f2f3f5)}
+.dsm-xdpool-cpool-searchbox::placeholder{color:var(--dsw-alias-label-tertiary,#9aa0a8)}
+.dsm-xdpool-cpool-searchbox:focus{outline:none;border-color:color-mix(in srgb, var(--dsm-xdpool-cpool-accent,var(--dsw-alias-brand-primary,#5686fe)) 70%, transparent);box-shadow:0 0 0 3px color-mix(in srgb, var(--dsm-xdpool-cpool-accent,var(--dsw-alias-brand-primary,#5686fe)) 20%, transparent)}
+.dsm-xdpool-cpool-searchnote{flex:none;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary,#9aa0a8);white-space:nowrap}
+/* Credit actions stay left, list toggles sit right: "acts" is a flex row and
+   this spacer is what pushes the fold buttons away from the credit buttons. */
+.dsm-xdpool-cpool-acts-gap{flex:1 1 auto;min-width:4px}
+/* The claim button is the only solid one on the row — it is the action that
+   pays the reader back, and a solid fill is how that is said without a label
+   explaining it. "quiet" is the other end: same shape, no lift of colour. */
+/*
+ * Buttons inside a channel card stop wearing the channel's brand colour.
+ *
+ * The accent belongs to the card: it tints the top hairline, the hover border
+ * and the state pill, and those are what identify the channel at a glance. Ten
+ * buttons repeating that same hue stops reading as identity and starts reading
+ * as decoration — and on a card whose accent is a pale yellow or a dark green,
+ * "Claim credits" came out looking like a different product. So the controls
+ * are neutral and the card keeps the colour. The sweep below still picks the
+ * accent up on hover, which is where it does its job: it is a response to the
+ * pointer rather than a static fill.
+ *
+ * The primary tone is the one exception, because a filled button has to read as
+ * the actionable one, and a grey fill would not.
+ */
+.dsm-xdpool-cpool-card .dsm-xdpool-btn:not([data-tone="primary"]):hover:not(:disabled){border-color:var(--dsw-alias-border-l2,#36373b);background:color-mix(in srgb, var(--dsw-alias-bg-layer-3,#2a2c33) 70%, transparent)}
+.dsm-xdpool-cpool-card .dsm-xdpool-cpool-fold:hover:not(:disabled),.dsm-xdpool-cpool-card .dsm-xdpool-cpool-fold[aria-expanded=true]{border-color:var(--dsw-alias-border-l2,#36373b)}
+.dsm-xdpool-cpool-card .dsm-xdpool-cpool-fold:hover:not(:disabled){background:color-mix(in srgb, var(--dsw-alias-label-primary,#f2f3f5) 7%, transparent)}
+.dsm-xdpool-cpool-card .dsm-xdpool-minibtn:hover:not(:disabled){border-color:var(--dsw-alias-border-l2,#36373b);background:color-mix(in srgb, var(--dsw-alias-label-primary,#f2f3f5) 6%, transparent)}
+.dsm-xdpool-btn[data-tone="primary"]{border-color:transparent;background:color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 82%, #ffffff 4%);color:#0d1014;font-weight:640}
+.dsm-xdpool-btn[data-tone="primary"]:hover:not(:disabled){background:color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 94%, #ffffff 6%);color:#0d1014}
+.dsm-xdpool-btn[data-tone="quiet"]{border-color:transparent;background:transparent;color:var(--dsw-alias-label-secondary,#c9ccd1);font-weight:500}
+.dsm-xdpool-btn[data-tone="claimed"]{border-color:var(--dsw-alias-border-l2,#36373b);background:transparent;color:var(--dsw-alias-label-tertiary,#9aa0a8);font-weight:600;cursor:default}
+@media (prefers-reduced-motion: reduce){
+.dsm-xdpool-cpool-card,.dsm-xdpool-cpool-card:hover,.dsm-xdpool-cpool-fold,.dsm-xdpool-cpool-fold:active:not(:disabled){transition:none;transform:none}
+.dsm-xdpool-cpool-card:hover .dsm-xdpool-tile{transition:none;transform:none}
+}
 /* One lane. The colour variables are injected inline by regionCardStyle(); the
    fallbacks here keep the card legible if that call is ever dropped.
 
@@ -630,9 +752,38 @@ export const AGGREGATE_CARD_CSS = `
 .dsm-xdpool-agg-fact:nth-child(even){background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 30%, transparent)}
 .dsm-xdpool-agg-fact-name{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;line-height:16px;color:var(--dsw-alias-label-secondary,#c3c7d4);font-weight:600}
 .dsm-xdpool-agg-fact[data-live="true"] .dsm-xdpool-agg-fact-name::after{content:"";display:inline-block;width:5px;height:5px;margin-left:6px;border-radius:50%;vertical-align:middle;background:var(--dsw-alias-state-success-primary,#22a06b)}
+/* The free pill on a fact row. The name is a truncating nowrap block, so the
+   pill has to sit inside it and shrink to nothing rather than push the name out
+   of the row; it is the same tag the channel cards use, only re-sized down to a
+   caption. */
+.dsm-xdpool-agg-fact-name .dsm-xdpool-cpool-tag{display:inline-block;margin-left:6px;vertical-align:middle;padding:0 5px;font-size:9.5px;font-weight:600;line-height:14px}
 .dsm-xdpool-agg-fact .dsm-xdpool-mfacts{margin-top:1px}
 .dsm-xdpool-agg-fact .dsm-xdpool-mfacts-probe,.dsm-xdpool-agg-fact .dsm-xdpool-mfacts-result{margin-left:0}
 .dsm-xdpool-agg-flash{margin:0;padding:5px 9px;border-radius:6px;background:color-mix(in oklab, var(--dsw-alias-label-primary,#e8e8ea) 5%, transparent);color:var(--dsw-alias-label-secondary,#c6c9d0);font-size:11px;line-height:17px;word-break:break-word}
+/* The per-vendor model chooser. Sits below the action row and above the id
+   summary, and reads as a nested panel rather than a second list: its border is
+   the vendor accent at low opacity, which is the same device the pool and
+   channel cards use for a card inside a card. */
+.dsm-xdpool-agg-picker{display:flex;flex-direction:column;gap:6px;min-width:0;margin:9px 0 0;padding:9px 10px;border:1px solid color-mix(in srgb, var(--dsm-xdpool-agg-accent,#8a90a0) 26%, transparent);border-radius:10px;background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 45%, transparent)}
+.dsm-xdpool-agg-pickerhead{display:flex;align-items:center;gap:8px;min-width:0}
+.dsm-xdpool-agg-pickerlabel{min-width:0;flex:1 1 auto;font-size:11.5px;line-height:17px;color:var(--dsw-alias-label-secondary,#c3c7d4);font-weight:600}
+.dsm-xdpool-agg-picker .dsm-xdpool-agg-hint{margin:0}
+.dsm-xdpool-agg-modellist{display:flex;flex-direction:column;gap:1px;min-width:0;margin:0;padding:0;list-style:none;max-height:260px;overflow-y:auto;overscroll-behavior:contain}
+.dsm-xdpool-agg-modelrow{display:flex;align-items:baseline;gap:8px;min-width:0;padding:3px 6px;border-radius:7px}
+.dsm-xdpool-agg-modelrow:hover{background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#191a1e) 62%, transparent)}
+.dsm-xdpool-agg-modelrow label{display:flex;align-items:baseline;gap:7px;min-width:0;flex:1 1 auto;cursor:pointer}
+.dsm-xdpool-agg-modelrow input[type="checkbox"]{flex:0 0 auto;margin:0;align-self:center}
+.dsm-xdpool-agg-modelid{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary,#c3c7d4)}
+/* An unticked row is still a real model the vendor serves, so it dims rather
+   than disappearing: the user has to be able to see what they removed. */
+.dsm-xdpool-agg-modelrow:has(input:not(:checked)) .dsm-xdpool-agg-modelid{color:var(--dsw-alias-label-tertiary,#8a90a0)}
+.dsm-xdpool-agg-modelrow .dsm-xdpool-mfacts{flex:0 1 auto;margin-left:auto}
+/* The search box sits on an accent-tinted border on focus rather than a sweep:
+   a text field must not light up under the cursor, or every character typed
+   would look like a press. */
+.dsm-xdpool-agg-picker .dsm-xdpool-cpool-searchbox{--dsm-xdpool-cpool-accent:var(--dsm-xdpool-agg-accent,#8a90a0)}
+.dsm-xdpool-agg-modelrow .dsm-xdpool-mfacts-probe,.dsm-xdpool-agg-modelrow .dsm-xdpool-mfacts-result{margin-left:0}
+.dsm-xdpool-agg-pickeracts{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding-top:1px}
 @media (max-width:760px){
   .dsm-xdpool-agg-fields{grid-template-columns:1fr}
   .dsm-xdpool-agg-foot .dsm-xdpool-agg-tags{flex:1 1 100%}
@@ -649,16 +800,14 @@ export const CHANNEL_CARD_CSS = `
    the aggregate rows render it too, and neither page loads this sheet. Keeping
    it here is why those two pages showed a bare 40px gap where the logo should
    be. Only the channel row's own hover belongs to this page. */
-/* The channel action button. It is named "-btn" rather than reusing ".dsm-btn"
-   because it sits inside a 40px-tall row next to a 40px tile and needs the
-   smaller metrics, but it has to read as the same family: same radius, same
-   inset highlight, same lift on hover. It had no rule at all before, so the
-   sign-in and cancel controls rendered as bare browser buttons. */
-.dsm-xdpool-btn{appearance:none;display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:11.5px;font-weight:560;line-height:17px;padding:4px 12px;border-radius:8px;border:1px solid color-mix(in srgb, var(--dsw-alias-border-l2,#36373b) 85%, transparent);background:color-mix(in srgb, var(--dsw-alias-bg-layer-3,#2a2c33) 70%, transparent);color:var(--dsw-alias-label-secondary,#c6c9d0);text-decoration:none;cursor:pointer;white-space:nowrap;transition:border-color .16s ease,color .16s ease,background .16s ease,transform .18s var(--ease-instrument,cubic-bezier(.16,1,.3,1))}
-.dsm-xdpool-btn:hover:not(:disabled){transform:translateY(-1px);border-color:color-mix(in srgb, var(--dsm-xdpool-channel-accent,#5686fe) 55%, var(--dsw-alias-border-l2,#36373b));color:var(--dsw-alias-label-primary,#e8e8ea)}
-.dsm-xdpool-btn:active:not(:disabled){transform:translateY(0);box-shadow:inset 0 2px 4px rgb(0 0 0 / 22%)}
-.dsm-xdpool-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:2px}
-.dsm-xdpool-btn:disabled{opacity:.5;cursor:default;filter:saturate(.35);transform:none}
+/* The channel action button, its hover/active/focus/disabled states and the
+   reduced-motion opt-out live in SHARED_CARD_CSS. They used to sit here, and
+   that is exactly the bug the account pool kept showing: four pages render
+   ".dsm-xdpool-btn" but only this one loads this sheet, so on the pool and the
+   aggregate page the claim and refresh controls fell back to bare browser
+   buttons — no radius, no padding, no tone. The shell is the only component
+   every page renders inside, which is where a primitive shared by four of them
+   has to be declared. */
 .dsm-xdpool-channel:hover .dsm-xdpool-tile{transform:translateY(-1px) rotate(-4deg);box-shadow:inset 0 1px 0 rgb(255 255 255 / 26%),inset 0 -1px 2px rgb(0 0 0 / 20%),0 8px 18px color-mix(in srgb,var(--dsm-xdpool-tile-accent,#5686fe) 30%,transparent)}
 .dsm-xdpool-channel{position:relative;display:flex;flex-direction:column;gap:5px;padding:12px 13px 12px 15px;border-radius:13px;border:1px solid var(--dsw-alias-border-l2,#36373b);background:color-mix(in srgb, var(--dsw-alias-bg-layer-3,#2a2c33) 80%, transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 6%), 0 1px 2px rgb(0 0 0 / 6%);transition:transform .2s cubic-bezier(.32,.72,0,1),box-shadow .24s ease,border-color .18s ease}
 .dsm-xdpool-channel:hover{transform:translateY(-2px);border-color:color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 66%, var(--dsw-alias-border-l2,#36373b));box-shadow:inset 0 1px 0 rgb(255 255 255 / 9%), 0 16px 34px color-mix(in srgb, var(--dsw-alias-brand-primary,#5686fe) 12%, transparent)}
@@ -670,6 +819,13 @@ export const CHANNEL_CARD_CSS = `
 .dsm-xdpool-channel-note{margin:0;color:var(--dsw-alias-label-secondary,#c6c9d0);font-size:11px;line-height:17px}
 .dsm-xdpool-channel-owned{margin:0;color:var(--dsw-alias-label-tertiary,#8a90a0);font-size:11px;line-height:17px;font-style:italic}
 .dsm-xdpool-channel-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+/* The auto-claim row is a setting, not a channel, so it sits on its own line
+   under the hero instead of borrowing a channel card's shell. It reuses the
+   shared switch so it reads as the same control family as the aggregate page. */
+.dsm-xdpool-autocheckin{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:9px 12px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:11px;background:color-mix(in srgb, var(--dsw-alias-bg-layer-3,#2a2c33) 60%, transparent)}
+.dsm-xdpool-autocheckin-note{font-size:11px;line-height:17px;color:var(--dsw-alias-label-tertiary,#8a90a0);min-width:0}
+/* Advice that belongs beside a button rather than in a card body. */
+.dsm-xdpool-channel-hint{font-size:11px;line-height:17px;color:var(--dsw-alias-label-tertiary,#8a90a0)}
 .dsm-xdpool-channel-waiting{color:var(--dsw-alias-state-business-primary,#5686fe);font-size:11px;line-height:17px}
 .dsm-xdpool-channel-ok{color:var(--dsw-alias-state-success-primary,#22a06b);font-size:11px;line-height:17px;font-weight:600}
 .dsm-xdpool-channel-error{color:var(--dsw-alias-state-error-primary,#e5534b);font-size:11px;line-height:17px;word-break:break-word}
@@ -899,6 +1055,23 @@ export const GATEWAY_CARD_CSS = `
 
 export const SHARED_CARD_CSS = `
 
+/* The one action button. Four pages render it — the sign-in list, the account
+   pool's channel cards, the aggregate lane and the gateway card — and only the
+   shell reaches all four, so the metrics have to live here. It sat in
+   CHANNEL_CARD_CSS until the pool's claim/refresh controls were reported as
+   "not the same UI as everything else": they were bare browser buttons, because
+   that sheet is injected by one page out of four. Smaller than a page-level
+   button on purpose — it shares a 40px row with a 40px brand tile — but it
+   reads as the same family: same radius, same inset highlight, same lift. */
+.dsm-xdpool-btn{appearance:none;display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:11.5px;font-weight:560;line-height:17px;padding:4px 12px;border-radius:8px;border:1px solid color-mix(in srgb, var(--dsw-alias-border-l2,#36373b) 85%, transparent);background:color-mix(in srgb, var(--dsw-alias-bg-layer-3,#2a2c33) 70%, transparent);color:var(--dsw-alias-label-secondary,#c6c9d0);text-decoration:none;cursor:pointer;white-space:nowrap;transition:border-color .16s ease,color .16s ease,background .16s ease,transform .18s var(--ease-instrument,cubic-bezier(.16,1,.3,1))}
+.dsm-xdpool-btn:hover:not(:disabled){transform:translateY(-1px);border-color:color-mix(in srgb, var(--dsm-xdpool-channel-accent,#5686fe) 62%, var(--dsw-alias-border-l2,#36373b));color:var(--dsw-alias-label-primary,#e8e8ea);background:color-mix(in srgb, var(--dsm-xdpool-channel-accent,#5686fe) 7%, color-mix(in srgb, var(--dsw-alias-bg-layer-3,#2a2c33) 70%, transparent));box-shadow:inset 0 1px 0 rgb(255 255 255 / 7%),0 3px 8px rgb(0 0 0 / 9%)}
+.dsm-xdpool-btn:active:not(:disabled){transform:scale(.985);box-shadow:inset 0 2px 4px rgb(0 0 0 / 22%)}
+.dsm-xdpool-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:2px}
+.dsm-xdpool-btn:disabled{opacity:.5;cursor:default;filter:saturate(.35);transform:none}
+@media (prefers-reduced-motion: reduce){
+  .dsm-xdpool-cpool-card,.dsm-xdpool-cpool-card:hover,.dsm-xdpool-cpool-card .dsm-xdpool-tile,.dsm-xdpool-btn,.dsm-xdpool-btn:hover,.dsm-xdpool-btn:active{transform:none;transition:none}
+}
+
 /* Per-model facts, shared by the sign-in page, the aggregate lane and the pool.
    Declared here for the same reason the tile below is: three pages render one
    component, and only the shared sheet reaches all three. The typography is
@@ -927,6 +1100,8 @@ export const SHARED_CARD_CSS = `
 .dsm-xdpool-mfacts-result[data-ok="true"]{color:var(--dsw-alias-state-success-primary,#22a06b)}
 .dsm-xdpool-mfacts-result[data-ok="false"]{color:var(--dsw-alias-state-error-primary,#e5484d)}
 .dsm-xdpool-mfacts-result-error{display:block;font-size:10.5px;line-height:1.4;color:var(--dsw-alias-state-error-primary,#e5484d);margin-top:2px;overflow-wrap:anywhere}
+.dsm-xdpool-recuse{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px;margin:3px 0 0;font-size:11px;line-height:1.5;color:var(--dsw-alias-label-tertiary,#8a90a0)}
+.dsm-xdpool-recuse-label{flex:none;font-weight:650;color:var(--dsw-alias-brand-primary,#5686fe)}
 
 /* The brand tile. Three pages render it — the login channels, the pool's region
    cards and the aggregate rows — so it is declared here rather than in any one
@@ -999,5 +1174,268 @@ export const SHARED_CARD_CSS = `
 .dsm-xdpool-table tbody tr[data-ok="false"] td{color:var(--dsw-alias-state-error-primary,#ef4444)}
 .dsm-xdpool-num{text-align:right;font-variant-numeric:tabular-nums}
 .dsm-xdpool-ellipsis{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/*
+ * Hover light sweep — ported from the our-free-model button sweep.
+ *
+ * Every pressable surface in this plugin gets the same two-layer move: the
+ * shell lifts on ":hover" and sinks slightly on ":active", while a skewed
+ * highlight slides across the inside from left to right. The intent is
+ * "kinetic tension" — the shell presses in while the light pushes back out.
+ *
+ * The accent is a variable rather than a literal because these buttons sit in
+ * two different worlds: a channel card owns --dsm-xdpool-cpool-accent, while
+ * everything else falls back to the host's brand colour. One sweep, tinted by
+ * whatever card it happens to be in.
+ *
+ * Buttons that already own a busy-spinner ::after (.dsm-xdpool-btn when
+ * data-busy) are excluded in the class list below so the two never collide.
+ */
+.dsm-xdpool-shell :is(
+  .dsm-xdpool-btn,
+  .dsm-xdpool-cpool-fold,
+  .dsm-xdpool-minibtn,
+  .dsm-xdpool-tab,
+  .dsm-xdpool-dist-option,
+  .dsm-xdpool-account-toggle,
+  .dsm-xdpool-account-ignore,
+  .dsm-xdpool-account-prefer,
+  .dsm-xdpool-ignored-restore,
+  .dsm-xdpool-model-image,
+  .dsm-xdpool-model-budget label,
+  .dsm-xdpool-checkin-btn,
+  .dsm-xdpool-auto-switch,
+  .dsm-xdpool-reserve-save,
+  .dsm-xdpool-region-seg-btn,
+  .dsm-xdpool-region-tool,
+  .dsm-xdpool-agg-open,
+  .dsm-xdpool-agg-cat,
+  .dsm-xdpool-navtab,
+  .dsm-xdpool-secghost,
+  .dsm-xdpool-rt-drop,
+  .dsm-xdpool-gw-btn,
+  .dsm-xdpool-mfacts-probe
+){position:relative;overflow:hidden;--dsm-xdpool-sweep:color-mix(in srgb, var(--dsm-xdpool-cpool-accent, var(--dsm-xdpool-region-accent, var(--dsm-xdpool-agg-accent, var(--dsw-alias-brand-primary,#5686fe)))) 88%, #ffffff);transition:transform .16s var(--ease-settle, cubic-bezier(.34,1.4,.4,1)),border-color .2s var(--ease-instrument, cubic-bezier(.16,1,.3,1)),background .2s var(--ease-instrument, cubic-bezier(.16,1,.3,1)),box-shadow .2s var(--ease-instrument, cubic-bezier(.16,1,.3,1)),color .16s var(--ease-instrument, cubic-bezier(.16,1,.3,1))}
+.dsm-xdpool-shell :is(
+  .dsm-xdpool-btn,
+  .dsm-xdpool-cpool-fold,
+  .dsm-xdpool-minibtn,
+  .dsm-xdpool-tab,
+  .dsm-xdpool-dist-option,
+  .dsm-xdpool-account-toggle,
+  .dsm-xdpool-account-ignore,
+  .dsm-xdpool-account-prefer,
+  .dsm-xdpool-ignored-restore,
+  .dsm-xdpool-model-image,
+  .dsm-xdpool-model-budget label,
+  .dsm-xdpool-checkin-btn,
+  .dsm-xdpool-auto-switch,
+  .dsm-xdpool-reserve-save,
+  .dsm-xdpool-region-seg-btn,
+  .dsm-xdpool-region-tool,
+  .dsm-xdpool-agg-open,
+  .dsm-xdpool-agg-cat,
+  .dsm-xdpool-navtab,
+  .dsm-xdpool-secghost,
+  .dsm-xdpool-rt-drop,
+  .dsm-xdpool-gw-btn,
+  .dsm-xdpool-mfacts-probe
+)::after{content:"";position:absolute;top:0;bottom:0;left:-60%;width:42%;pointer-events:none;background:linear-gradient(100deg,transparent,color-mix(in srgb, var(--dsm-xdpool-sweep,#ffffff) 14%,transparent),transparent);transform:skewX(-18deg);transition:left .5s var(--ease-instrument, cubic-bezier(.16,1,.3,1))}
+.dsm-xdpool-shell :is(
+  .dsm-xdpool-btn,
+  .dsm-xdpool-cpool-fold,
+  .dsm-xdpool-minibtn,
+  .dsm-xdpool-tab,
+  .dsm-xdpool-dist-option,
+  .dsm-xdpool-account-toggle,
+  .dsm-xdpool-account-ignore,
+  .dsm-xdpool-account-prefer,
+  .dsm-xdpool-ignored-restore,
+  .dsm-xdpool-model-image,
+  .dsm-xdpool-model-budget label,
+  .dsm-xdpool-checkin-btn,
+  .dsm-xdpool-auto-switch,
+  .dsm-xdpool-reserve-save,
+  .dsm-xdpool-region-seg-btn,
+  .dsm-xdpool-region-tool,
+  .dsm-xdpool-agg-open,
+  .dsm-xdpool-agg-cat,
+  .dsm-xdpool-navtab,
+  .dsm-xdpool-secghost,
+  .dsm-xdpool-rt-drop,
+  .dsm-xdpool-gw-btn,
+  .dsm-xdpool-mfacts-probe
+):hover:not(:disabled)::after{left:118%}
+/*
+ * The lift is deliberately one pixel and the settle curve overshoots, so the
+ * button arrives a fraction late — the same trick our-free-model uses. Rows
+ * that are already cards (tabs, dist options) must not also translate, or the
+ * text inside them visibly detaches from its own border.
+ */
+.dsm-xdpool-shell :is(
+  .dsm-xdpool-btn,
+  .dsm-xdpool-cpool-fold,
+  .dsm-xdpool-minibtn,
+  .dsm-xdpool-account-toggle,
+  .dsm-xdpool-account-ignore,
+  .dsm-xdpool-account-prefer,
+  .dsm-xdpool-ignored-restore,
+  .dsm-xdpool-model-image,
+  .dsm-xdpool-model-budget label,
+  .dsm-xdpool-checkin-btn,
+  .dsm-xdpool-auto-switch,
+  .dsm-xdpool-reserve-save,
+  .dsm-xdpool-region-seg-btn,
+  .dsm-xdpool-region-tool,
+  .dsm-xdpool-agg-open,
+  .dsm-xdpool-agg-cat,
+  .dsm-xdpool-navtab,
+  .dsm-xdpool-secghost,
+  .dsm-xdpool-rt-drop,
+  .dsm-xdpool-gw-btn,
+  .dsm-xdpool-mfacts-probe
+):hover:not(:disabled){transform:translateY(-1px);box-shadow:inset 0 1px 0 rgb(255 255 255 / 10%)}
+.dsm-xdpool-shell :is(
+  .dsm-xdpool-btn,
+  .dsm-xdpool-cpool-fold,
+  .dsm-xdpool-minibtn,
+  .dsm-xdpool-account-toggle,
+  .dsm-xdpool-account-ignore,
+  .dsm-xdpool-account-prefer,
+  .dsm-xdpool-ignored-restore,
+  .dsm-xdpool-model-image,
+  .dsm-xdpool-model-budget label,
+  .dsm-xdpool-checkin-btn,
+  .dsm-xdpool-auto-switch,
+  .dsm-xdpool-reserve-save,
+  .dsm-xdpool-region-seg-btn,
+  .dsm-xdpool-region-tool,
+  .dsm-xdpool-agg-open,
+  .dsm-xdpool-agg-cat,
+  .dsm-xdpool-navtab,
+  .dsm-xdpool-secghost,
+  .dsm-xdpool-rt-drop,
+  .dsm-xdpool-gw-btn,
+  .dsm-xdpool-mfacts-probe
+):active:not(:disabled){transform:scale(.985);transition-duration:.09s;box-shadow:inset 0 2px 5px rgb(0 0 0 / 14%),inset 0 1px 0 rgb(255 255 255 / 3%)}
+.dsm-xdpool-shell :is(
+  .dsm-xdpool-btn,
+  .dsm-xdpool-cpool-fold,
+  .dsm-xdpool-minibtn,
+  .dsm-xdpool-account-toggle,
+  .dsm-xdpool-account-ignore,
+  .dsm-xdpool-account-prefer,
+  .dsm-xdpool-ignored-restore,
+  .dsm-xdpool-model-image,
+  .dsm-xdpool-model-budget label,
+  .dsm-xdpool-checkin-btn,
+  .dsm-xdpool-auto-switch,
+  .dsm-xdpool-reserve-save,
+  .dsm-xdpool-region-seg-btn,
+  .dsm-xdpool-region-tool,
+  .dsm-xdpool-agg-open,
+  .dsm-xdpool-agg-cat,
+  .dsm-xdpool-navtab,
+  .dsm-xdpool-secghost,
+  .dsm-xdpool-rt-drop,
+  .dsm-xdpool-gw-btn,
+  .dsm-xdpool-mfacts-probe
+):disabled{opacity:.45}
+/* Keyboard focus must stay visible through the sweep, or the highlight reads
+   as decoration on a control the user is currently driving. */
+.dsm-xdpool-shell :is(
+  .dsm-xdpool-btn,
+  .dsm-xdpool-cpool-fold,
+  .dsm-xdpool-minibtn,
+  .dsm-xdpool-account-toggle,
+  .dsm-xdpool-account-ignore,
+  .dsm-xdpool-account-prefer,
+  .dsm-xdpool-ignored-restore,
+  .dsm-xdpool-checkin-btn,
+  .dsm-xdpool-auto-switch,
+  .dsm-xdpool-reserve-save,
+  .dsm-xdpool-region-seg-btn,
+  .dsm-xdpool-region-tool,
+  .dsm-xdpool-agg-open,
+  .dsm-xdpool-agg-cat,
+  .dsm-xdpool-secghost,
+  .dsm-xdpool-rt-drop,
+  .dsm-xdpool-gw-btn
+):focus-visible{outline:2px solid var(--dsm-xdpool-sweep,var(--dsw-alias-brand-primary,#5686fe));outline-offset:2px}
+/* A sweep that keeps moving after the pointer leaves is a seizure risk, so
+   prefers-reduced-motion removes the travel and keeps only the tint change. */
+@media (prefers-reduced-motion:reduce){
+.dsm-xdpool-shell :is(
+  .dsm-xdpool-btn,
+  .dsm-xdpool-cpool-fold,
+  .dsm-xdpool-minibtn,
+  .dsm-xdpool-tab,
+  .dsm-xdpool-dist-option,
+  .dsm-xdpool-account-toggle,
+  .dsm-xdpool-account-ignore,
+  .dsm-xdpool-account-prefer,
+  .dsm-xdpool-ignored-restore,
+  .dsm-xdpool-model-image,
+  .dsm-xdpool-model-budget label,
+  .dsm-xdpool-checkin-btn,
+  .dsm-xdpool-auto-switch,
+  .dsm-xdpool-reserve-save,
+  .dsm-xdpool-region-seg-btn,
+  .dsm-xdpool-region-tool,
+  .dsm-xdpool-agg-open,
+  .dsm-xdpool-agg-cat,
+  .dsm-xdpool-navtab,
+  .dsm-xdpool-secghost,
+  .dsm-xdpool-rt-drop,
+  .dsm-xdpool-gw-btn,
+  .dsm-xdpool-mfacts-probe
+)::after{display:none}
+.dsm-xdpool-shell :is(
+  .dsm-xdpool-btn,
+  .dsm-xdpool-cpool-fold,
+  .dsm-xdpool-minibtn,
+  .dsm-xdpool-account-toggle,
+  .dsm-xdpool-account-ignore,
+  .dsm-xdpool-account-prefer,
+  .dsm-xdpool-ignored-restore,
+  .dsm-xdpool-model-image,
+  .dsm-xdpool-model-budget label,
+  .dsm-xdpool-checkin-btn,
+  .dsm-xdpool-auto-switch,
+  .dsm-xdpool-reserve-save,
+  .dsm-xdpool-region-seg-btn,
+  .dsm-xdpool-region-tool,
+  .dsm-xdpool-agg-open,
+  .dsm-xdpool-agg-cat,
+  .dsm-xdpool-navtab,
+  .dsm-xdpool-secghost,
+  .dsm-xdpool-rt-drop,
+  .dsm-xdpool-gw-btn,
+  .dsm-xdpool-mfacts-probe
+):hover:not(:disabled){transform:none}
+.dsm-xdpool-shell :is(
+  .dsm-xdpool-btn,
+  .dsm-xdpool-cpool-fold,
+  .dsm-xdpool-minibtn,
+  .dsm-xdpool-account-toggle,
+  .dsm-xdpool-account-ignore,
+  .dsm-xdpool-account-prefer,
+  .dsm-xdpool-ignored-restore,
+  .dsm-xdpool-model-image,
+  .dsm-xdpool-model-budget label,
+  .dsm-xdpool-checkin-btn,
+  .dsm-xdpool-auto-switch,
+  .dsm-xdpool-reserve-save,
+  .dsm-xdpool-region-seg-btn,
+  .dsm-xdpool-region-tool,
+  .dsm-xdpool-agg-open,
+  .dsm-xdpool-agg-cat,
+  .dsm-xdpool-navtab,
+  .dsm-xdpool-secghost,
+  .dsm-xdpool-rt-drop,
+  .dsm-xdpool-gw-btn,
+  .dsm-xdpool-mfacts-probe
+):active:not(:disabled){transform:none}
+}
 
 `.trim()

@@ -139,6 +139,31 @@ export interface WorkBuddyCheckinClaim {
   isStreakDay: boolean
 }
 
+/**
+ * Service-outage compensation offer (the "500 credits" banner on
+ * /profile/plans-usage).
+ *
+ * Upstream shape, verified live on 2026-10-16:
+ *   `{active: true, claimed: false, credit_num: 500, validity_period: 1,
+ *     end_time: "2026-10-22 23:59:59"}`
+ */
+export interface WorkBuddyCompensationStatus {
+  /** An offer is running for this account (independent of claimability). */
+  active: boolean
+  /** This account already collected the current offer. */
+  claimed: boolean
+  /** Credits on offer — 500 for the DeepSeek-outage compensation. */
+  creditNum: number
+  /** Claim deadline, upstream's own string, absent when there is no offer. */
+  endTime?: string
+}
+
+/** Compensation claim result. Upstream returns the same envelope shape. */
+export interface WorkBuddyCompensationClaim {
+  claimed: boolean
+  creditNum: number
+}
+
 /** Result of one upstream chat attempt. */
 export type ChatStreamResult =
   | { ok: true; response: Response }
@@ -257,6 +282,32 @@ const SESSION_DEAD_MARKERS = [
  * the code varies by realm.
  */
 const ALREADY_CHECKIN_MARKERS = ['已签到', 'already']
+
+/**
+ * Markers for "there is no compensation offer to collect".
+ *
+ * The offer is seasonal — an outage announcement opens one, and it closes on a
+ * deadline — so for most of the year every account answers a claim with a
+ * refusal. That is a successful no-op, not a failure, for the same reason
+ * `isAlreadyCheckin` exists.
+ */
+const NO_COMPENSATION_MARKERS = [
+  '没有可领取',
+  '暂无可领取',
+  '无可领取',
+  '不可领取',
+  '未开启',
+  '没有活动',
+  '已领取',
+  '已过期',
+  '活动已结束',
+  '已结束',
+  'not eligible',
+  'no compensation',
+  'already claimed',
+  'not found',
+  'expired',
+]
 
 /** Region for a login domain; an empty domain means CN (matching upstream tooling). */
 /** The two gateways WorkBuddy serves: the domestic one and the international one. */
@@ -629,6 +680,18 @@ export function classifyUpstreamError(status: number, body: string): UpstreamErr
 export function isAlreadyCheckin(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
   return ALREADY_CHECKIN_MARKERS.some(marker => message.includes(marker))
+}
+
+/**
+ * Whether an error means "no compensation offer is running for this account".
+ *
+ * Callers treat this as a successful no-op: the job did its job and correctly
+ * found nothing to collect.
+ */
+export function isNoCompensation(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  const lower = message.toLowerCase()
+  return NO_COMPENSATION_MARKERS.some(marker => lower.includes(marker.toLowerCase()))
 }
 
 /**
@@ -1441,6 +1504,60 @@ export class WorkBuddyUpstreamClient {
       credit: numberField('credit'),
       streakDays: numberField('streak_days'),
       isStreakDay: data['is_streak_day'] === true,
+    }
+  }
+
+  /**
+   * Read the service-outage compensation offer, if any.
+   *
+   * NOTE the missing `/v2`: unlike the check-in routes, this one lives at
+   * `/billing/meter/compensation-status` and the `/v2` variant answers a plain
+   * 404 (verified on both billing hosts). The web client calls it that way too.
+   */
+  async fetchCompensationStatus(credential: WorkBuddyCredential): Promise<WorkBuddyCompensationStatus> {
+    const response = await this.fetchImpl(`${billingBase(credential)}/billing/meter/compensation-status`, {
+      method: 'POST',
+      headers: billingHeaders(credential),
+      body: '{}',
+      signal: AbortSignal.timeout(JSON_TIMEOUT_MS),
+    })
+    const envelope = await readEnvelope(response)
+    if (!response.ok || envelope.code !== 0) throw envelopeError(response.status, envelope)
+    const data = typeof envelope.data === 'object' && envelope.data !== null
+      ? envelope.data as Record<string, unknown>
+      : {}
+    return {
+      active: data['active'] === true,
+      claimed: data['claimed'] === true,
+      creditNum: typeof data['credit_num'] === 'number' ? data['credit_num'] as number : 0,
+      ...typeof data['end_time'] === 'string' && data['end_time'] !== ''
+        ? { endTime: data['end_time'] as string }
+        : {},
+    }
+  }
+
+  /**
+   * Collect the running compensation offer.
+   *
+   * Idempotent upstream: a repeat claim answers `code: 0` with
+   * `claimed: true` rather than an error, so a second pass in the same day
+   * records as a no-op instead of a failure.
+   */
+  async claimCompensation(credential: WorkBuddyCredential): Promise<WorkBuddyCompensationClaim> {
+    const response = await this.fetchImpl(`${billingBase(credential)}/billing/meter/claim-compensation`, {
+      method: 'POST',
+      headers: billingHeaders(credential),
+      body: '{}',
+      signal: AbortSignal.timeout(JSON_TIMEOUT_MS),
+    })
+    const envelope = await readEnvelope(response)
+    if (!response.ok || envelope.code !== 0) throw envelopeError(response.status, envelope)
+    const data = typeof envelope.data === 'object' && envelope.data !== null
+      ? envelope.data as Record<string, unknown>
+      : {}
+    return {
+      claimed: data['claimed'] !== false,
+      creditNum: typeof data['credit_num'] === 'number' ? data['credit_num'] as number : 0,
     }
   }
 

@@ -414,7 +414,28 @@ function claudeImage(url: string): Record<string, unknown> {
 }
 
 /**
- * Per-request tool-call index bookkeeping for one turn.
+ * What the fingerprint pass did to a request's tool list, so the response side
+ * can undo exactly that much.
+ *
+ * Both halves are needed and neither can be derived from the other. The sent
+ * tool list says WHICH names went out and the caller's list says what they were
+ * called before, but only this record says which of those names are the gate's
+ * own decoys: `read` is in the sent list both when the gate declared it and when
+ * the caller declared OpenCode's real `read`, and the two calls are opposite in
+ * whether anyone can run them.
+ *
+ * Produced by `applyFingerprint` in `free-upstream.ts`; declared here because
+ * the wire that consumes it lives in this module.
+ */
+export interface FingerprintPlan {
+  /** Sent spelling to caller spelling, for tools the pass renamed. */
+  readonly rename: Map<string, string>
+  /** Gate names the pass added because the caller declared no tool of that name. */
+  readonly injected: readonly string[]
+}
+
+/**
+ * Admit and translate one stream's tool calls.
  *
  * A block is classified the moment it NAMES itself. Until then its argument
  * fragments are held, because a provider that streams arguments before the name
@@ -423,6 +444,8 @@ function claudeImage(url: string): Record<string, unknown> {
  */
 export class FreeToolWire {
   private readonly declared: Set<string>
+  /** Gate tool names the fingerprint pass had to inject; nobody can run those. */
+  private readonly injected: Set<string>
   private readonly slots = new Map<string, number>()
   private readonly verdicts = new Map<string, boolean>()
   private readonly held = new Map<string, { id: string; args: string[] }>()
@@ -430,9 +453,15 @@ export class FreeToolWire {
   private survivedCalls = 0
   private next = 0
 
-  constructor(tools: unknown, rename?: Map<string, string>) {
+  /**
+   * @param tools - the tool list as it went OUT (fingerprint pass applied)
+   * @param plan - what that pass did: renames, and which gate names it had to
+   *   inject because the caller declared no tool of that name
+   */
+  constructor(tools: unknown, plan?: FingerprintPlan) {
     this.declared = new Set<string>()
-    this.rename = rename ?? new Map<string, string>()
+    this.rename = plan?.rename ?? new Map<string, string>()
+    this.injected = new Set(plan?.injected ?? [])
     if (!Array.isArray(tools)) return
     for (const raw of tools) {
       const name = toolNameOf(raw)
@@ -440,9 +469,23 @@ export class FreeToolWire {
     }
   }
 
-  /** Is this RESTORED tool name one the caller can actually execute? */
-  executable(name: string): boolean {
-    return !(FINGERPRINT_TOOLS.includes(name) && !this.declared.has(name))
+  /**
+   * Is the tool the gateway NAMED one the caller can actually execute?
+   *
+   * Judged on the sent spelling, before it is restored: under v2 a caller's own
+   * `read` never goes out under that name (the fingerprint pass renamed it to
+   * `read_client`), so any surviving `read`/`shell` is the gate's own tool. The
+   * model calls those — it was observed calling `read` to answer "what files are
+   * in /etc" — and nobody can run them, so they are dropped and the turn is not
+   * left ending on a tool the caller cannot execute.
+   *
+   * `injected` is the list the fingerprint pass actually added. It matters: when
+   * the caller declares OpenCode's REAL `read`, that name is not injected and the
+   * call is executable. Older callers that pass nothing get the name-only rule.
+   */
+  executable(sent: string): boolean {
+    if (this.injected.size > 0) return !this.injected.has(sent)
+    return !(FINGERPRINT_TOOLS.includes(sent) && !this.declared.has(sent))
   }
 
   /** How many calls survived the decoy filter, for the turn's finish reason. */
@@ -473,12 +516,14 @@ export class FreeToolWire {
         ? []
         : [{ tool_calls: [{ index: this.indexOf(key), function: { arguments: argsDelta } }] }]
     }
-    // The name is restored BEFORE the verdict is taken, because the verdict is a
-    // statement about the CALLER's tools: a promoted `bash` is the caller's `pwsh`,
-    // and it has to be executable by the test that decides whether it is kept.
-    const name = sentName === undefined || sentName === '' ? undefined : this.restore(sentName)
-    if (name !== undefined) {
-      const keep = this.executable(name)
+    // The verdict is taken on the SENT spelling, then the name is restored. The
+    // two facts are different questions: "did the gateway ask for the gate's own
+    // tool" (which nothing can run) and "what does the caller call it" (which it
+    // can). Judging the restored name answered the first question with the
+    // second's data, which under v2 reads a caller's `read` as the gate's.
+    const sent = sentName === undefined || sentName === '' ? undefined : sentName
+    if (sent !== undefined) {
+      const keep = this.executable(sent)
       this.verdicts.set(key, keep)
       // Park whatever arrived early for this block before deciding, so a block
       // that turns out to be unrunnable is still remembered as suppressed. The
@@ -492,6 +537,7 @@ export class FreeToolWire {
         this.held.set(key, { id: id ?? '', args: argsDelta === '' ? [] : [argsDelta] })
       }
       if (!keep) return []
+      const name = this.restore(sent)
       this.survivedCalls += 1
       this.held.delete(key)
       const held = [...parked?.args ?? [], argsDelta].join('')
@@ -537,12 +583,17 @@ function toolNameOf(tool: unknown): string {
 }
 
 /**
- * The lowercase tool quartet the free tier requires to be declared.
+ * The tool names the v2 free tier requires to be declared.
  *
  * Duplicated from the wire module on purpose: this file must stay importable on
  * its own so the translation can be tested without the transport.
+ *
+ * v2 narrowed this from the v1 quartet (`bash`, `glob`, `grep`, `read`) to two,
+ * and — unlike v1 — case variants are NOT gate tools: a caller that declares
+ * `Read` or `Bash` keeps those names untouched, which is why this list is
+ * compared exactly rather than lowercased.
  */
-export const FINGERPRINT_TOOLS: readonly string[] = ['bash', 'glob', 'grep', 'read']
+export const FINGERPRINT_TOOLS: readonly string[] = ['read', 'shell']
 
 /** One decoded event on its way to becoming chat chunks. */
 export interface FreeEvent {

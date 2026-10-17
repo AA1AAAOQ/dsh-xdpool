@@ -30,6 +30,7 @@ import {
 } from './adapter.ts'
 import { AggregateCatalog, probeAggregateProvider, type AggregateModelRow } from './aggregate.ts'
 import { mountBillionContext, type MountedBillionContext } from './billion-mount.ts'
+import { adoptChannelPackAccounts } from './pack-accounts.ts'
 import { FreeCatalog } from './free-catalog.ts'
 import { createFreeLaneSource } from './free-lane.ts'
 import { getProvider } from './providers.ts'
@@ -406,6 +407,8 @@ export interface AutomationConfig {
   streakHours?: number[]
   /** Hours at which the buddy travel loop runs. */
   travelHours?: number[]
+  /** Hours at which the outage-compensation claim runs. */
+  compensationHours?: number[]
   /** How long an account rests after its credits run out, in milliseconds. */
   exhaustCooldownMs?: number
 }
@@ -426,6 +429,7 @@ export function automationOptions(automation: AutomationConfig | undefined): Aut
     ...automation?.taskHours === undefined ? {} : { taskHours: automation.taskHours },
     ...automation?.streakHours === undefined ? {} : { streakHours: automation.streakHours },
     ...automation?.travelHours === undefined ? {} : { travelHours: automation.travelHours },
+    ...automation?.compensationHours === undefined ? {} : { compensationHours: automation.compensationHours },
   }
 }
 /**
@@ -512,6 +516,7 @@ const automationSchema = z.object({
   taskHours: z.array(z.number().step(1).min(0).max(23)).description('Local hours for task enrolment and claiming'),
   streakHours: z.array(z.number().step(1).min(0).max(23)).description('Local hours for streak redemption'),
   travelHours: z.array(z.number().step(1).min(0).max(23)).description('Local hours for the buddy travel loop'),
+  compensationHours: z.array(z.number().step(1).min(0).max(23)).description('Local hours for the outage-compensation claim'),
   exhaustCooldownMs: z.number().step(1).min(1000).description('How long a spent account rests, in milliseconds'),
 })
 /** Settings key holding one region's saved selection. */
@@ -1042,7 +1047,7 @@ function canonicalJson(value: unknown): string {
   // listing has not landed must still answer the picker, because an empty group
   // is the one thing a user reads as "the plugin is broken".
   const freeCatalog = new FreeCatalog()
-  const freeLane = createFreeLaneSource(freeCatalog, ctx.logger)
+  const freeLane = createFreeLaneSource(freeCatalog, ctx.logger, usageRecorder)
   const shims = {
     cn: createWorkBuddyShim({
       pool: core.pool,
@@ -1216,6 +1221,7 @@ function canonicalJson(value: unknown): string {
           ...patch.enabled === undefined ? {} : { enabled: patch.enabled },
           ...patch.apiKey === undefined ? {} : { apiKey: patch.apiKey },
           ...patch.baseUrl === undefined ? {} : { baseUrl: patch.baseUrl },
+          ...patch.models === undefined ? {} : { models: patch.models },
         })
       }
       // Refreshing here is what makes a new key appear in the model picker
@@ -1263,22 +1269,96 @@ function canonicalJson(value: unknown): string {
      * catalogue the model picker builds from, so a row's window here is the
      * window the picker will enforce.
      *
+     * `listModels` is a LISTING, though: the host's own answer carries only the
+     * id, the name, a description and the input modalities, and the host drops
+     * the context window out of it on the way out (its listing mapper keeps
+     * four fields). The window lives one call deeper, on
+     * `resolveModelInfo(provider, model)` — which is where the model picker and
+     * the compaction planner read it from — so a second pass over each row is
+     * the only way to show a context size that matches what will actually be
+     * enforced.
+     *
+     * That second pass is bounded and per-row isolated: adapters resolve a model
+     * from their own cache in the common case, a row that cannot be resolved
+     * simply prints no window, and a channel's answer is never held up by one
+     * model it could not describe.
+     *
      * A provider with no adapter registered under it is left out of the record
      * instead of being reported empty: "not signed in" and "signed in with
      * nothing to offer" would otherwise be drawn identically, and the user has
      * no way to tell which one they are looking at.
      */
-    channelModels: async (providers: readonly string[]): Promise<Readonly<Record<string, readonly PoolWebChannelModel[]>>> => {
+    channelModels: async (
+      providers: readonly string[],
+      hints?: Readonly<Record<string, readonly string[]>>,
+    ): Promise<Readonly<Record<string, readonly PoolWebChannelModel[]>>> => {
       const models: Record<string, readonly PoolWebChannelModel[]> = {}
+      // Six at a time rather than all at once: some adapters resolve a model by
+      // asking their upstream, and a channel publishing thirty models would
+      // otherwise open thirty sockets to answer a card nobody is looking at yet.
+      const resolveConcurrency = 6
       for (const provider of providers) {
         try {
-          const rows = await ctx.llm.listModels(provider)
-          models[provider] = rows.map(row => ({
-            id: row.id,
-            name: row.name,
-            ...row.description === undefined ? {} : { description: row.description },
-            ...row.inputModalities === undefined ? {} : { inputModalities: row.inputModalities },
-          }))
+          /*
+            The id list comes from the caller when it has one.
+            
+            `llm.listModels` is the obvious source and it is the wrong one here:
+            it sits behind the pack's credential gate, so a channel the host
+            considers invisible answers `[]` even while its card is on screen
+            showing nine models. That is exactly how every channel row ended up
+            with no window and "text only" — the facts were resolvable, there was
+            simply nothing to resolve them for. The caller has just rendered the
+            ids from `model.list` (which does not pass that gate), so its list is
+            authoritative about *which* models exist; this route only adds what
+            each one is.
+          */
+          const hinted = hints?.[provider]
+          const rows: readonly { id: string, name: string, description?: string, inputModalities?: readonly string[] }[] =
+            hinted !== undefined && hinted.length > 0
+              ? hinted.map(id => ({ id, name: id }))
+              : await ctx.llm.listModels(provider)
+          const resolved = new Map<string, PoolWebChannelModel>()
+          let next = 0
+          const workers = Array.from({ length: Math.min(resolveConcurrency, rows.length) }, async () => {
+            while (next < rows.length) {
+              const row = rows[next++]
+              // Read the id out first: a shared cursor under
+              // `noUncheckedIndexedAccess` is typed as possibly absent even
+              // though the bound check above proves it, and every later use of
+              // the row would carry that doubt.
+              if (row === undefined) continue
+              let extra: Partial<PoolWebChannelModel> = {}
+              try {
+                const info = await ctx.llm.resolveModelInfo(provider, row.id)
+                extra = {
+                  ...info.context?.contextWindow === undefined
+                    ? {}
+                    : { contextWindow: info.context.contextWindow },
+                  ...info.defaultMaxTokens === undefined ? {} : { maxTokens: info.defaultMaxTokens },
+                  ...info.inputModalities === undefined ? {} : { inputModalities: info.inputModalities },
+                }
+              } catch (cause: unknown) {
+                // An adapter that cannot describe one exact model is the norm
+                // for the channels whose catalogue is a bare id list, and the
+                // row stays printable without it — the host's own model picker
+                // renders the same row with no figures.
+                void cause
+              }
+              resolved.set(row.id, {
+                id: row.id,
+                // A hinted row has no name of its own; the caller keeps the one
+                // it rendered, and the id is the honest stand-in here.
+                name: row.name,
+                ...row.description === undefined ? {} : { description: row.description },
+                ...row.inputModalities === undefined ? {} : { inputModalities: row.inputModalities },
+                ...extra,
+              })
+            }
+          })
+          await Promise.all(workers)
+          models[provider] = rows
+            .map(row => resolved.get(row.id))
+            .filter((row): row is PoolWebChannelModel => row !== undefined)
         } catch {
           // No adapter, or the adapter refused to list. Either way the answer is
           // "nothing to show for this one", and the page draws no model row for
@@ -1298,7 +1378,14 @@ function canonicalJson(value: unknown): string {
       // rather than an error is what tells the user which of the two happened.
       // A failed round keeps the previous roster instead — an empty one would
       // delete models the user configured on purpose.
-      await updateProviderSetting(providerId, { models: probe.modelIds })
+      //
+      // The listing lands in `discovered` and NEVER in `models`: `models` is the
+      // user's choice, and writing a fetch into it would silently re-enable
+      // every model they had just unticked and leave them no way back. A vendor
+      // whose roster shrinks therefore keeps exposing the ids it still offers
+      // and drops the ones that went away, because `modelIdsFor` intersects the
+      // choice with the roster rather than trusting the stored list.
+      await updateProviderSetting(providerId, { discovered: probe.modelIds })
       await aggregateCatalog.refresh()
       return {
         ok: true,
@@ -1334,6 +1421,12 @@ function canonicalJson(value: unknown): string {
           note: channel.note,
           loginKind: channel.login,
           ownedByPool: POOL_OWNED_CHANNELS.has(channel.id),
+          ...channel.smsHint === true ? { smsHint: true } : {},
+          // Forwarded only when the pack actually has a branch for this
+          // provider: an absent `credits` is what tells the card "there is
+          // nothing to read here", and sending `{claim:false,status:false}`
+          // for all thirteen would turn a missing feature into a broken one.
+          ...channel.credits === undefined ? {} : { credits: channel.credits },
         })),
       }
     },
@@ -1451,16 +1544,26 @@ function canonicalJson(value: unknown): string {
       if (stopped) return
       channels = mounted
     }
-    void mount().catch((error: unknown) => {
-      if (stopped) return
-      ctx.logger.warn(`[xdpool] free-channel pack unavailable (${error instanceof Error ? error.message : String(error)})`)
-      channels = {
-        state: () => ({
-          state: 'unavailable',
-          reason: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300),
-        }),
-      }
-    })
+    void mount()
+      .catch((error: unknown) => {
+        if (stopped) return
+        ctx.logger.warn(`[xdpool] free-channel pack unavailable (${error instanceof Error ? error.message : String(error)})`)
+        channels = {
+          state: () => ({
+            state: 'unavailable',
+            reason: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300),
+          }),
+        }
+      })
+      .finally(() => {
+        // Whether this copy won the mount race or lost it, the accounts the user
+        // signed in through the scan-login page live in the SAME pool — the two
+        // plugins vendor one identical pack, and whichever registered the cordis
+        // service first owns it. So the wiring is attempted either way, and a
+        // loss is not an error: it is just another reader of the same object.
+        if (stopped) return
+        void adoptChannelPackAccounts(ctx, core.pool, ctx.logger)
+      })
   })
   // The compressor behind the billion card. Mounted from its own fiber, off the
   // critical path and outside every try block below: a proxy that will not start

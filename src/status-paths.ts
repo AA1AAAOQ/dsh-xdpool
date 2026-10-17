@@ -113,6 +113,19 @@ export const POOL_CHANNEL_MODELS_PATH = '/plugins/dsh-xdpool/channels/models'
 /** The body of {@link POOL_CHANNEL_MODELS_PATH}. */
 export interface PoolWebChannelModelsRequest {
   providers: readonly string[]
+  /**
+   * Model ids the caller already knows, per provider.
+   *
+   * The listing (`llm.listModels`) is the natural place to read a channel's ids
+   * from, but it sits behind the pack's credential gate: a provider the host
+   * considers invisible answers `[]`, and the card then had nothing to attach
+   * facts to — which is why every channel row printed no window and "text
+   * only". The ids are not in question here (the caller just rendered them from
+   * `model.list`), so when they are supplied the host resolves facts for them
+   * directly and only falls back to the listing for providers it was not told
+   * about.
+   */
+  ids?: Readonly<Record<string, readonly string[]>>
 }
 /**
  * One model's facts, exactly as the host's catalogue spells them.
@@ -305,27 +318,71 @@ export interface PoolWebBillionStatus {
  */
 export const CHANNEL_PACK_RPC_PATH = '/api/channel-pack'
 /**
- * The only pack methods the card ever sends.
+ * Every pack method our UI sends.
  *
- * The pack answers far more (credits.claim, opencode.*, model management);
- * anything wider would put its whole surface on the card's loopback origin for
- * no benefit. Three is what the login page needs: `account.create` to begin a
- * login, `login.poll` to watch it finish, and `account.list` to show what is
- * connected.
+ * The pack answers far more (credits.claim, opencode.*, and so on); this is the
+ * list of what we actually ask for, split by what it is for:
  *
- * A test asserts this set, so widening it is a deliberate edit rather than a
- * quiet one.
+ * - Login: `account.create` to begin, `login.poll` to watch it finish,
+ *   `account.list` to show what is connected.
+ * - Pool page, per channel: `provider.status` to learn which channels hold
+ *   accounts, `model.list` for the catalogue, `model.setDisabled` for a single
+ *   toggle, `model.setAllDisabled` for the two bulk buttons.
+ * - Per account: `account.test`, `account.refresh`, `account.update` to pause a
+ *   sign-in, `account.delete` to remove it.
+ * - Credits: `credits.balances` for the balance, `credits.status` for today's
+ *   check-in badge, `credits.claimAll` for the claim button, and
+ *   `usage.autoCheckin` for the one global automatic-claim switch.
+ *
+ * Note this is documentation, not enforcement: the vendored pack registers
+ * `/api/channel-pack` itself and accepts anything it implements, so nothing at
+ * runtime rejects a method outside this set. A test asserts that every
+ * `callPack` call site in src/client is named here, which is what keeps the
+ * list honest — widen it deliberately, never silently. Note the test only sees
+ * literal `callPack('…')` sites, so the four account methods dispatched through
+ * a computed `method` variable in ChannelPoolSection's `accountAction` are
+ * listed here by hand and would not fail a test if a caller dropped them.
  */
 export const CHANNEL_PACK_METHODS: ReadonlySet<string> = new Set([
   'account.create',
+  'account.delete',
   'account.list',
+  'account.refresh',
+  'account.test',
+  'account.update',
+  'credits.balances',
+  'credits.claimAll',
+  'credits.status',
   'login.poll',
+  'model.list',
+  'model.setAllDisabled',
+  'model.setContextBudget',
+  'model.setDisabled',
+  'provider.status',
+  'usage.autoCheckin',
 ])
 /**
  * Where a registry provider's key goes: `apiKey`, `baseUrl`, or `enabled`.
  */
 export type PoolWebAggregatePatch =
-  | { kind: 'provider'; providerId: string; enabled?: boolean; apiKey?: string; baseUrl?: string }
+  | {
+      kind: 'provider'
+      providerId: string
+      enabled?: boolean
+      apiKey?: string
+      baseUrl?: string
+      /**
+       * The chosen model set, replacing whatever this provider exposed before.
+       *
+       * This is a REPLACEMENT, not a delta, because the card sends the whole
+       * selection in one go: the browser half holds no server-side roster to
+       * patch against, and a delta would let two open tabs silently interleave
+       * into a set neither of them chose. An empty array is not "zero models" —
+       * `updateProviderSetting` drops the field, which returns the provider to
+       * its discovered listing or the registry's own.
+       */
+      models?: readonly string[]
+    }
   /** Flip the lane's own master switch; `false` contributes no models at all. */
   | { kind: 'lane'; enabled: boolean }
   /** Forget one provider's stored setting entirely, key included. */
@@ -365,8 +422,16 @@ export interface PoolWebAggregateProvider {
   baseUrl?: string
   /** True when the provider declares a model listing this lane can read. */
   hasListing: boolean
-  /** Model ids currently exposed: the chosen set, or the registry's own. */
+  /** Model ids currently exposed: the chosen set, or the whole roster. */
   models: readonly string[]
+  /**
+   * Every id this provider could offer, which is the roster after a fetch.
+   *
+   * Equal to `models` until the user narrows the choice. It exists so the card
+   * can offer a checkbox per id — without it, choosing could only ever remove
+   * rows and never put one back.
+   */
+  availableModels: readonly string[]
   /** True when the exposed set came from a live listing rather than the registry. */
   discovered: boolean
   /** When the provider was first configured. */
@@ -422,6 +487,34 @@ export interface PoolWebChannel {
   loginKind: 'browser'
   /** True when this plugin's own account pool already serves this channel. */
   ownedByPool: boolean
+  /**
+   * True when the vendor's own login page offers a phone-code path.
+   *
+   * Not a capability this plugin provides — the pack drives the page, and all
+   * this says is that the page behind the button holds a second door. Raccoon's
+   * does (QR and SMS on one screen), and its QR is the one that goes stale while
+   * the user reads the message.
+   */
+  smsHint?: boolean
+  /**
+   * What the pack can report about this vendor's credits, when it can report
+   * something at all.
+   *
+   * Absent is meaningful: it means `credits.balances` has no branch for this
+   * provider, so no balance exists to show. Present-but-empty means balances
+   * work but there is no daily check-in behind them.
+   *
+   * `unit` is the vendor's own currency and is never normalised across
+   * vendors: Cline pays US dollars and ZCode pays token buckets, so a single
+   * "credits" label would be wrong for a third of the roster.
+   */
+  credits?: {
+    claim?: boolean
+    status?: boolean
+    unit?: 'tokens' | 'dollars'
+    /** Percentages per quota bucket rather than a credit total. */
+    quota?: boolean
+  }
 }
 /** The document {@link POOL_CHANNELS_PATH} answers with. */
 export interface PoolWebChannelsStatus {
@@ -946,12 +1039,14 @@ export interface PoolWebAutomation {
   taskHours: readonly number[]
   streakHours: readonly number[]
   travelHours: readonly number[]
+  compensationHours: readonly number[]
   jobs: {
     checkin: PoolWebAutomationJob
     report: PoolWebAutomationJob
     tasks: PoolWebAutomationJob
     streak: PoolWebAutomationJob
     travel: PoolWebAutomationJob
+    compensation: PoolWebAutomationJob
   }
   /** Claimable tasks seen on the most recent task pass, across accounts. */
   claimableSeen: number
@@ -981,6 +1076,8 @@ export interface PoolWebAutomationEarnings {
   bonusCredit: number
   /** Credits from buddy adoption and the travel loop today. */
   travelCredit: number
+  /** Credits collected from the outage-compensation offer today. */
+  compensationCredit: number
   /** Local date the counters belong to (YYYY-MM-DD). */
   date: string
 }
@@ -1015,6 +1112,10 @@ export const DEFAULT_AUTOMATION_HOURS = {
   // Two passes: a trip loop needs a departure AND a collection, so a cat sent
   // out at a single pass of the day would sit there until tomorrow.
   travel: [9, 21],
+  // Late morning: an outage offer is announced during the incident, so an early
+  // slot finds nothing; mid-morning is early enough to leave room before the
+  // deadline.
+  compensation: [13],
 } as const satisfies Record<string, readonly number[]>
 /** One automation job kind, matching the scheduler's `AUTOMATION_JOB_KINDS`. */
 export type PoolWebAutomationKind = keyof typeof DEFAULT_AUTOMATION_HOURS

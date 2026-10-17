@@ -164,7 +164,7 @@ describe('#17a an empty hour list falls back to the default schedule', () => {
     const scheduler = inertScheduler()
     scheduler.applyConfig({ enabled: true, checkinHours: [], travelHours: [] })
     const status = scheduler.status()
-    for (const hours of [status.checkinHours, status.reportHours, status.taskHours, status.streakHours, status.travelHours]) {
+    for (const hours of [status.checkinHours, status.reportHours, status.taskHours, status.streakHours, status.travelHours, status.compensationHours]) {
       expect(hours.length).toBeGreaterThan(0)
     }
   })
@@ -175,7 +175,7 @@ describe('#17a an empty hour list falls back to the default schedule', () => {
     // the card could never repair the document it had been shown.
     expect(cardSource).toContain('travelHours: hoursOrDefault(')
     // And every list must go through the fallback, or an empty document stays empty.
-    for (const key of ['checkinHours', 'reportHours', 'taskHours', 'streakHours']) {
+    for (const key of ['checkinHours', 'reportHours', 'taskHours', 'streakHours', 'travelHours', 'compensationHours']) {
       expect(cardSource).toContain(`${key}: hoursOrDefault(`)
     }
   })

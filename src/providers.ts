@@ -249,9 +249,26 @@ export interface ProviderSetting {
   apiKey?: string
   /** User override for the base URL, for providers whose host is per-deployment. */
   baseUrl?: string
-  /** Model ids the user chose to expose, when narrower than the registry's. */
+  /**
+   * Model ids the user chose to expose, when narrower than the whole roster.
+   *
+   * This is the CHOICE and nothing else. It deliberately does not hold what a
+   * listing round returned: a vendor that advertises eighty-five models and whose
+   * user ticks two must be able to press "Fetch models" again next month and
+   * still be choosing from eighty-five, not from the two they kept. Keeping both
+   * in one field made the fetch overwrite the choice and left no way back.
+   *
+   * An empty or absent value means "expose everything the provider offers" — see
+   * `modelIdsFor`.
+   */
   models?: readonly string[]
-  /** Model ids a listing round discovered, kept so a later save is not a guess. */
+  /**
+   * The full roster a listing round last returned, kept as the universe the
+   * choice is drawn from.
+   *
+   * Never surfaced as the exposed set on its own; it exists so the card can show
+   * "2 of 85 chosen" and re-widen a narrowed set after a refetch.
+   */
   discovered?: readonly string[]
   addedAt?: string
 }

@@ -23,7 +23,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { WorkBuddyAccountPool } from '../src/accounts.ts'
+import { WorkBuddyAccountPool, workbuddyAccountId, type WorkBuddyCredential } from '../src/accounts.ts'
 
 /** A plain-JSON credential, the shape older desktop builds write. */
 function plainCredential(name: string): string {
@@ -154,5 +154,73 @@ describe('the pool still works with only good files', () => {
     const accounts = await p.scan()
     expect(accounts).toHaveLength(3)
     expect(p.skippedFilesInOrder()).toHaveLength(0)
+  })
+})
+
+describe('scan sign-ins join the same pool', () => {
+  /**
+   * A credential the login channels produced. It has a `uid` and no `uin`,
+   * which is the shape `packCredentialToWorkBuddy` produces — the desktop file
+   * shape carries both, and `workbuddyAccountId` reads `uin` first.
+   */
+  function scanCredential(name: string, uin?: string): WorkBuddyCredential {
+    return {
+      accessToken: `scan-${name}`,
+      refreshToken: '',
+      expiresAtMs: Date.now() + 3_600_000,
+      domain: 'www.workbuddy.cn',
+      nickname: name,
+      ...uin === undefined ? {} : { uin },
+      ...uin === undefined ? { uid: `uid-${name}` } : {},
+      sourcePath: `channel-pack:workbuddy:WORKBUDDY_ACCOUNT_${name}`,
+    }
+  }
+
+  it('serves an account that only exists in the channel pack', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wbpool-scanonly-'))
+    const p = pool(dir)
+    p.applyExternalSource(async () => [scanCredential('scanned')])
+    const accounts = await p.scan()
+    expect(accounts).toHaveLength(1)
+    expect(accounts[0]?.label).toContain('scanned')
+  })
+
+  it('counts one person who signed in both ways once', async () => {
+    // The duplicate this bridge exists to remove: the same account as a desktop
+    // file AND as a scan sign-in. Both carry the uin, so they key identically.
+    const dir = mkdtempSync(join(tmpdir(), 'wbpool-both-'))
+    writeFileSync(join(dir, 'workbuddy-desktop.info'), plainCredential('both'))
+    const p = pool(dir)
+    p.applyExternalSource(async () => [scanCredential('both', 'uin-both')])
+    const accounts = await p.scan()
+    expect(accounts).toHaveLength(1)
+  })
+
+  it('honours the ignore list for scan sign-ins too', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wbpool-ignored-scan-'))
+    const p = pool(dir)
+    p.applyExternalSource(async () => [scanCredential('blocked')])
+    await p.scan()
+    const id = workbuddyAccountId(scanCredential('blocked'))
+    p.applyIgnored([id])
+    // Re-registering with the same source and rescanning must keep it out: the
+    // gate is in the scan, not only in the render path.
+    const accounts = await p.scan()
+    expect(accounts.filter(a => a.id === id)).toHaveLength(0)
+  })
+
+  it('keeps the desktop accounts when the channel source fails', async () => {
+    // A channel pack that cannot answer is a missing pool, not a broken one.
+    const dir = mixedDir(2, 0)
+    const p = pool(dir)
+    p.applyExternalSource(async () => { throw new Error('route not mounted') })
+    const accounts = await p.scan()
+    expect(accounts).toHaveLength(2)
+  })
+
+  it('still scans desktop-only when no source is registered', () => {
+    const p = pool(mixedDir(1, 0))
+    p.applyExternalSource(undefined)
+    return expect(p.scan()).resolves.toHaveLength(1)
   })
 })

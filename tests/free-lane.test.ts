@@ -26,6 +26,8 @@ import {
   SESSION_RE,
   applyFingerprint,
   baseModelId,
+  endpointFor,
+  fingerprintToolFor,
   freeLane,
   gatewayHeaders,
   mintRequestId,
@@ -47,6 +49,7 @@ import {
   FreeCatalog,
   buildFreeCatalog,
   capabilitiesFor,
+  knownCapabilities,
   displayModelName,
   isFreeLane,
   isRegionSensitive,
@@ -120,20 +123,44 @@ describe('the free lane request', () => {
     expect(REQUEST_RE.test(mintSessionId().replace('ses_', 'msg_'))).toBe(true)
   })
 
-  it('identifies itself as the desktop client the gateway expects', () => {
+  it('identifies itself as a v2 client the gateway accepts', () => {
     const headers = gatewayHeaders({ session: 'ses_x', requestId: 'msg_x', stream: true })
     // The pooled credential. A real key here reads as an unknown one.
     expect(headers.authorization).toBe('Bearer public')
-    // The gateway checks this against a floor and rejects anything older.
+    // The shape is `opencode/<channel>/<version>/<client>` with major >= 2; the
+    // v1 `opencode/1.18.x` is refused by name since 2026-10-14.
     expect(headers['user-agent']).toBe(FREE_CLIENT_UA)
-    expect(headers['x-opencode-client']).toBe('desktop')
+    expect(FREE_CLIENT_UA.startsWith('opencode/')).toBe(true)
+    expect(/^opencode\/[^/]+\/2\./u.test(FREE_CLIENT_UA)).toBe(true)
+    expect(headers['x-opencode-client']).toBe('cli')
+    // Four names, one value — the gateway checks more than one of them.
     expect(headers['x-opencode-session']).toBe('ses_x')
-    expect(headers['x-opencode-request']).toBe('msg_x')
+    expect(headers['x-opencode-session-id']).toBe('ses_x')
+    expect(headers['x-session-affinity']).toBe('ses_x')
+    expect(headers['x-session-id']).toBe('ses_x')
+    // ⚠️ The v1-only request header is fatal under v2, not merely ignored. It is
+    // still accepted as an argument so callers keep passing their per-turn id,
+    // but it must never reach the wire.
+    expect(headers['x-opencode-request']).toBeUndefined()
+    expect(Object.keys(headers).some(key => key.includes('opencode-request'))).toBe(false)
     expect(headers.accept).toBe('text/event-stream')
     // A listing is JSON, and it asks for it explicitly.
     expect(gatewayHeaders({ session: 'ses_x', requestId: 'msg_x', stream: false, accept: 'application/json' }).accept).toBe(
       'application/json',
     )
+  })
+
+  it('serves every model from the /inference path', () => {
+    // `/zen/*` answers every free model with 403 FreeTierError no matter how good
+    // the fingerprint is, so the prefix moved together with the User-Agent.
+    expect(endpointFor('deepseek-v4.1-flash-free')).toBe('/inference/v1/chat/completions')
+    expect(endpointFor('muse-spark-1.3-contributor-free')).toBe('/inference/v1/responses')
+    expect(endpointFor('union-alpha')).toBe('/inference/v1/messages')
+    // And no path under the old prefix is reachable any more.
+    for (const model of ['deepseek-v4.1-flash-free', 'muse-spark-1.3-contributor-free', 'union-alpha']) {
+      expect(endpointFor(model).startsWith('/zen/')).toBe(false)
+      expect(wireFor(model)).not.toBe('')
+    }
   })
 })
 
@@ -146,94 +173,166 @@ function declaredNames(tools: unknown): string[] {
 }
 
 describe('the free lane fingerprint pass', () => {
-  it('declares the whole quartet or the turn is refused', () => {
+  it('declares read and shell with OpenCode’s own definitions', () => {
     const body: Record<string, unknown> = { tools: [{ name: 'search_docs' }] }
     applyFingerprint(body, 'chat')
-    // All four lowercase quartet names must be present or the gateway answers
-    // 403 FreeTierError. The caller's own tool survives alongside them.
-    expect(declaredNames(body.tools)).toEqual(expect.arrayContaining(['bash', 'glob', 'grep', 'read']))
+    // v2 requires exactly these two, and it COMPARES the definition: the v1
+    // quartet of self-disabling stubs with empty `properties` is refused.
+    expect(declaredNames(body.tools)).toEqual(expect.arrayContaining(['read', 'shell']))
     expect(declaredNames(body.tools)).toContain('search_docs')
-  })
-
-  it('promotes the real shell into the bash slot', () => {
-    // On this host the shell tool is `pwsh`, not `bash`. Left alone, the turn is
-    // admitted and then the model calls a tool nobody declared, 24 times a run.
-    const body: Record<string, unknown> = {
-      tools: [
-        { type: 'function', function: { name: 'pwsh', description: 'run a command' } },
-        { type: 'function', function: { name: 'list_dir', description: 'list' } },
-      ],
+    // The gate is two tools wide now — `bash`/`glob`/`grep` are no longer asked
+    // for, and declaring them would only add names the gate does not know.
+    expect(declaredNames(body.tools)).not.toContain('glob')
+    expect(declaredNames(body.tools)).not.toContain('grep')
+    for (const tool of toolDefsFor(body.tools, 'chat')) {
+      const fn = (tool as { function?: { name?: unknown } }).function
+      if (fn?.name === 'read' || fn?.name === 'shell') {
+        // A stub description is what v1 shipped; v2 answers 403 to it.
+        expect(String(fn.description)).not.toMatch(/unavailable|must not be used/iu)
+        expect(String(fn.description).length).toBeGreaterThan(200)
+        expect((fn as { parameters?: { properties?: unknown } }).parameters).toHaveProperty('properties')
+        expect((fn as { parameters?: { additionalProperties?: unknown } }).parameters).toMatchObject({
+          additionalProperties: false,
+        })
+      }
     }
-    const rename = applyFingerprint(body, 'chat')
-    expect(rename.get('bash')).toBe('pwsh')
-    expect(declaredNames(body.tools)).toContain('bash')
-    expect(declaredNames(body.tools)).not.toContain('pwsh')
-    // And the response side can put the caller's own name back.
-    expect(restoreToolName('bash', rename)).toBe('pwsh')
   })
 
-  it('never disables a tool the caller declared', () => {
-    // A declared `Bash` is canonicalised to `bash`, not dropped: dropping it
-    // would remove a tool the harness is offering the model.
+  it('leaves the caller’s own read and shell alone when they match the gate', () => {
+    // A caller that happens to declare OpenCode's real definitions keeps them
+    // under their own names — no alias, no second copy.
+    const body: Record<string, unknown> = { tools: [] }
+    applyFingerprint(body, 'chat')
+    const declared = toolDefsFor(body.tools, 'chat') as Array<{ function?: { name?: string } }>
+    const read = declared.find(tool => tool.function?.name === 'read')
+    expect(read).toBeDefined()
+  })
+
+  it('renames a caller tool that squats a gate name, and rewrites its history', () => {
+    // A harness `read` that is NOT OpenCode’s read cannot keep the name: the gate
+    // compares definitions, so both under one name is a 403. The caller’s tool is
+    // renamed instead, the history is rewritten to match, and the response side
+    // restores the caller’s spelling.
+    const body: Record<string, unknown> = {
+      tools: [{ type: 'function', function: { name: 'read', description: 'our own reader' } }],
+      messages: [
+        { role: 'assistant', tool_calls: [{ function: { name: 'read', arguments: '{}' } }] },
+        { role: 'user', content: [{ type: 'tool_result', tool_name: 'read' }] },
+      ],
+      tool_choice: { type: 'function', function: { name: 'read' } },
+    }
+    const plan = applyFingerprint(body, 'chat')
+    expect(plan.rename.get('read_client')).toBe('read')
+    expect(declaredNames(body.tools)).toContain('read_client')
+    // The official definition is still injected, because the caller’s squat was
+    // renamed out of the way — this is the `present` vs `seen` distinction.
+    expect(declaredNames(body.tools)).toContain('read')
+    expect(plan.injected).toContain('read')
+    // History and choice follow the rename, or the model compares its own earlier
+    // `read` call against the official definition and the two disagree.
+    // Found by role, not by index: the pass also prepends the placeholder note as
+    // a system message, so position 0 is no longer the caller's turn.
+    const messages = body.messages as Array<{
+      role?: string
+      tool_calls?: Array<{ function?: { name?: string } }>
+      content?: Array<{ type?: string; tool_name?: string }>
+    }>
+    const spoken = messages.find(message => message.role === 'assistant')
+    expect(spoken?.tool_calls?.[0]?.function?.name).toBe('read_client')
+    const answered = messages.find(message => message.role === 'user')
+    expect(answered?.content?.[0]?.tool_name).toBe('read_client')
+    expect((body.tool_choice as { function?: { name?: string } }).function?.name).toBe('read_client')
+    // And the response side can put the caller's own name back.
+    expect(restoreToolName('read_client', plan.rename)).toBe('read')
+  })
+
+  it('never renames a case variant — only the exact gate names are gated', () => {
+    // `Read` and `Bash` are the caller's own tools, not gate tools. v1 lowercased
+    // them into the gate, which collided with OpenCode’s definitions.
     const body: Record<string, unknown> = {
       tools: [
         { type: 'function', function: { name: 'Bash', description: 'x' } },
         { type: 'function', function: { name: 'Read', description: 'x' } },
       ],
     }
-    const rename = applyFingerprint(body, 'chat')
-    expect(declaredNames(body.tools)).toContain('bash')
-    expect(declaredNames(body.tools)).toContain('read')
-    // Both were case variants, so each one still needs its own name restored on the
-    // way back out — nothing was promoted into an empty slot.
-    expect(rename.get('bash')).toBe('Bash')
-    expect(rename.get('read')).toBe('Read')
+    const plan = applyFingerprint(body, 'chat')
+    expect(declaredNames(body.tools)).toContain('Bash')
+    expect(declaredNames(body.tools)).toContain('Read')
+    expect(plan.rename.size).toBe(0)
   })
 
-  it('fills a missing tool_choice only when there is nothing to choose from', () => {
+  it('never emits tool_choice none — v2 refuses it outright', () => {
     // With the caller's tools present, an invented `tool_choice` would force a
     // call the caller never asked for.
     const withTools: Record<string, unknown> = { tools: [{ name: 'search_docs' }] }
     applyFingerprint(withTools, 'chat')
     expect(withTools.tool_choice).toBeUndefined()
 
-    // With only decoys declared, a chat-wire turn must refuse tools outright.
+    // Even with nothing but gate tools declared, `none` is fatal now. The Messages
+    // wire's spelling of it is fatal too.
     const noTools: Record<string, unknown> = { tools: [] }
     applyFingerprint(noTools, 'chat')
-    expect(noTools.tool_choice).toBe('none')
+    expect(noTools.tool_choice).toBeUndefined()
 
-    // The Messages wire spells the same refusal differently.
     const claude: Record<string, unknown> = { tools: [] }
     applyFingerprint(claude, 'messages')
-    expect(claude.tool_choice).toEqual({ type: 'none' })
+    expect(claude.tool_choice).toBeUndefined()
 
-    // The Responses wire asks the gateway to pick.
+    // The Responses wire asks the gateway to pick — that is the one exception.
     const responses: Record<string, unknown> = { tools: [] }
     applyFingerprint(responses, 'responses')
     expect(responses.tool_choice).toBe('auto')
+
+    // And a `none` the CALLER left behind is cleared rather than forwarded.
+    const leftover: Record<string, unknown> = { tools: [], tool_choice: 'none' }
+    applyFingerprint(leftover, 'chat')
+    expect(leftover.tool_choice).toBeUndefined()
+    const leftoverObject: Record<string, unknown> = { tools: [], tool_choice: { type: 'none' } }
+    applyFingerprint(leftoverObject, 'messages')
+    expect(leftoverObject.tool_choice).toBeUndefined()
   })
 
-  it('makes a promoted tool callable rather than merely present', () => {
-    // The pass renamed `pwsh` to `bash`. If the response side judged the
-    // incoming `bash` against the quartet without restoring it first, the call
-    // would be judged a decoy and dropped — the tool would be visible to the
-    // model and unreachable by the harness. The wire is given the rename map for
-    // exactly this.
+  it('tells the model the injected gate tools are placeholders', () => {
+    // v2's definitions are real tools and the model calls them, so the only lever
+    // is the prompt. The wording matters: "unavailable" made the model refuse the
+    // caller's own tools too.
+    const chat: Record<string, unknown> = { messages: [{ role: 'user', content: 'hi' }] }
+    applyFingerprint(chat, 'chat')
+    const first = (chat.messages as Array<{ role?: string; content?: unknown }>)[0]
+    expect(first?.role).toBe('system')
+    expect(String(first?.content)).toMatch(/placeholders that do nothing/u)
+    expect(String(first?.content)).not.toMatch(/unavailable/iu)
+
+    const flat: Record<string, unknown> = {}
+    applyFingerprint(flat, 'responses')
+    expect(String(flat.instructions)).toMatch(/placeholders that do nothing/u)
+
+    const claude: Record<string, unknown> = {}
+    applyFingerprint(claude, 'messages')
+    expect(String(claude.system)).toMatch(/placeholders that do nothing/u)
+  })
+
+  it('makes an aliased tool callable rather than merely present', () => {
+    // The pass renamed the caller’s `read` to `read_client`. If the response side
+    // judged the incoming call without restoring it first, the call would be
+    // judged unrunnable and dropped — visible to the model, unreachable by the
+    // harness. The wire is given the rename map for exactly this.
     const body: Record<string, unknown> = {
-      tools: [{ type: 'function', function: { name: 'pwsh', description: 'x' } }],
+      tools: [{ type: 'function', function: { name: 'read', description: 'x' } }],
     }
-    const rename = applyFingerprint(body, 'chat')
-    const tools = new FreeToolWire(body.tools, rename)
-    // The model calls the slot it was given.
-    const frames = tools.admit('c0', 'bash', '{"command":"ls"}', 'call_1')
-    expect(callNames(frames)).toEqual(['pwsh'])
+    const plan = applyFingerprint(body, 'chat')
+    const tools = new FreeToolWire(body.tools, plan)
+    // The model calls the injected official tool.
+    expect(tools.admit('c0', 'read', '{"path":"/etc"}')).toEqual([])
+    expect(tools.suppressed()).toBe(true)
+    // The renamed caller tool comes back under its own name, and runs.
+    expect(callNames(tools.admit('c1', 'read_client', '{}', 'call_1'))).toEqual(['read'])
     expect(tools.calls()).toBe(1)
-    expect(tools.suppressed()).toBe(false)
   })
 
-  it('drops a decoy call the caller cannot run', () => {
+  it('drops a gate call the caller cannot run', () => {
     const tools = new FreeToolWire([{ type: 'function', function: { name: 'search_docs' } }])
-    expect(tools.admit('c0', 'bash', '{}')).toEqual([])
+    expect(tools.admit('c0', 'shell', '{}')).toEqual([])
     expect(tools.calls()).toBe(0)
     // The call the caller CAN run survives.
     expect(callNames(tools.admit('c1', 'search_docs', '{}', 'call_2'))).toEqual(['search_docs'])
@@ -583,7 +682,9 @@ describe('the free lane transport', () => {
     )
     expect(seen).toHaveLength(1)
     expect(seen[0]?.method).toBe('POST')
-    expect(seen[0]?.url).toBe('/zen/v1/chat/completions')
+    // v1 spoke to `/zen/v1`; since 2026-10-14 that path answers 403 FreeTierError
+    // for every free id, so the lane moved to the inference path.
+    expect(seen[0]?.url).toBe('/inference/v1/chat/completions')
     // The pooled credential, on the wire, not just in the helper.
     expect(seen[0]?.headers.authorization).toBe('Bearer public')
     expect(seen[0]?.headers['x-opencode-session']).toBe('ses_0000000000000000000000000000')
@@ -596,7 +697,9 @@ describe('the free lane transport', () => {
       {
         turn: {
           body: [
-            'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"bash","arguments":"{}"}}]}}]}',
+            // v2's gate tool, which nobody can run. v1's decoy was `bash`; the
+            // lane declares `read` and `shell` now.
+            'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"shell","arguments":"{}"}}]}}]}',
             'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
             'data: [DONE]',
             '',
@@ -606,7 +709,8 @@ describe('the free lane transport', () => {
       async () => {
         const result = await postFreeStreamed({
           modelId: 'space-bunny-free',
-          // Only `search_docs` is declared, so `bash` is a decoy.
+          // Only `search_docs` is declared and no plan is passed, so `shell` is a
+          // decoy on the name-only rule.
           body: { messages: [{ role: 'user', content: 'hi' }], tools: [{ name: 'search_docs' }] },
           session: 'ses_0000000000000000000000000000',
           requestId: 'msg_0000000000000000000000000000',
@@ -617,6 +721,48 @@ describe('the free lane transport', () => {
         expect(result.finishReason).toBe('stop')
         expect(result.suppressedOnly).toBe(true)
         expect(callNames(deltas)).toEqual([])
+      },
+    )
+  }, SLOW)
+
+  it('keeps a call to a gate name the caller declared itself', async () => {
+    // The opposite verdict from the test above, and the reason `injected` exists.
+    // This body went through the fingerprint pass with no `read` of the caller's
+    // own, so the pass INJECTED OpenCode's `read` — the call is unrunnable. Here
+    // the pass KEPT the caller's `read` because its definition matched, so the
+    // call is real and must be forwarded under the caller's own name.
+    const caller: Record<string, unknown> = {
+      tools: [fingerprintToolFor('read', 'chat')],
+      messages: [{ role: 'user', content: 'hi' }],
+    }
+    const plan = applyFingerprint(caller, 'chat')
+    expect(plan.injected).not.toContain('read')
+    expect(plan.rename.size).toBe(0)
+
+    const deltas: Record<string, unknown>[] = []
+    await withGateway(
+      {
+        turn: {
+          body: [
+            'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"read","arguments":"{}"}}]}}]}',
+            'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+            'data: [DONE]',
+            '',
+          ].join('\n'),
+        },
+      },
+      async () => {
+        const result = await postFreeStreamed({
+          modelId: 'space-bunny-free',
+          body: caller,
+          session: 'ses_0000000000000000000000000000',
+          requestId: 'msg_0000000000000000000000000000',
+          plan,
+          hooks: { onDelta: delta => deltas.push(delta) },
+        })
+        expect(result.suppressedOnly).toBe(false)
+        expect(result.finishReason).toBe('tool_calls')
+        expect(callNames(deltas)).toEqual(['read'])
       },
     )
   }, SLOW)
@@ -679,7 +825,7 @@ describe('the free lane transport', () => {
         expect(deltas[deltas.length - 1]).toHaveProperty('usage')
       },
     )
-    expect(seen[0]?.url).toBe('/zen/v1/responses')
+    expect(seen[0]?.url).toBe('/inference/v1/responses')
   }, SLOW)
 }, SLOW)
 
@@ -740,6 +886,19 @@ describe('the free lane catalog', () => {
     // leaves from, so the row says so.
     expect(isRegionSensitive('muse-spark-1.3-contributor-free')).toBe(true)
     expect(isRegionSensitive('union-alpha')).toBe(false)
+  })
+
+  it('answers undefined rather than a guess for an id the table never names', () => {
+    // The serving contract must always be answerable, so `capabilitiesFor`
+    // fabricates a baseline for an id it has never seen. Anything that PRINTS a
+    // window next to a real model name must not do that: a blank is a gap the
+    // user can see, a made-up "128K" is a lie they cannot. So the table has a
+    // second door, and it says "I don't know".
+    expect(knownCapabilities('union-alpha')?.vision).toBe(true)
+    expect(knownCapabilities('model-nobody-has-heard-of')).toBeUndefined()
+    // Both doors agree wherever the table does have an answer, so the split is
+    // about unknown ids and nothing else.
+    expect(knownCapabilities('union-alpha')).toEqual(capabilitiesFor('union-alpha'))
   })
 
   it('starts from a static roster so an unreachable gateway still answers', () => {

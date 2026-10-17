@@ -17,6 +17,7 @@
 
 import crypto from 'node:crypto'
 import {
+  FREE_LISTING_PATH,
   FREE_LISTING_TIMEOUT_MS,
   FREE_UPSTREAM_BASE,
   baseModelId,
@@ -97,14 +98,27 @@ export function isFreeLane(modelId: string): boolean {
   return /(?:^|[-_])free(?:$|[-_.])/u.test(base)
 }
 
-/** The baseline capacities for one model id. */
-export function capabilitiesFor(modelId: string): {
+/** What a matched {@link CapabilityEntry} publishes. */
+export interface KnownCapability {
   vision: boolean
   reasoning: boolean
   contextWindow: number
   maxOutput: number
   canDisableThinking: boolean
-} {
+}
+
+/**
+ * The measured figures for an id the table covers, or `undefined` when it covers
+ * none.
+ *
+ * Split out from {@link capabilitiesFor} because that one must ALWAYS answer: the
+ * lane needs a serving contract for every id it lists, and a guessed window beats
+ * no window there. A caller that would be *printing* the number to a user must
+ * use this one instead — "the table has never heard of this model" and "this
+ * model has a 128K window" are different claims, and only this function keeps
+ * them apart.
+ */
+export function knownCapabilities(modelId: string): KnownCapability | undefined {
   const base = baseModelId(modelId)
   for (const entry of CAPABILITIES) {
     if (entry.match.test(base)) {
@@ -117,7 +131,18 @@ export function capabilitiesFor(modelId: string): {
       }
     }
   }
-  return { ...FALLBACK_CAPABILITY, canDisableThinking: true }
+  return undefined
+}
+
+/** The baseline capacities for one model id. */
+export function capabilitiesFor(modelId: string): {
+  vision: boolean
+  reasoning: boolean
+  contextWindow: number
+  maxOutput: number
+  canDisableThinking: boolean
+} {
+  return knownCapabilities(modelId) ?? { ...FALLBACK_CAPABILITY, canDisableThinking: true }
 }
 
 /** Is this id's availability known to depend on where the request leaves from? */
@@ -218,7 +243,7 @@ export async function fetchFreeListing(
   }
   options.signal?.addEventListener('abort', onCallerAbort, { once: true })
   try {
-    const response = await freeFetch(`${FREE_UPSTREAM_BASE}/zen/v1/models`, {
+    const response = await freeFetch(`${FREE_UPSTREAM_BASE}${FREE_LISTING_PATH}`, {
       headers: gatewayHeaders({
         session: sessionForConversation(options.session),
         requestId: mintRequestId(),

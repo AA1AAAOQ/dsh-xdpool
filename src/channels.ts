@@ -100,6 +100,39 @@ export interface ChannelDescriptor {
    * Carrying it here claimed a choice we do not make.
    */
   login: 'browser'
+  /**
+   * Whether the vendor offers a phone-code path on its own login page.
+   *
+   * Raccoon's local page (`/raccoon/login` in the pack) puts a QR code and an
+   * SMS form on the same screen, and its QR is the one that goes stale while
+   * the user reads the message: the poll never reports "expired", so the page
+   * just sits there until the five-minute timeout. The card says so next to the
+   * button rather than leaving the user to rediscover it — the alternative
+   * (nothing) cost the user a login attempt per channel.
+   */
+  smsHint?: boolean
+  /**
+   * What the pack can tell us about this vendor's credits.
+   *
+   * Presence of the field is itself the answer: it means `credits.balances`
+   * has a branch for this provider, so a balance can be shown at all. The
+   * shape of that balance is not ours to invent — codearts returns a bare
+   * number, cline returns US dollars, zcode returns token buckets and gemini
+   * returns quota percentages — so `unit` says which of those the user is
+   * looking at rather than assuming one currency for thirteen vendors.
+   *
+   * `claim` is `credits.claimAll` (daily check-in), `status` is
+   * `credits.status` (today's claim badge). Both are absent for vendors whose
+   * backend has no such endpoint; the pack answers "unsupported provider"
+   * there, and a button that always fails is worse than no button.
+   */
+  credits?: {
+    claim?: boolean
+    status?: boolean
+    unit?: 'tokens' | 'dollars'
+    /** Percentages per quota bucket rather than a credit total. */
+    quota?: boolean
+  }
 }
 /**
  * The thirteen channels the pack registers, with the copy the card shows.
@@ -121,19 +154,130 @@ export interface ChannelDescriptor {
  * plan their day around.
  */
 export const REGISTERED_CHANNELS: readonly ChannelDescriptor[] = [
-  { id: 'codearts', name: 'CodeArts', org: '华为云', accent: '#C7000B', note: 'DeepSeek · GLM · openPangu 每日免费额度，按天重置', login: 'browser' },
-  { id: 'buddy', name: 'WorkBuddy 国内版', org: '腾讯', domain: 'copilot.tencent.com', accent: '#0A7AFF', note: '与 CodeBuddy 共用端点：DeepSeek · Kimi · GLM 免费线，每日赠送积分', login: 'browser' },
-  { id: 'workbuddy', name: 'WorkBuddy 国际版', org: '腾讯', domain: 'www.workbuddy.ai', accent: '#0B63CE', note: '独立端点与账号体系，积分与国内版不互通', login: 'browser' },
-  { id: 'lobsterai', name: 'LobsterAI', org: '有道', accent: '#FF6A00', note: '每日签到领积分，积分换模型调用额度', login: 'browser' },
-  { id: 'qoder', name: 'Qoder 国际版', org: '阿里云', accent: '#615CED', note: '每日 100 Credits，加密推理端点', login: 'browser' },
-  { id: 'qodercn', name: 'Qoder 国内版', org: '阿里云', accent: '#7A6CF0', note: '每日 100 Credits，国内端点与模型池', login: 'browser' },
-  { id: 'trae', name: 'TRAE', org: '字节跳动', accent: '#00BFA6', note: '手机号注册即送免费额度，按天重置', login: 'browser' },
-  { id: 'cline', name: 'Cline', org: 'Cline Bot', accent: '#5B5BD6', note: '绑定 GitHub 账号后送美元计价的免费额度', login: 'browser' },
-  { id: 'loomy', name: 'Loomy', org: '讯飞星火', accent: '#2F6BFF', note: '星火模型每日免费额度，扫码或手机号均可登录', login: 'browser' },
-  { id: 'raccoon', name: 'Raccoon', org: '商汤', accent: '#00A6A6', note: '手机号注册即送免费额度，按天重置', login: 'browser' },
-  { id: 'minimax', name: 'MiniMax Code', org: 'MiniMax', accent: '#E4007F', note: '设备码 + PKCE 登录，每日签到领额度', login: 'browser' },
-  { id: 'zcode', name: 'ZCode', org: '智谱', accent: '#3B6EF6', note: 'GLM 模型按 token 计免费额度，需本机可开浏览器', login: 'browser' },
-  { id: 'gemini', name: 'Gemini Code Assist', org: 'Google', accent: '#4285F4', note: '个人 Google 账号的免费配额，走本地回调 OAuth', login: 'browser' },
+  {
+    id: 'codearts',
+    name: 'CodeArts',
+    org: '华为云',
+    accent: '#C7000B',
+    note: '已开通免费体验套餐，自动续期不收费；新人积分 + DeepSeek · GLM · openPangu 每日免费额度',
+    login: 'browser',
+    credits: { claim: true },
+  },
+  {
+    id: 'buddy',
+    name: 'WorkBuddy 国内版',
+    org: '腾讯',
+    domain: 'copilot.tencent.com',
+    accent: '#0A7AFF',
+    note: '与 CodeBuddy 共用端点：DeepSeek · Kimi · GLM 免费线，每日赠送积分',
+    login: 'browser',
+    credits: { claim: true, status: true },
+  },
+  {
+    id: 'workbuddy',
+    name: 'WorkBuddy 国际版',
+    org: '腾讯',
+    domain: 'www.workbuddy.ai',
+    accent: '#0B63CE',
+    note: '独立端点与账号体系，积分与国内版不互通；国际版后端没有每日签到接口',
+    login: 'browser',
+    credits: { status: true },
+  },
+  {
+    id: 'lobsterai',
+    name: 'LobsterAI',
+    org: '有道',
+    accent: '#FF6A00',
+    note: '每日签到领积分，积分换模型调用额度',
+    login: 'browser',
+    credits: { claim: true },
+  },
+  {
+    id: 'qoder',
+    name: 'Qoder 国际版',
+    org: '阿里云',
+    accent: '#615CED',
+    note: '每日 100 Credits，加密推理端点',
+    login: 'browser',
+    credits: { claim: true },
+  },
+  {
+    id: 'qodercn',
+    name: 'Qoder 国内版',
+    org: '阿里云',
+    accent: '#7A6CF0',
+    note: '每日 100 Credits，国内端点与模型池',
+    login: 'browser',
+    credits: { claim: true },
+  },
+  {
+    id: 'trae',
+    name: 'TRAE',
+    org: '字节跳动',
+    accent: '#00BFA6',
+    note: '手机号注册即送免费额度，按天重置',
+    login: 'browser',
+    credits: { claim: true },
+  },
+  {
+    id: 'cline',
+    name: 'Cline',
+    org: 'Cline Bot',
+    accent: '#5B5BD6',
+    note: '绑定 GitHub 账号后送美元计价的免费额度；其后端没有每日签到接口',
+    login: 'browser',
+    // US dollars, not credits — the pack scales Cline's balance by its own
+    // factor, so a "credits" label here would be a unit error, not a rounding.
+    credits: { unit: 'dollars' },
+  },
+  {
+    id: 'loomy',
+    name: 'Loomy',
+    org: '讯飞星火',
+    accent: '#2F6BFF',
+    note: '星火模型每日免费额度，扫码或手机号均可登录',
+    login: 'browser',
+    credits: { claim: true },
+  },
+  {
+    id: 'raccoon',
+    name: 'Raccoon',
+    org: '商汤',
+    accent: '#00A6A6',
+    note: '手机号注册即送免费额度；每日积分由服务端自动发放，登录奖励需在「新手任务」领取',
+    login: 'browser',
+    smsHint: true,
+    credits: {},
+  },
+  {
+    id: 'minimax',
+    name: 'MiniMax Code',
+    org: 'MiniMax',
+    accent: '#E4007F',
+    note: '设备码 + PKCE 登录，每日签到领额度',
+    login: 'browser',
+    credits: { claim: true, status: true },
+  },
+  {
+    id: 'zcode',
+    name: 'ZCode',
+    org: '智谱',
+    accent: '#3B6EF6',
+    note: 'GLM 模型按 token 计免费额度，需本机可开浏览器',
+    login: 'browser',
+    credits: { claim: true, unit: 'tokens' },
+  },
+  {
+    id: 'gemini',
+    name: 'Gemini Code Assist',
+    org: 'Google',
+    accent: '#4285F4',
+    note: '个人 Google 账号的免费配额，走本地回调 OAuth',
+    login: 'browser',
+    // Quota, not credits: Gemini reports percentage windows, so a total is
+    // the wrong number to print even though the pack returns one.
+    credits: { quota: true },
+  },
 ]
 /**
  * The two channels this plugin already serves from its own account pool.
@@ -315,6 +459,17 @@ export interface ChannelAccount {
   provider: string
   nickname?: string
   enabled?: boolean
+  /**
+   * When the credential runs out, in epoch milliseconds; absent when the
+   * vendor does not publish an expiry or the login never finished.
+   *
+   * The two are not the same and are not merged here: a placeholder row
+   * (nickname still the generated id) and a completed login can both exist in
+   * the pack's list, and only the difference in this field tells them apart.
+   */
+  expiresAt?: number
+  /** Whether the pack can renew this credential without a new login. */
+  refreshable?: boolean
 }
 /** What `apply` and `inject` look like on the bundle. */
 export interface ChannelPackLogger {

@@ -13,17 +13,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   POOL_CHANNELS_PATH,
-  POOL_CHANNEL_MODELS_PATH,
-  POOL_MODEL_PROBE_PATH,
   ROUTE_OWNED_ELSEWHERE,
   type PoolWebChannel,
   type PoolWebChannelsStatus,
-  type PoolWebModelProbeResult,
 } from '../status-paths.ts'
 import type { ChannelAccount, ChannelRpcEnvelope } from '../channels.ts'
-import { accountsFrom, callPack, channelIdOf, createdFrom, modelListsFrom, pollFrom, type ChannelModel } from './channel-rpc.ts'
-import { ModelFactsRow } from './model-facts-row.tsx'
-import { modelFactsFor, type ModelProbeReading } from './model-facts.ts'
+import { accountsFrom, autoCheckinFrom, callPack, createdFrom, fetchChannels, pollFrom, providerStatusesFrom, type ChannelAutoCheckin } from './channel-rpc.ts'
 import type { XdPoolSettingsKey } from './locales.ts'
 import { CHANNEL_CARD_CSS } from './styles.ts'
 import { BrandTile } from './brand-tile.tsx'
@@ -56,30 +51,37 @@ interface ChannelUiState {
   message?: string | undefined
 }
 const IDLE: ChannelUiState = { phase: 'idle' }
+
+/**
+ * How many distinct people a channel holds.
+ *
+ * `account.create` in the pack appends unconditionally — it never checks whether
+ * an account with the same nickname is already there — so a user who clicks
+ * "add account" twice on a channel that reuses one identity ends up with two
+ * rows that are the same account. The pack prunes the duplicate on disk at its
+ * next mount, but this badge is a live read, so it has to do the collapsing
+ * itself or the number is simply wrong.
+ *
+ * The newest entry wins, because the pack rewrites a placeholder's nickname
+ * from its generated id to the real display name only when a login lands: the
+ * row that carries the real name is the row whose credential was written last.
+ */
+function distinctAccounts(accounts: readonly ChannelAccount[]): readonly ChannelAccount[] {
+  const byKey = new Map<string, ChannelAccount>()
+  const order: string[] = []
+  for (const account of accounts) {
+    const nickname = (account.nickname ?? '').trim()
+    const key = nickname === '' ? `id:${account.id}` : `n:${nickname}`
+    if (!byKey.has(key)) order.push(key)
+    byKey.set(key, account)
+  }
+  return order.map(key => byKey.get(key)).filter((account): account is ChannelAccount => account !== undefined)
+}
 export function ChannelsPage({ t }: ChannelsPageProps) {
   const [status, setStatus] = useState<PoolWebChannelsStatus | undefined>(undefined)
   const [error, setError] = useState<string | undefined>(undefined)
   const [ui, setUi] = useState<Record<string, ChannelUiState>>({})
   const [connected, setConnected] = useState<readonly ChannelAccount[]>([])
-  /**
-   * `channelId/modelId` -> the last connectivity reading for that pair.
-   *
-   * Keyed by both halves because a login channel exposes its models under the
-   * host's own provider ids, and `gemini` the channel and `gemini` the vendor
-   * are two different registrations of the same name.
-   */
-  const [probes, setProbes] = useState<Record<string, ModelProbeReading>>({})
-  /** The pair currently being measured, so only one button shows a spinner. */
-  const [probing, setProbing] = useState<string | undefined>(undefined)
-  /**
-   * Why a channel cannot show its model list, when that is the case.
-   *
-   * Printed instead of an empty list rather than left silent: a channel with no
-   * catalogue and no explanation reads as a channel with no models, which is a
-   * different claim and a wrong one.
-   */
-  const [modelsError, setModelsError] = useState<string | undefined>(undefined)
-  const [modelLists, setModelLists] = useState<Record<string, readonly ChannelModel[]>>({})
   const mounted = useRef(true)
   /** Timers for in-flight logins, keyed by channel id. */
   const timers = useRef(new Map<string, number>())
@@ -118,118 +120,34 @@ export function ChannelsPage({ t }: ChannelsPageProps) {
    * first thing to go and the last to be missed.
    */
   const loadConnected = useCallback(async (): Promise<void> => {
-    const envelope = await callPack('account.list', {})
-    if (!mounted.current || !envelope.ok) return
-    setConnected(accountsFrom(envelope))
+    // `account.list` filters by provider on its very first line
+    // (pool.listAccounts), so an empty payload matches no account at all and
+    // answers "nothing is connected" for a channel that holds several — the
+    // "added N accounts" badge then disappears the moment the page reloads.
+    // `provider.status` counts every channel in one answer; the accounts
+    // themselves only need fetching for the channels it reports as connected.
+    const roster = await fetchChannels()
+    const statuses = providerStatusesFrom(await callPack('provider.status', {
+      providers: roster.map(channel => channel.id),
+    }))
+    const connectedIds = roster
+      .map(channel => channel.id)
+      .filter(id => (statuses.get(id)?.accountsTotal ?? 0) > 0)
+    const perChannel = await Promise.all(connectedIds.map(id => callPack('account.list', { provider: id })))
+    if (!mounted.current) return
+    setConnected(perChannel.flatMap(accountsFrom))
   }, [])
-  /**
-   * Ask the host what models each signed-in channel contributes.
-   *
-   * Read from the host rather than from the pack because the pack's own
-   * `model.list` throws away exactly the fields this page exists to show: it
-   * keeps `id`, `name`, `disabled`, `dead` and a free flag, and drops the window,
-   * the output ceiling and the modalities the host already resolved. The host's
-   * catalogue is also the one the model picker reads, so the two agree by
-   * construction instead of by luck.
-   *
-   * A channel that is not signed in is simply absent from the answer, so its
-   * row shows no model line — which is the honest state, not a failure worth a
-   * message on all thirteen rows.
-   */
-  const loadModelLists = useCallback(async (roster: readonly PoolWebChannel[]): Promise<void> => {
-    const wanted = roster.filter(channel => !channel.ownedByPool).map(channel => channel.id)
-    if (wanted.length === 0) {
-      if (mounted.current) {
-        setModelLists({})
-        setModelsError(undefined)
-      }
-      return
-    }
-    try {
-      const response = await fetch(POOL_CHANNEL_MODELS_PATH, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({ providers: wanted }),
-      })
-      const value: unknown = await response.json().catch(() => undefined)
-      if (!mounted.current) return
-      if (!response.ok) {
-        const detail = value as { error?: string } | undefined
-        setModelsError(detail?.error ?? `HTTP ${response.status}`)
-        return
-      }
-      setModelLists(Object.fromEntries(modelListsFrom(value)))
-      setModelsError(undefined)
-    } catch (cause: unknown) {
-      if (mounted.current) setModelsError(cause instanceof Error ? cause.message : String(cause))
-    }
-  }, [])
-  /**
-   * Send one real request to one of a channel's models and record what came back.
-   *
-   * One at a time, for the same reason the other two pages hold to one: every
-   * call spends the user's quota, and a row that greys out on click would read as
-   * a broken card rather than as a test already running.
-   */
-  const testModel = useCallback(async (provider: string, model: string): Promise<void> => {
-    const key = `${provider}/${model}`
-    if (probing !== undefined) return
-    setProbing(key)
-    try {
-      const response = await fetch(POOL_MODEL_PROBE_PATH, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({ provider, model }),
-      })
-      const body = await response.json() as PoolWebModelProbeResult | { error?: unknown }
-      if (!mounted.current) return
-      setProbes(prev => ({
-        ...prev,
-        [key]: 'ok' in body
-          ? {
-              ok: body.ok,
-              outputChars: typeof body.outputChars === 'number' ? body.outputChars : 0,
-              ...typeof body.firstFrameMs === 'number' ? { firstFrameMs: body.firstFrameMs } : {},
-              ...typeof body.error === 'string' ? { error: body.error } : {},
-            }
-          : {
-              ok: false,
-              outputChars: 0,
-              error: typeof (body as { error?: string }).error === 'string'
-                ? (body as { error: string }).error
-                : `HTTP ${response.status}`,
-            },
-      }))
-    } catch (cause: unknown) {
-      if (!mounted.current) return
-      setProbes(prev => ({
-        ...prev,
-        [key]: {
-          ok: false,
-          outputChars: 0,
-          error: cause instanceof Error && cause.message !== '' ? cause.message : 'the probe could not be sent',
-        },
-      }))
-    } finally {
-      if (mounted.current) setProbing(undefined)
-    }
-  }, [probing])
   useEffect(() => {
     const controller = new AbortController()
     void load(controller.signal)
     void loadConnected().catch(() => {})
     return () => { controller.abort() }
   }, [load, loadConnected])
-  useEffect(() => {
-    const roster = status?.channels ?? []
-    if (roster.length === 0) return
-    void loadModelLists(roster)
-  }, [status?.channels, loadModelLists])
   const connectedFor = useCallback(
     (channel: PoolWebChannel): readonly ChannelAccount[] =>
-      connected.filter((account) => account.provider === channel.id && account.enabled !== false),
+      distinctAccounts(
+        connected.filter((account) => account.provider === channel.id && account.enabled !== false),
+      ),
     [connected],
   )
   const stopPolling = useCallback((channelId: string): void => {
@@ -337,10 +255,52 @@ export function ChannelsPage({ t }: ChannelsPageProps) {
     stopPolling(channelId)
     setUi(prev => ({ ...prev, [channelId]: IDLE }))
   }, [stopPolling])
+  /**
+   * Channels with at least one account, not accounts in total.
+   *
+   * The hero pill counts connections — "six channels are hooked up" is the
+   * question that pill has always answered, and a second pill counting accounts
+   * would compete with the per-channel badges that already do it.
+   */
   const connectedCount = useMemo(
     () => new Set(connected.map((account) => account.provider)).size,
     [connected],
   )
+  /**
+   * One switch for every channel, because that is the only granularity the pack
+   * offers: its auto check-in run targets each provider that holds an account
+   * and claims through one path, with no per-provider switch to set. Drawing
+   * thirteen toggles that all drove the same boolean would be thirteen ways to
+   * be wrong; the state is read back from the pack rather than assumed, so the
+   * switch shows what the last run will actually do.
+   */
+  const [autoCheckin, setAutoCheckin] = useState<ChannelAutoCheckin | undefined>(undefined)
+  const [autoBusy, setAutoBusy] = useState(false)
+  const loadAutoCheckin = useCallback(async (): Promise<void> => {
+    try {
+      const envelope = await callPack('usage.autoCheckin', {})
+      if (!mounted.current) return
+      setAutoCheckin(autoCheckinFrom(envelope))
+    } catch {
+      // The switch is a convenience; the pack not answering it is not a page
+      // failure, so it simply stays absent.
+    }
+  }, [])
+  useEffect(() => { void loadAutoCheckin() }, [loadAutoCheckin])
+  const toggleAutoCheckin = useCallback(async (): Promise<void> => {
+    const next = autoCheckin?.enabled === true ? false : true
+    setAutoBusy(true)
+    try {
+      const envelope = await callPack('usage.autoCheckin', { enabled: next })
+      if (!mounted.current) return
+      setAutoCheckin(autoCheckinFrom(envelope))
+    } catch (cause) {
+      if (!mounted.current) return
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      if (mounted.current) setAutoBusy(false)
+    }
+  }, [autoCheckin])
   const state = status?.state ?? 'pending'
   const channels = status?.channels ?? []
   return (
@@ -361,6 +321,22 @@ export function ChannelsPage({ t }: ChannelsPageProps) {
           {t?.('chan.connectedCount', { count: connectedCount }) ?? `${connectedCount} connected`}
         </span>}
       />
+      {autoCheckin !== undefined && (
+        <div className="dsm-xdpool-autocheckin">
+          <label className="dsm-xdpool-switch">
+            <input
+              type="checkbox"
+              checked={autoCheckin.enabled}
+              disabled={autoBusy || autoCheckin.running}
+              onChange={() => { void toggleAutoCheckin() }}
+            />
+            <span>{t?.('chan.autoCheckin') ?? 'Claim daily credits automatically'}</span>
+          </label>
+          {autoCheckin.lastResult !== undefined && (
+            <span className="dsm-xdpool-autocheckin-note">{autoCheckin.lastResult}</span>
+          )}
+        </div>
+      )}
       {error !== undefined && (
         <p className="dsm-xdpool-panel-error">{error}</p>
       )}
@@ -394,13 +370,8 @@ export function ChannelsPage({ t }: ChannelsPageProps) {
           t={t}
           ui={ui[channel.id] ?? IDLE}
           connectedCount={connectedFor(channel).length}
-          models={modelLists[channel.id] ?? []}
-          modelsError={modelsError}
-          probes={probes}
-          probing={probing}
           onSignIn={() => { void signIn(channel) }}
           onCancel={() => cancel(channel.id)}
-          onTestModel={(model) => { void testModel(channel.id, model) }}
         />
       ))}
     </div>
@@ -411,35 +382,16 @@ interface ChannelRowProps {
   t?: Translate | undefined
   ui: ChannelUiState
   connectedCount: number
-  /**
-   * What the host's catalogue says this channel contributes.
-   *
-   * Empty for a channel nobody has signed in to, which is the ordinary state
-   * for twelve of the thirteen and must not be dressed up as a fault.
-   */
-  models: readonly ChannelModel[]
-  /** Why the catalogue could not be read, if it could not. */
-  modelsError?: string | undefined
-  /** `"<channelId>/<modelId>"` -> the last reading for that pair. */
-  probes: Readonly<Record<string, ModelProbeReading>>
-  /** The pair currently being measured, in the same key shape. */
-  probing: string | undefined
   onSignIn: () => void
   onCancel: () => void
-  onTestModel: (modelId: string) => void
 }
 function ChannelRow({
   channel,
   t,
   ui,
   connectedCount,
-  models,
-  modelsError,
-  probes,
-  probing,
   onSignIn,
   onCancel,
-  onTestModel,
 }: ChannelRowProps) {
   const busy = ui.phase === 'signing-in'
   const icon = channelIcon(channel.id)
@@ -465,75 +417,62 @@ function ChannelRow({
           </span>
         )}
       </div>
-      <p className="dsm-xdpool-channel-note">{channel.note}</p>
-      {/* The per-model facts and the test button, from the shared component every
-          model page uses — see the module header for why a channel that reports
-          nothing is left silent rather than given an empty line. */}
-      {models.length > 0
-        ? <ul className="dsm-xdpool-channel-models">
-            {models.map(model => {
-              const key = `${channel.id}/${model.id}`
-              return (
-                <li key={model.id} className="dsm-xdpool-channel-model">
-                  <span className="dsm-xdpool-channel-model-name">{model.name}</span>
-                  <ModelFactsRow
-                    t={t}
-                    facts={modelFactsFor(model)}
-                    {...probes[key] === undefined
-                      ? { onTest: () => { onTestModel(model.id) } }
-                      : { probe: probes[key], probing: probing === key }}
-                  />
-                </li>
-              )
-            })}
-          </ul>
-        : null}
-      {modelsError !== undefined && (
-        <p className="dsm-xdpool-channel-error" title={modelsError}>
-          {t?.('chan.modelsUnavailable') ?? 'The model list could not be read'}
-        </p>
+      {/* What the vendor actually gives away. The pool page says this too, but a
+          user standing on this page has not seen that card, and the answer to
+          "is signing in here worth it" is this line and nothing else. */}
+      {channel.note !== '' && (
+        <p className="dsm-xdpool-channel-note">{channel.note}</p>
       )}
-      {channel.ownedByPool ? (
-        <p className="dsm-xdpool-channel-owned">
-          {t?.('chan.ownedByPool') ?? 'Managed by the pool above'}
-        </p>
-      ) : (
-        <div className="dsm-xdpool-channel-actions">
-          {busy ? (
-            <>
-              <span className="dsm-xdpool-channel-waiting">
-                {ui.message ?? t?.('chan.signingIn') ?? 'Waiting for sign-in…'}
+      <div className="dsm-xdpool-channel-actions">
+        {busy ? (
+          <>
+            <span className="dsm-xdpool-channel-waiting">
+              {ui.message ?? t?.('chan.signingIn') ?? 'Waiting for sign-in…'}
+            </span>
+            {ui.loginUrl !== undefined && (
+              <a
+                className="dsm-xdpool-btn"
+                href={ui.loginUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {t?.('chan.openLogin') ?? 'Open the sign-in page'}
+              </a>
+            )}
+            <button type="button" className="dsm-xdpool-btn" onClick={onCancel}>
+              {t?.('agg.clear') ?? 'Cancel'}
+            </button>
+          </>
+        ) : (
+          <>
+            {/* The button is permanent, not a one-shot: a channel can hold any
+               number of accounts, so the confirmation sits beside it as a
+               status line instead of replacing it. Replacing it (the earlier
+               shape) left a channel with no way to add a second account and no
+               way to see what the click had done. */}
+            <button type="button" className="dsm-xdpool-btn" onClick={onSignIn}>
+              {t?.('chan.login') ?? 'Add account'}
+            </button>
+            {/* Raccoon's own login page shows the QR and the phone-code form on
+                one screen, and its QR is the one that goes stale while the user
+                reads the message. The plugin cannot switch which door it opens —
+                the pack drives that page — so the advice has to sit next to the
+                button instead. */}
+            {channel.smsHint === true && (
+              <span className="dsm-xdpool-channel-hint">{t?.('chan.loginSmsHint') ?? ''}</span>
+            )}
+            {ui.phase === 'done' && (
+              <span className="dsm-xdpool-channel-ok">{t?.('chan.done') ?? 'Account added'}</span>
+            )}
+            {ui.phase === 'failed' && (
+              <span className="dsm-xdpool-channel-error">
+                {ui.message ?? t?.('chan.failed') ?? 'Sign-in failed'}
               </span>
-              {ui.loginUrl !== undefined && (
-                <a
-                  className="dsm-xdpool-btn"
-                  href={ui.loginUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {t?.('chan.openLogin') ?? 'Open the sign-in page'}
-                </a>
-              )}
-              <button type="button" className="dsm-xdpool-btn" onClick={onCancel}>
-                {t?.('agg.clear') ?? 'Cancel'}
-              </button>
-            </>
-          ) : ui.phase === 'done' ? (
-            <span className="dsm-xdpool-channel-ok">{t?.('chan.done') ?? 'Signed in'}</span>
-          ) : (
-            <>
-              <button type="button" className="dsm-xdpool-btn" onClick={onSignIn}>
-                {t?.('chan.login') ?? 'Sign in'}
-              </button>
-              {ui.phase === 'failed' && (
-                <span className="dsm-xdpool-channel-error">
-                  {ui.message ?? t?.('chan.failed') ?? 'Sign-in failed'}
-                </span>
-              )}
-            </>
-          )}
-        </div>
-      )}
+            )}
+          </>
+        )}
+      </div>
+
     </div>
   )
 }

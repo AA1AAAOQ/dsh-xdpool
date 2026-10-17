@@ -35,6 +35,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { PoolCard } from './PoolCard.tsx'
 import { POOL_NAV_ICON_MASK_URL } from './nav-icon.ts'
+import { installPackRpc } from './channel-rpc.ts'
 import type { PoolCardInjected } from './PoolCard.tsx'
 import { en, zh } from './locales.ts'
 import type { XdPoolSettingsKey } from './locales.ts'
@@ -123,6 +124,11 @@ export function apply(ctx: WorkBuddyClientContext): void {
       (ctx as unknown as { get(name: string): unknown }).get(serviceName)
 
     const settingsScope = resolveSettingsScope(softGet)
+
+    // The pack's management RPC rides the shell's connection admission (a raw
+    // fetch of /api/channel-pack is 401'd by the host). Capture the bridge once,
+    // here, where the apply closure's ctx is alive.
+    installPackRpc(ctx)
 
     ctx.slots.inject('settings.section', () => ctx.slots.register({
       name: 'settings.section',

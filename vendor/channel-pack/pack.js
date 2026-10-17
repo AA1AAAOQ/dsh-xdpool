@@ -29446,6 +29446,13 @@ var CHANNEL_PACK_NS = "channel-pack";
 var channelPackSchema = Schema.object({
   accounts: Schema.array(Schema.any()).default([]),
   disabledModels: Schema.dict(Schema.any()).default({}),
+  // ── 本地扩展（dsh-xdpool，2026-10-17）────────────────────────────────
+  // 每 provider 一个「模型 → 上下文预算(正整数)」表：模型原生的上下文窗口
+  // 常常远超会话实际能吃下的量（1M/2M），用户需要能在选择器里按需收窄，
+  // 语义与 WorkBuddy 账号池里的「上下文大小」选择器一致（0/缺键 = 不收窄）。
+  // **必须显式声明**：SettingsStore 的 `scope.replace()` 是整体覆盖，
+  // schema 里没声明的键会被 schemastery 剥掉，写回时就此静默丢失。
+  contextBudgets: Schema.dict(Schema.any()).default({}),
   loomyPermanentLocked: Schema.boolean().default(false),
   gatewayEnabled: Schema.boolean().default(true),
   providerOrder: Schema.array(Schema.string()).default([])
@@ -29489,6 +29496,21 @@ function sanitizeDisabledModels(raw) {
   }
   return result;
 }
+function sanitizeContextBudgets(raw) {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {};
+  const result = {};
+  for (const [provider, value] of Object.entries(raw)) {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
+    const perProvider = {};
+    for (const [modelId, budget] of Object.entries(value)) {
+      // 只收正整数：0/负数/NaN/字符串一律当作「没设」，与 catalog.ts 的
+      // `budget > 0` 判据对齐，避免同一份状态在两处得到相反的结论。
+      if (Number.isSafeInteger(budget) && budget > 0) perProvider[modelId] = budget;
+    }
+    if (Object.keys(perProvider).length > 0) result[provider] = perProvider;
+  }
+  return result;
+}
 function sanitizeAccounts(raw) {
   if (!Array.isArray(raw)) return [];
   const accounts = [];
@@ -29519,6 +29541,7 @@ var SettingsStore = class {
     return {
       accounts: sanitizeAccounts(value.accounts),
       disabledModels: sanitizeDisabledModels(value.disabledModels),
+      contextBudgets: sanitizeContextBudgets(value.contextBudgets),
       // 只是**镜像**（权威表在 permanent-locks.json）；老文档没这个键 → false。
       loomyPermanentLocked: value.loomyPermanentLocked === true,
       // 老文档没这个键 → 启用，与升级前行为一致。
@@ -29531,6 +29554,9 @@ var SettingsStore = class {
     await this.scope.replace({
       accounts: state.accounts,
       disabledModels: state.disabledModels,
+      // 预算表丢失的后果只是「下次选择器回到原生窗口」，用户重选一次即可
+      // （纯偏好、可逆），故接受老版本重写时丢掉本键。
+      contextBudgets: state.contextBudgets ?? {},
       // 镜像字段由 AccountPool 与独立文档**同源写出**：同机上只认这个字段的
       // 旧版本代码（其它 profile）读它、也会原样写回它，故两边不会脱节。
       loomyPermanentLocked: state.loomyPermanentLocked === true,
@@ -29634,6 +29660,7 @@ var FileStore = class {
       return {
         accounts: sanitizeAccounts(value.accounts),
         disabledModels: sanitizeDisabledModels(value.disabledModels),
+        contextBudgets: sanitizeContextBudgets(value.contextBudgets),
         // 只是镜像（权威表在 permanent-locks.json）；老文档没这个键 → false。
         loomyPermanentLocked: value.loomyPermanentLocked === true,
         // 老文档没这个键 → 启用，与升级前行为一致。
@@ -29677,6 +29704,7 @@ var FileStore = class {
       const state = {
         accounts,
         disabledModels: {},
+        contextBudgets: {},
         // 凭据文件里没有任何锁定信息 → 镜像写 false（权威表另有其文档）。
         loomyPermanentLocked: false,
         // 恢复出的文档本来就不含任何开关信息 → 启用（与全新安装一致）。
@@ -29821,6 +29849,14 @@ var AccountPool = class {
    */
   modelCache = {};
   /**
+   * 每 provider 的「模型 → 上下文预算」表的**权威进程内副本**（与
+   * {@link modelCache} 同理：载入一次后即以本副本为准）。
+   *
+   * ⚠️ 缺键语义是**不收窄**（用模型原生窗口）。预算只用于「用户在选择器里
+   * 把窗口收窄到 200K 这类值」，不改变上游真实能力。
+   */
+  contextBudgetCache = {};
+  /**
    * 「锁定永久积分」开关表的**权威进程内副本**（与 {@link cache} 同理）。
    *
    * ⚠️ 每个 provider 一项（Loomy / CodeBuddy / WorkBuddy 各自独立），
@@ -29870,6 +29906,7 @@ var AccountPool = class {
     if (state !== void 0) {
       this.cache = state.accounts;
       this.modelCache = state.disabledModels;
+      this.contextBudgetCache = state.contextBudgets ?? {};
       this.gatewayEnabledCache = state.gatewayEnabled !== false;
       this.providerOrderCache = state.providerOrder ?? [];
     }
@@ -29946,6 +29983,7 @@ var AccountPool = class {
       await this.store.save({
         accounts: this.cache,
         disabledModels: this.modelCache,
+        contextBudgets: this.contextBudgetCache,
         ...this.lockFields(),
         // ⚠️ 必须与账号、黑名单取自**同一时刻**的快照（见本方法的注释）：
         // 分两次快照会让同一份文档里的字段互相矛盾。
@@ -30068,6 +30106,48 @@ var AccountPool = class {
     if (Object.keys(perProvider).length === 0) delete next[provider];
     else next[provider] = perProvider;
     await this.writeModels(next);
+  }
+  /**
+   * 持久化上下文预算表（同时更新进程内权威副本）。
+   *
+   * 与 {@link writeModels} 同款：先改副本再排队落盘，落盘快照里三个字段取自
+   * 同一时刻，不会出现「预算表与黑名单互相矛盾」。
+   */
+  async writeContextBudgets(contextBudgets) {
+    this.contextBudgetCache = contextBudgets;
+    this.loaded = true;
+    if (this.store.kind === "memory") {
+      this.ctx.logger?.warn?.("[channel-pack] \u65E0\u6301\u4E45\u5316\u540E\u7AEF\uff0c\u4E0A\u4E0B\u6587\u9884\u7B97\u53D8\u66F4\u672A\u843D\u76D8");
+      return;
+    }
+    await this.queueStoreSave();
+  }
+  /**
+   * 读取某 provider 的上下文预算表（模型 id → 正整数窗口）。
+   *
+   * 缺 provider 键 / 缺模型键都表示**不收窄**，适配器据此保留原生窗口。
+   */
+  contextBudgetsFor(provider) {
+    this.ensureLoaded();
+    return { ...this.contextBudgetCache[provider] ?? {} };
+  }
+  /**
+   * 设置/清除单个模型的上下文预算。
+   *
+   * ⚠️ 清除时**删除该键**而不是写 0（与 {@link setModelDisabled} 同款约定）：
+   * 表里只留真正在收窄的模型，「没设」永远只有一个表示法。
+   *
+   * @param budget - 正整数窗口；非正整数/非整数视为清除
+   */
+  async setModelContextBudget(provider, modelId, budget) {
+    this.ensureLoaded();
+    const next = { ...this.contextBudgetCache };
+    const perProvider = { ...next[provider] ?? {} };
+    if (Number.isSafeInteger(budget) && budget > 0) perProvider[modelId] = budget;
+    else delete perProvider[modelId];
+    if (Object.keys(perProvider).length === 0) delete next[provider];
+    else next[provider] = perProvider;
+    await this.writeContextBudgets(next);
   }
   /**
    * 批量关闭一批模型（Channel Pack 模型列表的「关闭全部」）。
@@ -31879,6 +31959,63 @@ function withDeadModelPruning(providers, adapter) {
   });
 }
 
+/**
+ * 包一层「上下文预算收窄」，只在 `resolveModel` 上生效。
+ *
+ * ## 为什么要包在 `resolveModel` 而不是改 `listModels`
+ *
+ * 目录（有哪些模型）与事实（每个模型多大窗口）是两回事：预算只该影响事实，
+ * 不该影响目录 —— 否则用户把预算设小之后，那个模型会从目录里消失，看起来
+ * 像「被下线了」。
+ *
+ * ## 为什么保留一个「未收窄」入口
+ *
+ * 客户端要同时显示「当前窗口」与「原生窗口」才能渲染出预算选择器（两颗
+ * radio）。若这里直接把 `context.contextWindow` 改小，上层就再也拿不到原值
+ * 了，所以 {@link RAW_ADAPTER} 暴露原始适配器，供
+ * `catalogFactsFor` 取未收窄的事实。
+ *
+ * @param provider - provider id（`this.product.id`，不要写死字面量）
+ * @param adapter - 已包过失效模型剔除的适配器
+ * @param pool - AccountPool，用于现读预算表
+ */
+var RAW_ADAPTER = Symbol("channel-pack:rawAdapter");
+function withContextBudgets(provider, adapter, pool) {
+  if (typeof adapter.resolveModel !== "function") return adapter;
+  const target = adapter;
+  const read = (modelId) => {
+    try {
+      return pool.contextBudgetsFor(provider)[modelId];
+    } catch {
+      return void 0;
+    }
+  };
+  const wrapped = new Proxy(adapter, {
+    get(obj, prop, receiver) {
+      if (prop === RAW_ADAPTER) return target;
+      if (prop === "resolveModel") {
+        // 现读 `pool.contextBudgetsFor()`（进程内权威副本，`setContextBudget`
+        // 之后立即生效），所以改一次预算下一次调用就是新的，不需要重注册适配器。
+        return async (...args) => {
+          const resolved = await target.resolveModel.apply(obj, args);
+          if (resolved === null || typeof resolved !== "object") return resolved;
+          const native = Number(resolved.context?.contextWindow);
+          const budget = read(resolved.id ?? args[1]);
+          // 只在「真的有原生窗口、且预算比它小」时收窄；预算 ≥ 原生视为
+          // 「用户没真收窄」，保持原生值，避免把 1M 报成 2M 这类反向放大。
+          if (!Number.isSafeInteger(native) || native <= 0) return resolved;
+          if (!Number.isSafeInteger(budget) || budget <= 0 || budget >= native) return resolved;
+          return { ...resolved, context: { ...resolved.context, contextWindow: budget } };
+        };
+      }
+      const value = Reflect.get(obj, prop, receiver);
+      if (typeof value !== "function") return value;
+      return value.bind(obj);
+    }
+  });
+  return wrapped;
+}
+
 // src/image-pricing.js
 var FALLBACK_IMAGE_PRICING = Object.freeze({
   /** @param {readonly { offloaded?: boolean }[]} images */
@@ -32373,13 +32510,60 @@ var DEFAULT_MODELS = [
   "deepseek-v4-pro",
   "deepseek-v4.1-flash"
 ];
+/*
+ * Per-model facts for this channel, keyed lowercase because the remote roster
+ * is inconsistent about case (`GLM-5.2` next to `glm-5.3`).
+ *
+ * The gateway's own listing carries ids and names only — `parseModelInfo` keeps
+ * nothing else — so these are the vendor's published figures, cross-checked
+ * against the same model family on the WorkBuddy gateway (they agreed on every
+ * id the two rosters share). Absent means "this channel publishes no figure":
+ * the row then shows no window instead of a plausible-looking guess, because a
+ * wrong 128K reads as fact and is worse than a blank.
+ *
+ * `openpangu-2.0-flash` / `openpangu-2.0-pro` are absent on purpose — Huawei
+ * publishes no window for them, and they are not on any other roster here.
+ * `glm-5.2-sft-harmony` is the ArkTS SFT variant of GLM-5.2: same window, and
+ * text-only (the SFT is tuned for code, not images).
+ */
 var CONTEXT_WINDOWS = /* @__PURE__ */ new Map([
-  ["GLM-5.2", 202752],
+  ["glm-5.2", 202752],
+  ["glm-5.2-sft-harmony", 202752],
+  ["glm-5.1", 2e5],
+  ["glm-5.3", 1e6],
   ["glm-5.3-flash", 1048576],
   ["deepseek-v4-flash", 1048576],
   ["deepseek-v4-pro", 1048576],
-  ["deepseek-v4.1-flash", 1e6]
+  ["deepseek-v4.1-flash", 1e6],
+  ["kimi-k2.6-vl", 256e3]
 ]);
+/*
+ * Which ids accept image input on this channel.
+ *
+ * The adapter used to answer `inputModalities: ["text"]` for every model, which
+ * made the account-pool cards label nine of nine as "text only" — including
+ * models the vendor ships as multimodal. Membership mirrors the vendor's own
+ * capability table; the `-vl` id is here for completeness even though
+ * `listAllModels` filters it out of the picker.
+ */
+var IMAGE_MODELS = /* @__PURE__ */ new Set([
+  "glm-5.2",
+  "glm-5.1",
+  "glm-5.3",
+  "glm-5.3-flash",
+  "deepseek-v4-flash",
+  "deepseek-v4-pro",
+  "deepseek-v4.1-flash",
+  "kimi-k2.6-vl"
+]);
+/** Window for one id, or undefined when this channel publishes none. */
+function contextWindowFor(model) {
+  return CONTEXT_WINDOWS.get(String(model).toLowerCase());
+}
+/** Input modalities for one id; text is the floor every model here meets. */
+function modalitiesFor(model) {
+  return IMAGE_MODELS.has(String(model).toLowerCase()) ? ["text", "image"] : ["text"];
+}
 function contentToText(content) {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
@@ -32827,14 +33011,23 @@ var CodeArtsAdapter = class extends LlmAdapter {
     const visible = this.listAllModels();
     const disabled = this.options.accountPool?.disabledModelsFor(PROVIDER);
     const listed = disabled === void 0 || disabled.size === 0 ? visible : visible.filter((m) => !disabled.has(m.id));
-    return listed.map((m) => ({ provider: PROVIDER, id: m.id, name: m.name, inputModalities: ["text"] }));
+    return listed.map((m) => {
+      const contextWindow = contextWindowFor(m.id);
+      return {
+        provider: PROVIDER,
+        id: m.id,
+        name: m.name,
+        inputModalities: modalitiesFor(m.id),
+        ...contextWindow === void 0 ? {} : { contextWindow }
+      };
+    });
   }
   async resolveModel(provider, model, _signal) {
     await this.ensureRemoteModels();
     const remoteModel = this.remoteModels?.find((m) => m.id === model);
     const name2 = remoteModel?.name ?? model;
-    const contextWindow = CONTEXT_WINDOWS.get(model);
-    const resolved = { provider, id: model, name: name2 };
+    const contextWindow = contextWindowFor(model);
+    const resolved = { provider, id: model, name: name2, inputModalities: modalitiesFor(model) };
     if (contextWindow !== void 0) resolved.context = { contextWindow };
     resolved.reasoning = {
       efforts: [
@@ -32847,7 +33040,7 @@ var CodeArtsAdapter = class extends LlmAdapter {
   }
   async prepareCall(provider, model, signal) {
     return {
-      model: { ...await this.resolveModel(provider, model, signal), inputModalities: ["text"] },
+      model: await this.resolveModel(provider, model, signal),
       stream: (options) => this.stream(options)
     };
   }
@@ -60236,6 +60429,76 @@ async function fullCatalogIds(ctx, modelAdapters, provider) {
     return { error: `\u8BFB\u53D6\u6A21\u578B\u5217\u8868\u5931\u8D25\uFF1A${reason}` };
   }
 }
+/**
+ * 逐个模型向适配器问一次「能力事实」（上下文窗口 / 输入模态 / 输出上限 /
+ * 思考档位），并套用用户设定的上下文预算。
+ *
+ * ## 为什么必须走这里，而不是 `llm.listModels()`
+ *
+ * 上游每个适配器的 `listModels()` 首行都是
+ * `if (!await providerCatalogVisible(pool, PROVIDER)) return []` —— 该闸门在
+ * 凭据解析不出来时（历史遗留的已删除 ref、尚未完成登录）返回**空数组**。
+ * 于是 `llm.listModels()` 对 9 个渠道里有 8 个给出空目录，上下文窗口与识图
+ * 能力这类事实自然一条都拿不到。而适配器自己的 `resolveModel()` 读的是**本地
+ * 目录与产品常量**，不经过那道闸门 —— 与 {@link fullCatalogIds} 先问
+ * `listAllModels()` 是同一条思路。
+ *
+ * ## 成本与取舍
+ *
+ * 部分适配器的 `resolveModel()` 会先 `ensureRemoteModels()`（一次网络往返），
+ * 所以并发限在 {@link FACT_LOOKUP_CONCURRENCY}；单个模型失败只丢它自己的事实，
+ * 绝不让整条 `model.list` 失败（缺事实只是少显示一行，不该把目录整个打没）。
+ *
+ * @returns modelId → 事实对象
+ */
+var FACT_LOOKUP_CONCURRENCY = 6;
+async function catalogFactsFor(modelAdapters, provider, catalog, contextBudgets) {
+  const facts = /* @__PURE__ */ new Map();
+  const registered = modelAdapters?.[provider];
+  if (registered === void 0) return facts;
+  // 刻意问**未包预算**的原始适配器：这里要的是原生窗口，预算由调用方自己套
+  // （见下面的 `capped`），否则「收窄后」再问一次只会拿到被自己改小的值，
+  // `nativeContextWindow` 永远等于当前窗口，客户端就没法渲染选择器了。
+  const adapter = registered[RAW_ADAPTER] ?? registered;
+  if (typeof adapter.resolveModel !== "function") return facts;
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < catalog.length) {
+      const index = cursor++;
+      const model = catalog[index];
+      if (model === void 0) continue;
+      let resolved;
+      try {
+        resolved = await adapter.resolveModel(provider, model.id);
+      } catch (error) {
+        void error;
+        continue;
+      }
+      if (resolved === null || typeof resolved !== "object") continue;
+      const native = Number(resolved.context?.contextWindow);
+      const budget = contextBudgets?.[model.id];
+      const capped = Number.isSafeInteger(budget) && budget > 0 && budget < native ? budget : void 0;
+      const maxTokens = Number(resolved.defaultMaxTokens);
+      const modalities = Array.isArray(resolved.inputModalities) ? [...resolved.inputModalities] : void 0;
+      const efforts = resolved.reasoning?.efforts;
+      const fact = {};
+      if (Number.isSafeInteger(native) && native > 0) {
+        fact.contextWindow = capped === void 0 ? native : capped;
+        // 只在真的收窄过时才带原生窗口：没收窄时两个值相同，重复传输没有意义，
+        // 而客户端正是靠「有 nativeContextWindow 才显示预算选择器」来决定要不要
+        // 渲染那两颗 radio 的。
+        if (capped !== void 0) fact.nativeContextWindow = native;
+      }
+      if (Number.isSafeInteger(maxTokens) && maxTokens > 0) fact.maxTokens = maxTokens;
+      if (modalities !== void 0 && modalities.length > 0) fact.inputModalities = modalities;
+      if (Array.isArray(efforts) && efforts.length > 0) fact.reasoning = true;
+      if (Object.keys(fact).length > 0) facts.set(model.id, fact);
+    }
+  };
+  const width = Math.min(FACT_LOOKUP_CONCURRENCY, catalog.length);
+  await Promise.all(Array.from({ length: width }, () => worker()));
+  return facts;
+}
 function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lobsterai, qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, gemini, modelAdapters, config = {}) {
   const connection = ctx.connection ?? ctx.get("connection");
   if (!connection || typeof connection.fetch?.register !== "function") {
@@ -60752,13 +61015,21 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
                 userId
               );
               if (existingId.length > 0 && existingId !== id) {
-                ctx.logger.warn(
-                  `[channel-pack] zcode \u8BE5\u8D26\u53F7\uFF08user_id=${userId}\uFF09\u5DF2\u5B58\u5728\u4E8E ${existingId}\uFF0C\u65B0\u6761\u76EE ${id} \u5DF2\u81EA\u52A8\u505C\u7528\uFF08\u4E0D\u53C2\u4E0E\u9009\u53F7\uFF09`
-                );
-                await pool.updateAccount(id, {
-                  nickname: `ZCode ${label}\uFF08\u91CD\u590D\uFF0C\u5DF2\u505C\u7528\uFF09`,
-                  enabled: false
+                // 本地适配（dsh-xdpool）：重扫同一账号时用新凭据覆盖已有条目，
+                // 而不是新增一条「重复，已停用」的死条目。覆盖顺序很重要：
+                // 先把已有条目的 credentialRef 指到新凭据，再删掉本次的新条目
+                //（removeAccount 会 unset 其 credentialRef 指向的凭据本体，
+                // 此时新条目仍指着新凭据，所以必须最后删）。若先删新条目，
+                // 新凭据会被 unset，覆盖就变成了把已有条目指向一个已销毁的 ref。
+                await pool.updateAccount(existingId, {
+                  credentialRef: refName,
+                  nickname: `ZCode ${label}`,
+                  enabled: true
                 });
+                ctx.logger.warn(
+                  `[channel-pack] zcode \u8BE5\u8D26\u53F7\uFF08user_id=${userId}\uFF09\u5DF2\u5B58\u5728\u4E8E ${existingId}\uFF0C\u5DF2\u7528\u65B0\u51ED\u636E\u8986\u76D6\u8BE5\u6761\u76EE\uFF08\u4E0D\u65B0\u589E\u505C\u7528\u6761\u76EE\uFF09`
+                );
+                await pool.removeAccount(id);
                 return;
               }
             }
@@ -61936,20 +62207,34 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
       // 「设置在某个模型上，选择器里却找不到它」。
       case "model.list": {
         const req = payload;
-        const llm = llmServiceOf(ctx);
-        if (llm === void 0) {
-          return { ok: false, error: { code: "bad-request", message: "llm \u670D\u52A1\u4E0D\u53EF\u7528" } };
-        }
-        let models;
-        try {
-          models = await llm.listModels(req.provider);
-        } catch (error) {
-          const reason = error instanceof Error ? error.message : String(error);
-          return { ok: false, error: { code: "bad-request", message: `\u8BFB\u53D6\u6A21\u578B\u5217\u8868\u5931\u8D25\uFF1A${reason}` } };
-        }
         const disabledMap = pool.listDisabledModels(req.provider);
         const catalogSource = modelAdapters?.[req.provider];
         const all = catalogSource?.listAllModels();
+        // ── 本地适配（dsh-xdpool，2026-10-17）────────────────────────────
+        // `llm` 只在**没有适配器目录**时才需要：上游把 `llm.listModels()`
+        // 放在最前面当硬门槛，于是宿主未注册 `llm` 服务（或它抛错）时，
+        // 整条 RPC 直接失败 —— 而下面那段目录其实就在本地、根本不需要
+        // 任何服务。表现是账号池页每一张渠道卡都印「该渠道还没有发布
+        // 模型」，把一次宿主侧的服务缺失伪装成了渠道的空目录。
+        //
+        // 有适配器目录时 `llm.listModels()` 的返回值**本来就没被用到**
+        // （见下面的 `all !== void 0` 分支：目录直接取自适配器），所以
+        // 把它降级为「仅无目录时必需」既不改变任何一条成功路径的输出，
+        // 又能让目录照常返回。仅在没有目录时才继续问 `llm`，问不通就
+        // 如实报错。
+        let models;
+        if (all === void 0) {
+          const llm = llmServiceOf(ctx);
+          if (llm === void 0) {
+            return { ok: false, error: { code: "bad-request", message: "llm \u670D\u52A1\u4E0D\u53EF\u7528" } };
+          }
+          try {
+            models = await llm.listModels(req.provider);
+          } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            return { ok: false, error: { code: "bad-request", message: `\u8BFB\u53D6\u6A21\u578B\u5217\u8868\u5931\u8D25\uFF1A${reason}` } };
+          }
+        }
         let catalog;
         if (all !== void 0) {
           catalog = [...all];
@@ -61973,6 +62258,15 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             if (!known.has(id)) catalog.push({ id, name: id });
           }
         }
+        // ── 本地扩展（dsh-xdpool，2026-10-17）────────────────────────────
+        // 上游这份 value 只有 `{id,name,disabled,dead,isFree?}`，上下文窗口与
+        // 识图能力一概没有，于是账号池页每一行都只能印一个光秃秃的模型名。
+        // 那些事实其实**就在适配器里**（`contextWindowFor` / `inputModalitiesFor`
+        // / `resolveModel`），只是被 `llm.listModels()` 的凭据闸门挡在了外面，
+        // 所以这里直接向适配器逐个问一次（见 `catalogFactsFor` 的注释）。
+        // 单个模型问不到就只缺它自己的事实，目录照常返回。
+        const contextBudgets = pool.contextBudgetsFor(req.provider);
+        const facts = await catalogFactsFor(modelAdapters, req.provider, catalog, contextBudgets);
         const value = {
           models: catalog.map((model) => ({
             id: model.id,
@@ -61984,7 +62278,10 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             // ⚠️ 免费标记**照原样透传，缺失就不写**（不编造 `false`）：Channel Pack 的
             // 模型列表按「计费/来源」分组，把「适配器没报」当成「按量计费」是
             // 保守归组，但字段本身仍保持「未知」语义（与全仓约定一致）。
-            ...model.isFree === void 0 ? {} : { isFree: model.isFree }
+            ...model.isFree === void 0 ? {} : { isFree: model.isFree },
+            // 上下文预算（缺键 = 不收窄）。与 disabled/dead 同款透传约定。
+            ...contextBudgets[model.id] === void 0 ? {} : { contextBudget: contextBudgets[model.id] },
+            ...facts.get(model.id) ?? {}
           }))
         };
         return { ok: true, value };
@@ -62126,6 +62423,32 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
         const value = {
           provider: req.provider,
           disabledModels: pool.listDisabledModels(req.provider)
+        };
+        return { ok: true, value };
+      }
+      /**
+       * 设置/清除单个模型的上下文预算（账号池页模型行上的「上下文大小」）。
+       *
+       * 与 `model.setDisabled` 同款约定：不猜默认值、不空转落盘。
+       *
+       * ⚠️ **不广播 `llm/adapters-updated`**：与「打开/关闭模型」不同，预算不
+       * 改变目录本身（模型还是那些模型），而它真正影响的 `resolveModel` 结果
+       * 每次请求都会现读 `pool.contextBudgetsFor()`（见
+       * `withContextBudgets`），所以下一次调用即生效，无需让客户端缓存失效。
+       */
+      case "model.setContextBudget": {
+        const req = payload;
+        if (typeof req.provider !== "string" || req.provider.length === 0 || typeof req.modelId !== "string" || req.modelId.length === 0) {
+          return { ok: false, error: { code: "bad-request", message: "provider \u4E0E modelId \u5FC5\u586B" } };
+        }
+        const budget = req.budget;
+        if (budget !== void 0 && budget !== null && !Number.isSafeInteger(budget)) {
+          return { ok: false, error: { code: "bad-request", message: "budget \u5FC5\u987B\u662F\u6B63\u6574\u6570" } };
+        }
+        await pool.setModelContextBudget(req.provider, req.modelId, budget === null ? void 0 : budget);
+        const value = {
+          provider: req.provider,
+          contextBudgets: pool.contextBudgetsFor(req.provider)
         };
         return { ok: true, value };
       }
@@ -67588,6 +67911,147 @@ function apply(ctx, config = {}) {
   const service = new CodeArtsAuth(ctx);
   const pool = new AccountPool(ctx);
   configureDeadModelStore(ctx);
+  // ── 本地适配（dsh-xdpool）：扫码渠道**首次**登录成功后默认静音该渠道 ──
+  // 需求（2026-10-16）：新扫码的渠道不该立刻把它的全部模型灌进选择器；
+  // 账号先出现在账号池页，模型默认全不勾，用户在账号池页手动勾选启用。
+  // 实现：包装 `pool.addAccount`，当该 provider 此前没有任何账号（即本次是
+  // 该渠道的第一条账号），或该渠道已有账号但黑名单为空（历史上在无钩子的
+  // 旧版本下登录过、从未静音过的渠道——2026-10-16 补）时，在凭据落定后把
+  // 该渠道全部模型写入黑名单。
+  // - 对全部渠道一视同仁（含 buddy / workbuddy——用户预期两条 WorkBuddy 卡
+  //   也从扫码登录页进来，且 WorkBuddy 渠道卡也展示模型勾选）；
+  // - 静音动作在微任务里执行（addAccount 是同步追加，不阻塞其返回值）；
+  // - 目录缺失时静默放弃（不报错 —— 静音失败只是少一次便利，不该毁掉登录）；
+  // - `modelAdapters` 在本函数更下方才组装，这里用 let + 闭包间接引用。
+  // - 用户在账号池页取消勾选后再登录同一渠道：isFirst 为 false，且黑名单
+  //   非空（用户勾选的模型已被移出黑名单），不会重复静音。
+  let channelPackModelAdaptersRef;
+  const rawAddAccount = pool.addAccount.bind(pool);
+  // ── 本地适配（dsh-xdpool）：清掉同渠道同昵称的重复账号 ──
+  // 需求（2026-10-16）：用户在扫码登录页反复点「添加账号」，上游 `addAccount`
+  // 是纯追加（无任何去重），于是同一渠道攒出多条同号账号，账号池页一张卡里
+  // 显示 3-4 个一模一样的人。判定键取 (provider, nickname)：同一渠道里昵称
+  // 相同即视为同一个账号（上游所有渠道在凭据落定后都用 `updateAccount` 把
+  // nickname 改成真实显示名，所以昵称才是稳定身份，id 每次都是新随机值）。
+  //
+  // ⚠️ 保留哪一条不能只看 createdAt newest。反复点「添加账号」时，**新加的
+  // 那条是登录还没走完的半成品**（expiresAt 缺失），而**旧的那条是完整可用
+  // 的旧凭据**（zcode 的凭据甚至不带过期时间）。按 newest 保留会留下半成品、
+  // 删掉能用的 —— 这正是本机 zcode 的实际形态（10-16 15:15 的三条无
+  // expiresAt，16:15 新加的那条也无 expiresAt，而其它渠道都有）。所以判定
+  // 优先级改成「可用性」：
+  //   ① expiresAt 为空视为长期凭据、可用；有值时必须晚于「现在」才算可用；
+  //   ② 双方都可用 → 留旧的（先登录的那条，凭据久经使用）；
+  //      旧的已过期而新的可用 → 换新；其余 → 留旧。
+  const channelAccountIsUsable = (account, now) => {
+    const expiresAt = Number(account.expiresAt);
+    if (!Number.isFinite(expiresAt) || expiresAt <= 0) return true;
+    return expiresAt > now;
+  };
+  const dedupeChannelAccounts = async () => {
+    try {
+      const all = await pool.listAllAccounts();
+      const now = Date.now();
+      const groups = new Map();
+      for (const account of all) {
+        const nickname = typeof account.nickname === "string" ? account.nickname : "";
+        // 昵称为空的条目无从判断是否重复（登录尚未落定的中间态），一律保留。
+        if (account.provider === "" || nickname === "") continue;
+        const key = `${account.provider}\u0000${nickname}`;
+        const kept = groups.get(key);
+        if (kept === undefined) {
+          groups.set(key, account);
+          continue;
+        }
+        const keptUsable = channelAccountIsUsable(kept, now);
+        const accountUsable = channelAccountIsUsable(account, now);
+        const replace = !keptUsable && accountUsable;
+        const drop = replace ? kept : account;
+        if (replace) groups.set(key, account);
+        await pool.removeAccount(drop.id);
+        ctx.logger.info(
+          `[channel-pack] ${drop.provider} 重复账号 ${drop.nickname}（${drop.id}）：已清理，保留 ${(replace ? account : kept).id}`
+        );
+      }
+    } catch (error) {
+      ctx.logger.warn(
+        `[channel-pack] 重复账号清理失败（不影响使用）：${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  };
+  // 启动时先扫一遍：用户升级前攒下的重复只能靠这一次清掉。
+  void Promise.resolve().then(() => dedupeChannelAccounts());
+  // ── 本地适配（dsh-xdpool）：启动时补静音「黑名单为空但已有账号」的渠道 ──
+  // 需求（2026-10-17）：上面的首登静音只在「下一次登录」时才补，而用户是在
+  // 打上补丁之前就登好的那些渠道（codearts / lobsterai / cline / raccoon /
+  // minimax / gemini），黑名单永远是空的，账号池页打开就是「全部已勾」，
+  // 与「让用户自己选」的预期相反。启动这一次把这类渠道补上。
+  //
+  // 例外：buddy / workbuddy 不在其中。这两条 lane 由 dsh-xdpool 自己的账号池
+  // 服务（账号池页顶部的 WorkBuddy 国内版 / 国际版两张卡），它们有一套自己的
+  // 模型选择（写进本插件的配置，不走 pack 的黑名单）；在这里把它们静音等于
+  // 用 pack 的黑名单去覆盖另一套开关，会让这两张卡的模型凭空消失。
+  const POOL_OWNED_PROVIDERS = /* @__PURE__ */ new Set([
+    "buddy",
+    "workbuddy"
+  ]);
+  const muteChannelsWithEmptyBlocklist = async () => {
+    try {
+      const all = await pool.listAllAccounts();
+      const providers = new Set(
+        all.map((account) => account.provider).filter((provider) => typeof provider === "string" && provider !== "" && !POOL_OWNED_PROVIDERS.has(provider))
+      );
+      for (const provider of providers) {
+        if (pool.disabledModelsFor(provider).size !== 0) continue;
+        const catalog = channelPackModelAdaptersRef?.[provider]?.listAllModels();
+        if (!Array.isArray(catalog) || catalog.length === 0) continue;
+        await pool.setModelsDisabled(provider, catalog.map((model) => model.id));
+        ctx.logger.info(
+          `[channel-pack] ${provider} 启动补静音（已有账号但黑名单为空）：已默认静音 ${catalog.length} 个模型（可在账号池页勾选启用）`
+        );
+      }
+    } catch (error) {
+      ctx.logger.warn(
+        `[channel-pack] 启动补静音失败（不影响使用）：${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  };
+  void Promise.resolve().then(() => muteChannelsWithEmptyBlocklist());
+  pool.addAccount = async (entry) => {
+    const isFirstForProvider = pool.listAccountsByProvider(entry.provider).length === 0;
+    const hadEmptyBlocklist = pool.disabledModelsFor(entry.provider).size === 0;
+    const result = await rawAddAccount(entry);
+    if ((isFirstForProvider || hadEmptyBlocklist) && !POOL_OWNED_PROVIDERS.has(entry.provider)) {
+      void Promise.resolve().then(async () => {
+        try {
+          const adapters = channelPackModelAdaptersRef;
+          const catalog = adapters?.[entry.provider]?.listAllModels();
+          if (!Array.isArray(catalog) || catalog.length === 0) return;
+          await pool.setModelsDisabled(entry.provider, catalog.map((model) => model.id));
+          ctx.logger.info(
+            `[channel-pack] ${entry.provider} ${isFirstForProvider ? "首次登录" : "补静音（黑名单为空）"}：已默认静音 ${catalog.length} 个模型（可在账号池页勾选启用）`
+          );
+        } catch (error) {
+          ctx.logger.warn(
+            `[channel-pack] ${entry.provider} 首次登录默认静音失败（不影响登录）：${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+      });
+    }
+    // 登录完成后昵称才变成真实显示名，此时才谈得上判重；微任务里跑，
+    // 不阻塞 `account.create` 的返回值。
+    void Promise.resolve().then(() => dedupeChannelAccounts());
+    return result;
+  };
+  // 判重的真正时机在 `updateAccount`：各渠道的登录结果都是在那儿把 nickname
+  // 从随机 id 改成真实显示名（手机号尾号 / 服务端昵称），重复的两条在这一刻
+  // 才变得可辨。同 provider + 同显示名 = 同一个账号。
+  const rawUpdateAccount = pool.updateAccount.bind(pool);
+  pool.updateAccount = async (id, patch) => {
+    const result = await rawUpdateAccount(id, patch);
+    void Promise.resolve().then(() => dedupeChannelAccounts());
+    return result;
+  };
   const tokenLedgerStore = createTokenLedgerStore(ctx);
   const detachTokenLedger = attachTokenLedgerStore(tokenLedgerStore);
   ctx.effect(() => () => {
@@ -68485,7 +68949,7 @@ function apply(ctx, config = {}) {
   }
   const pruned = (provider, adapter) => {
     try {
-      return withDeadModelPruning([provider], adapter);
+      return withContextBudgets(provider, withDeadModelPruning([provider], adapter), pool);
     } catch (error) {
       ctx.logger.warn(`[channel-pack] ${provider} \u7684\u5931\u6548\u6A21\u578B\u5254\u9664\u5305\u88C5\u5931\u8D25\uFF0C\u4F7F\u7528\u539F\u9002\u914D\u5668: ${String(error)}`);
       return adapter;
@@ -68509,6 +68973,7 @@ function apply(ctx, config = {}) {
     zcode: pruned(ZCODE.id, zcodeAdapter),
     ...opencodeAdapter === void 0 ? {} : { opencode: pruned(OPENCODE.id, opencodeAdapter) }
   };
+  channelPackModelAdaptersRef = modelAdapters;
   ctx.effect(() => () => {
     void geminiSigStore.flush().catch(() => {
     });

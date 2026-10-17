@@ -27,6 +27,7 @@ import {
   wireFor,
 } from './free-upstream.ts'
 import { requestBodyFor } from './free-messages.ts'
+import { StreamTracker, parseUsage, type UsageRecorder } from './stats.ts'
 import type { FreeCatalog } from './free-catalog.ts'
 import type { ShimLogger } from './shim.ts'
 
@@ -75,7 +76,11 @@ function chatChunk(model: string, delta: Record<string, unknown>, finishReason: 
  * `logger` is optional so the offline suite can build a source with no shim
  * around it; the dropped-image warning is the only thing it says.
  */
-export function createFreeLaneSource(catalog: FreeCatalog, logger?: ShimLogger): ExtraLaneSource {
+export function createFreeLaneSource(
+  catalog: FreeCatalog,
+  logger?: ShimLogger,
+  usageRecorder?: UsageRecorder,
+): ExtraLaneSource {
   return {
     current: () => catalog.current(),
     async run({ modelId, body, signal, onFrame }) {
@@ -87,32 +92,66 @@ export function createFreeLaneSource(catalog: FreeCatalog, logger?: ShimLogger):
       const payload = requestBodyFor(wire, caller, { modelId, warnings })
       // The fingerprint gate is the free tier's own requirement and applies to
       // THIS lane only — renaming a tool on the aggregate or co-paid lanes would
-      // hand the caller back a name it cannot run. The map it returns is what
+      // hand the caller back a name it cannot run. The plan it returns is what
       // makes a promoted tool callable again on the way out.
-      const rename = applyFingerprint(payload, wire)
+      const plan = applyFingerprint(payload, wire)
       if (warnings.length > 0) {
         logger?.warn?.(`free lane: ${warnings.length} image block(s) could not be forwarded; they were dropped`)
       }
-      onFrame(chatChunk(modelId, { role: 'assistant', content: '' }, null))
-      const result = await postFreeStreamed({
-        modelId,
-        body: payload,
-        session,
-        requestId,
-        rename,
-        signal,
-        hooks: { onDelta: delta => onFrame(chatChunk(modelId, delta, null)) },
-      })
-      if (result.suppressedOnly === true) {
-        // A turn whose only answer was a decoy call has nothing for the caller to
-        // run. The status line is already spent, so the only honest place left
-        // for the explanation is the stream itself.
-        onFrame(JSON.stringify({
-          error: { message: 'the model asked for a tool this session cannot run', type: 'server_error' },
-        }))
+      // Time the turn so the dashboard shows real first-token and decode numbers
+      // even when the gateway stays silent on token counts. One fresh turn id per
+      // call: the free lane has no account rotation, so a turn is exactly one
+      // upstream call.
+      const startedAt = Date.now()
+      const tracker = new StreamTracker(startedAt)
+      const turnId = `free-${crypto.randomBytes(8).toString('hex')}`
+      let ok = false
+      let recordedUsage: ReturnType<typeof parseUsage> = undefined
+      try {
+        onFrame(chatChunk(modelId, { role: 'assistant', content: '' }, null))
+        const result = await postFreeStreamed({
+          modelId,
+          body: payload,
+          session,
+          requestId,
+          plan,
+          signal,
+          hooks: {
+            onDelta: delta => {
+              tracker.markFirstByte(Date.now())
+              onFrame(chatChunk(modelId, delta, null))
+            },
+          },
+        })
+        ok = true
+        recordedUsage = result.usage === undefined ? undefined : parseUsage(result.usage)
+        if (result.suppressedOnly === true) {
+          // A turn whose only answer was a decoy call has nothing for the caller to
+          // run. The status line is already spent, so the only honest place left
+          // for the explanation is the stream itself.
+          onFrame(JSON.stringify({
+            error: { message: 'the model asked for a tool this session cannot run', type: 'server_error' },
+          }))
+        }
+        onFrame(chatChunk(modelId, {}, result.finishReason ?? (result.truncated === true ? 'length' : 'stop')))
+        return result
+      } finally {
+        // Filed exactly once, whether the turn succeeded or threw: a broken stream
+        // is a failed call from the user's side of the wire, and the panel must
+        // count it rather than pretend nothing happened.
+        tracker.finish(Date.now())
+        usageRecorder?.record({
+          region: 'free',
+          model: modelId,
+          account: 'free',
+          turnId,
+          at: Date.now(),
+          ok,
+          ...(tracker.ttftMs === undefined ? {} : { ttftMs: tracker.ttftMs }),
+          ...(tracker.decodeMs === undefined ? {} : { decodeMs: tracker.decodeMs }),
+          ...(recordedUsage === undefined ? {} : { usage: recordedUsage }),
+        })
       }
-      onFrame(chatChunk(modelId, {}, result.finishReason ?? (result.truncated === true ? 'length' : 'stop')))
-      return result
     },
   }
 }

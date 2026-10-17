@@ -104,6 +104,13 @@ interface FakeUpstream {
   buddy: { instanceId: number; name: string } | undefined
   /** Travel state the fake reports. */
   travel: { state: string; recordId: number; dailyLimitReached: boolean; rewardCredit: number }
+  /**
+   * The outage-compensation offer the fake reports.
+   *
+   * Off by default, because that is the normal state of the year: an offer only
+   * exists between an outage announcement and its deadline.
+   */
+  compensation: { active: boolean; claimed: boolean; creditNum: number }
   /** Lottery draws available (set by a redeem). */
   lottery: number
   /** Server conversations the fake hands out, in order. */
@@ -138,6 +145,8 @@ function fakeUpstream(): FakeUpstream {
     },
     buddy: undefined,
     travel: { state: 'idle', recordId: 0, dailyLimitReached: false, rewardCredit: 0 },
+    /** The outage-compensation offer the fake reports; off by default. */
+    compensation: { active: false, claimed: false, creditNum: 500 },
     lottery: 0,
     desktopEvents: [],
     experts: {},
@@ -296,6 +305,15 @@ function fakeUpstream(): FakeUpstream {
       guard('travelClaim')
       return 10
     },
+    async fetchCompensationStatus(): Promise<{ active: boolean; claimed: boolean; creditNum: number }> {
+      guard('compensationStatus')
+      return state.compensation
+    },
+    async claimCompensation(): Promise<{ claimed: boolean; creditNum: number }> {
+      guard('compensationClaim')
+      state.compensation.claimed = true
+      return { claimed: true, creditNum: state.compensation.creditNum }
+    },
   }
   state.client = fake as unknown as WorkBuddyUpstreamClient
   return state
@@ -348,7 +366,7 @@ describe('scheduler runs', () => {
     pool: WorkBuddyAccountPool,
     upstream: FakeUpstream,
     when: Date,
-    hours: { checkin?: number[]; report?: number[]; tasks?: number[]; streak?: number[]; travel?: number[] },
+    hours: { checkin?: number[]; report?: number[]; tasks?: number[]; streak?: number[]; travel?: number[]; compensation?: number[] },
   ): WorkBuddyScheduler {
     return new WorkBuddyScheduler(pool, upstream.client, {
       enabled: true,
@@ -357,6 +375,7 @@ describe('scheduler runs', () => {
       taskHours: hours.tasks ?? [],
       streakHours: hours.streak ?? [],
       travelHours: hours.travel ?? [],
+      compensationHours: hours.compensation ?? [],
       accountDelayMs: 0,
       eventScoreWaitMs: 0,
       expertGapMs: 0,
@@ -831,7 +850,9 @@ describe('manual run-all', () => {
       logger: {},
     })
     const summary = await scheduler.runAll()
-    expect(summary.jobsRun).toBe(5)
+    // Counted off the scheduler's own list, so adding a job does not silently
+    // turn this into a stale expectation.
+    expect(summary.jobsRun).toBe(AUTOMATION_JOB_KINDS.length)
     // Every account of every job ran without the upstream throwing.
     expect(summary.failed).toBe(0)
     expect(upstream.calls).toContain('checkin')
@@ -1062,6 +1083,57 @@ describe('streak redemption and travel', () => {
     await build(pool, upstream, when, { tasks: [11] }).runAll()
     expect(upstream.calls).toContain('buddyAgree')
     expect(upstream.calls).toContain('buddyAdoptFirst')
+  })
+})
+
+describe('outage compensation', () => {
+  function build(pool: WorkBuddyAccountPool, upstream: FakeUpstream): WorkBuddyScheduler {
+    return new WorkBuddyScheduler(pool, upstream.client, {
+      enabled: true,
+      checkinHours: [],
+      reportHours: [],
+      taskHours: [],
+      streakHours: [],
+      travelHours: [],
+      compensationHours: [],
+      accountDelayMs: 0,
+      eventScoreWaitMs: 0,
+      expertGapMs: 0,
+      now: () => beijing(2026, 8, 7, 11, 0, 0),
+      logger: {},
+    })
+  }
+
+  it('claims an open offer and records what it paid', async () => {
+    const { pool, upstream } = await harness(1)
+    upstream.compensation = { active: true, claimed: false, creditNum: 500 }
+    const scheduler = build(pool, upstream)
+    await scheduler.runAll()
+    // Read-then-claim, never claim-blind: a claim costs a mutation upstream.
+    expect(upstream.calls).toEqual(expect.arrayContaining(['compensationStatus', 'compensationClaim']))
+    expect(scheduler.status().earningsToday[pool.list()[0]!.id]?.compensationCredit).toBe(500)
+  })
+
+  it('does not claim when there is no offer running', async () => {
+    // The common case: an offer exists only between an outage announcement and
+    // its deadline, so most days every account has nothing to collect.
+    const { pool, upstream } = await harness(1)
+    upstream.compensation = { active: false, claimed: false, creditNum: 0 }
+    const scheduler = build(pool, upstream)
+    await scheduler.runAll()
+    expect(upstream.calls).toContain('compensationStatus')
+    expect(upstream.calls).not.toContain('compensationClaim')
+    // No compensation entry at all: the other jobs' earnings are separate lines.
+    const earned = scheduler.status().earningsToday[pool.list()[0]!.id]
+    expect(earned === undefined || earned.compensationCredit === 0).toBe(true)
+  })
+
+  it('does not claim an offer that was already collected', async () => {
+    const { pool, upstream } = await harness(1)
+    upstream.compensation = { active: true, claimed: true, creditNum: 500 }
+    const scheduler = build(pool, upstream)
+    await scheduler.runAll()
+    expect(upstream.calls).not.toContain('compensationClaim')
   })
 })
 

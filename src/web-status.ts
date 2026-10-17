@@ -28,6 +28,8 @@ import { isAutomationJobKind, type AutomationRunSummary, type AutomationStatus }
 import { hasModelsListing, isProviderId } from './providers.ts'
 import { PROVIDER_NOTES_ZH } from './provider-notes-zh.ts'
 import { listProviderStates, providerEnabled, type AggregateStore } from './store.ts'
+import { modelChoicesFor } from './aggregate.ts'
+import { isFreeLane } from './free-catalog.ts'
 import {
   POOL_ACCOUNT_DISABLE_PATH,
   POOL_ACCOUNT_IGNORE_PATH,
@@ -238,6 +240,7 @@ export interface PoolStatusRouteOptions {
    */
   channelModels?: (
     providers: readonly string[],
+    ids?: Readonly<Record<string, readonly string[]>>,
   ) => Promise<Readonly<Record<string, readonly PoolWebChannelModel[]>>>
   /**
    * Fetch one provider's live model list, write it back as its discovered set,
@@ -487,6 +490,14 @@ function parseModelProbe(body: Record<string, unknown>): PoolWebModelProbe | und
  * page, and the route walks the host's adapter registry once per id.
  */
 const MAX_CHANNEL_MODEL_PROVIDERS = 32
+/**
+ * How many ids one provider may hint at.
+ *
+ * Cline publishes 492 and is the widest roster here, so this is a ceiling on a
+ * runaway body rather than a limit anyone will meet. Over the cap the tail is
+ * dropped, not the request: the first N rows still get their figures.
+ */
+const MAX_CHANNEL_MODEL_IDS = 2_000
 function parseProviderList(body: Record<string, unknown>): readonly string[] | undefined {
   const raw = body['providers']
   if (!Array.isArray(raw)) return undefined
@@ -506,6 +517,30 @@ function parseProviderList(body: Record<string, unknown>): readonly string[] | u
   }
   return out
 }
+/**
+ * Parse the optional per-provider id hint.
+ *
+ * Deliberately lenient, unlike {@link parseProviderList}: this field is an
+ * optimisation, not the question being asked. A malformed hint has to degrade
+ * to "resolve facts the slow way" rather than fail the request, because the
+ * caller already has the ids on screen and losing them would take the card's
+ * numbers away for a reason that has nothing to do with the numbers.
+ */
+function parseChannelModelIds(body: Record<string, unknown>): Readonly<Record<string, readonly string[]>> | undefined {
+  const raw = body['ids']
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const out: Record<string, readonly string[]> = {}
+  for (const [provider, listed] of Object.entries(raw as Record<string, unknown>)) {
+    if (!Array.isArray(listed)) continue
+    const ids = listed
+      .filter((id): id is string => typeof id === 'string' && id.trim() !== '')
+      .map((id) => id.trim())
+      .slice(0, MAX_CHANNEL_MODEL_IDS)
+    if (ids.length > 0) out[provider] = ids
+  }
+  return Object.keys(out).length === 0 ? undefined : out
+}
+
 /**
  * Parse a manual-run request.
  *
@@ -560,7 +595,7 @@ function parseAggregatePatch(body: Record<string, unknown>): PoolWebAggregatePat
   if (kind !== 'provider') return undefined
   const providerId = trimmed(body['providerId'])
   if (!isProviderId(providerId)) return undefined
-  const patch: { kind: 'provider'; providerId: string; enabled?: boolean; apiKey?: string; baseUrl?: string } = {
+  const patch: { kind: 'provider'; providerId: string; enabled?: boolean; apiKey?: string; baseUrl?: string; models?: readonly string[] } = {
     kind: 'provider',
     providerId,
   }
@@ -569,9 +604,27 @@ function parseAggregatePatch(body: Record<string, unknown>): PoolWebAggregatePat
   // `updateProviderSetting`, which drops the field rather than storing `''`.
   if (typeof body['apiKey'] === 'string') patch.apiKey = body['apiKey']
   if (typeof body['baseUrl'] === 'string') patch.baseUrl = body['baseUrl']
+  // The chosen model set. It is accepted as an array of strings and normalised
+  // here — trimmed, de-duplicated, empties dropped — because this body arrives
+  // from the browser and a stored roster with blank entries would later be
+  // rendered as a row that cannot be selected. An empty array survives as an
+  // empty array: it means "fall back to the discovered listing", which is a real
+  // choice the card offers, so it must not be confused with "field absent".
+  if (Array.isArray(body['models'])) {
+    const seen = new Set<string>()
+    const models: string[] = []
+    for (const raw of body['models']) {
+      if (typeof raw !== 'string') continue
+      const id = raw.trim()
+      if (id === '' || seen.has(id)) continue
+      seen.add(id)
+      models.push(id)
+    }
+    patch.models = models
+  }
   // A patch that changes nothing would still write a timestamp, which is how a
   // provider ends up listed as "configured" with no key. Require one real field.
-  if (patch.enabled === undefined && patch.apiKey === undefined && patch.baseUrl === undefined) return undefined
+  if (patch.enabled === undefined && patch.apiKey === undefined && patch.baseUrl === undefined && patch.models === undefined) return undefined
   return patch
 }
 /** A trimmed non-empty string, or ''. */
@@ -601,7 +654,14 @@ export function aggregateStatusOf(
   const providers: PoolWebAggregateProvider[] = []
   let configured = 0
   for (const { provider, setting, usable } of listProviderStates(store)) {
-    const models = setting.models ?? setting.discovered ?? provider.models.map(model => model.id)
+    const universe = modelChoicesFor(provider, setting)
+    // The keyless free vendors — OpenCode's free pool and the plugin's own免密
+    // lane — advertise far more than they serve for free, so a brand-new
+    // connection must NOT default to the entire universe ticked. They start
+    // unselected; the user ticks the free models they actually want, which is the
+    // same default the account pool already uses.
+    const freeByDefault = isFreeLane(provider.id) || provider.id === 'opencode'
+    const exposed = (setting.models ?? (freeByDefault ? [] : universe)).filter(id => universe.includes(id))
     if (Object.keys(setting).length > 0) configured += 1
     providers.push({
       id: provider.id,
@@ -629,14 +689,25 @@ export function aggregateStatusOf(
       ...provider.notes === undefined ? {} : { notes: PROVIDER_NOTES_ZH[provider.id] ?? provider.notes },
       ...trimmed(setting.baseUrl) === '' ? {} : { baseUrl: trimmed(setting.baseUrl) },
       hasListing: hasModelsListing(provider),
-      models,
-      discovered: setting.models === undefined && (setting.discovered?.length ?? 0) > 0,
+      models: exposed,
+      // The whole roster, so the card can offer a checkbox for every id the
+      // provider offers rather than only the exposed ones. Without this the
+      // chooser could only ever narrow the selection, never widen it back.
+      availableModels: universe,
+      // True when the exposed set came from a live listing rather than the
+      // registry — i.e. the user narrowed a fetched roster, or never narrowed at
+      // all and is simply serving what the fetch returned.
+      discovered: (setting.discovered?.length ?? 0) > 0,
       ...setting.addedAt === undefined ? {} : { addedAt: setting.addedAt },
     })
   }
   return {
     enabled: store.enabled !== false,
     configured,
+    // The lane-wide model count is read from the running catalog's rows, not
+    // from the provider rows summed here: the catalog is what the picker
+    // actually serves, and a provider whose credential is missing contributes
+    // nothing even though its row is on screen.
     modelCount: models.length,
     models,
     providers,
@@ -837,12 +908,14 @@ export async function poolWebStatus(
     taskHours: [],
     streakHours: [],
     travelHours: [],
+    compensationHours: [],
     jobs: {
       checkin: emptyAutomationJob(),
       report: emptyAutomationJob(),
       tasks: emptyAutomationJob(),
       streak: emptyAutomationJob(),
       travel: emptyAutomationJob(),
+      compensation: emptyAutomationJob(),
     },
     claimableSeen: 0,
     earningsToday: {},
@@ -1373,7 +1446,7 @@ export function registerPoolStatusRoute(ctx: Context, deps: PoolStatusRouteOptio
           const body = await readJsonBody(req)
           const providers = parseProviderList(body)
           if (providers === undefined) return json(res, 400, { error: 'invalid channel models payload' })
-          json(res, 200, { models: await deps.channelModels(providers) })
+          json(res, 200, { models: await deps.channelModels(providers, parseChannelModelIds(body)) })
         } catch (error: unknown) {
           json(res, 500, { error: safeMessage(error) })
         }
