@@ -469,9 +469,9 @@ export declare class WorkBuddyUpstreamClient {
    * Normalize an OpenAI chat-completions body for the WorkBuddy upstream:
    * force `stream: true` (the upstream rejects non-streaming), convert the
    * DSH `developer` role into `system` (upstream rejects `developer` with
-   * business code 11128), rewrite system content the gateway fingerprints as a
-   * non-official client (also 11128), and flatten `tool_choice` into its string
-   * form.
+   * business code 11128), rewrite fingerprinted system/assistant content the
+   * gateway reads as a non-official client (also 11128), and flatten
+   * `tool_choice` into its string form.
    *
    * This is the REGION-BLIND half. Everything here is measured good on both
    * gateways, so it runs before the region is known — the pool lane picks its

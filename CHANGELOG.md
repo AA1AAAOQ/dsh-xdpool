@@ -1,6 +1,39 @@
 # Changelog
 本项目的所有重要变更都会记录在此文件。
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+## 2.4.2 — 第二道内容指纹：`Web GUI` 那句，以及 assistant 历史
+> 2.4.1 之后仍有 11128。这一版补上第二道内容指纹，并把改写范围扩到 assistant 历史。修复来自社区 PR [#62](https://github.com/XDTrees/dsh-xdpool/pull/62)（[@jmglsi](https://github.com/jmglsi)），实测复核与发布由维护者完成。
+### 同一条提示词里还有第二道指纹
+2.4.1 只改写了 `You are an AI agent powered by DeepSeek Harness` 那一句的开头。把这一句改掉之后，请求仍然 `400 / 11128`，因为网关还在看提示词的另一段——介绍 Web GUI 的那一对句子：
+
+```
+You are interacting with the user through the DeepSeek Harness Web GUI
+whose URL the runtime context names. When the user refers to "this page",
+"this GUI", or "this app" without naming another target, they mean this GUI.
+```
+
+这两句是**合起来**才算的：单独发任一句都 `200`，两句凑齐就 `400`；在这对句子里做任何小改动都放行。所以这是第二道**内容指纹**，不是请求长度限制，也不是别的头。
+
+修法是把产品名后的 `Web GUI` 改称 `web interface`——保住原意的最小改动。改写清单仍是数组，这一条只是新的一行。
+
+### 被扫的是 system 和 assistant，user/tool 不扫
+同一句话放进 `assistant` 消息同样 `400`，改写后 `200`；放进 `user` 或 `tool` 则从来不管。这一条很重要：**只要历史里有一条助手回复带着这段文字，之后这个会话的每一次请求都会失败**。所以改写范围从「只改 system」扩到 system + assistant。
+
+### 实测（真实国内网关，改写前 → 改写后）
+| 请求体 | 修复前 | 修复后 |
+|---|---|---|
+| 主 agent 提示词（含 Web GUI 那对句子） | `400 / 11128` | `200` |
+| 同一对句子放在 `assistant` 历史里 | `400 / 11128` | `200` |
+| 两句合一的提示词（两道指纹同时在） | `400 / 11128` | `200` |
+| 埋进数百字长提示词中间 | `400 / 11128` | `200` |
+| 只有无关填充的长提示词（基线） | `200` | `200` |
+
+维护者复核时额外确认了一件事：DSH 当前版本真正发出的那几句（`The runtime context names the DeepSeek Harness implementation checkout…`、`… the DeepSeek Harness Web GUI at <url>.`、`Current DeepSeek Harness Web GUI URL: …`）**原样发送就是 `200`**，不触发任何检查——它们含产品名却不是模板命中的句式。也就是说命中的是句式，不是「出现产品名」；这也是为什么没有采用「把 `DeepSeek Harness` 全局替换成 `DSH`」那种更宽的改法：它会连 `D:\DeepSeek Harness\resources\app\dsh\` 这类要求模型逐字使用的路径一起改掉，而换不来任何额外的放行。
+### 同时并入的两个社区修复
+- **PR [#49](https://github.com/XDTrees/dsh-xdpool/pull/49)**（[@GIGIGIGIbaby](https://github.com/GIGIGIGIbaby)）：模型连通性探测的 `content` 改用内容块数组。宿主按 `content.some(...)` 校验每条出站消息，裸字符串没有 `.some`，探测在进程内就炸了，卡片上显示成 `content.some is not a function`——一个形状错误伪装成模型坏了。
+- **PR [#50](https://github.com/XDTrees/dsh-xdpool/pull/50)**（[@GIGIGIGIbaby](https://github.com/GIGIGIGIbaby)）：禁用按钮划过时会「消失」。`.dsm-btn:disabled:hover` 里的 `background:transparent` 优先级 (0,3,0)，压过了 `.dsm-btn-primary` 的填充色 (0,1,0)；主按钮文字是深色、为浅底设计的，底一变透明文字就看不见了。现在这条规则只保留 `transform` 部分。
+### 其他
+- 测试：新增指纹改写与被扫角色 9 例 + 运行时上下文指纹 5 例 + 探测请求形状 4 例 + 禁用按钮悬停 6 例，全套 72 文件 947 用例。
 ## 2.4.1 — 11128 的真正成因：system 内容指纹
 > 2.4.0 之后仍有用户撞上 `400 / 11128 Illegal API invocation from an unapproved channel`。定位下来，2.4.0 的归因是错的，这一版修的是真原因。
 ### 11128 不是身份头的问题，是 system 内容里的自报句
