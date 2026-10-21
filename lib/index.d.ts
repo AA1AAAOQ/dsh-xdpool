@@ -934,6 +934,15 @@ export declare function candidateAuthDirs(env?: NodeJS.ProcessEnv): string[];
 /** How the pool chooses which account serves the next request. */
 type AccountDistribution = 'priority' | 'round-robin' | 'balanced' | 'sticky' | 'expiry';
 interface AccountPoolOptions {
+  /**
+   * File the `sticky` bindings are remembered in, or undefined for memory only.
+   *
+   * The card promises one account per conversation, and that promise used to end
+   * at the process boundary: every restart re-picked, so one session could be
+   * served by three different accounts in a day and pay full prompt cost each
+   * time. The caller passes the plugin's own state path; tests pass a temp file.
+   */
+  affinityPath?: string;
   /** Logger for discovery and rotation events. */
   logger?: {
     info?(...args: unknown[]): void;
@@ -1026,6 +1035,9 @@ export declare class WorkBuddyAccountPool {
    * the LRU order: re-binding deletes then re-inserts.
    */
   private readonly affinity;
+  /** Where the bindings above are persisted; undefined keeps them in memory. */
+  private readonly affinityPath;
+  private affinitySaveTimer;
   private lastScanAtMs;
   /**
    * The account id the user pinned, or undefined for none.
@@ -1205,6 +1217,16 @@ export declare class WorkBuddyAccountPool {
   private pickRoundRobin;
   /** Remember which account a conversation is bound to, keeping LRU order. */
   private bindAffinity;
+  /**
+   * Restore bindings written by a previous process.
+   *
+   * Tolerant like the other state files: a malformed document or one bad entry
+   * must not take the pool down, and an account id that no longer exists is
+   * simply never matched (the next acquire re-picks and rebinds).
+   */
+  private loadAffinity;
+  /** Write the bindings back, coalescing a burst into one atomic rename. */
+  private scheduleAffinitySave;
   /**
    * `sticky`: the account this conversation already used, when it can still
    * serve the model being asked for.
