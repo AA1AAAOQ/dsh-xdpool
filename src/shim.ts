@@ -650,7 +650,10 @@ function withBareModelId(raw: string, modelId: string): string {
           }
           continue
         }
-        const prepared = client.prepareChatBody(raw)
+        // Region-aware normalisation: a chain member belongs to this shim's
+        // region, so the two region-only rules (leading system on global, the
+        // `off` effort everywhere) can be applied here.
+        const prepared = client.prepareChatBodyFor(raw, region ?? 'cn')
         const result = await client.chatStream(account.credential, prepared, signal, conversationKey)
         if (result.ok) {
           const turnId = randomBytes(8).toString('hex')
@@ -815,7 +818,7 @@ function withBareModelId(raw: string, modelId: string): string {
       )
       return
     }
-    const prepared = client.prepareChatBody(raw)
+    const prepared = client.prepareChatBodyFor(raw, region ?? 'cn')
     // `sticky` binds each conversation to one account; the pool ignores this
     // under every other distribution.
     const conversationKey = conversationKeyOf(raw)
@@ -1311,6 +1314,7 @@ async function recoverFromContextOverrun(options: RecoverOptions): Promise<Recov
             const body = client.buildChatBody(
               { ...parsed, stream: true, max_tokens: Math.max(256, Math.floor(budget / 2)) },
               request,
+              region ?? 'cn',
             )
             return await client.completeChat(
               summariser.credential,
@@ -1337,7 +1341,7 @@ async function recoverFromContextOverrun(options: RecoverOptions): Promise<Recov
   if (summary === undefined && estimateMessagesTokens(compacted) >= overrunTokens) {
     return { ok: false, detail: compactionDetail === '' ? 'compaction could not reduce the prompt' : compactionDetail }
   }
-  const retryBody = client.buildChatBody(parsed, compacted)
+  const retryBody = client.buildChatBody(parsed, compacted, region ?? 'cn')
   const tried: string[] = []
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     if (controller.signal.aborted) return { ok: false, detail: 'client disconnected' }

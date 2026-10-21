@@ -418,6 +418,94 @@ const CHAT_IDENTITY_HEADERS: Readonly<Record<string, string>> = Object.freeze({
 })
 
 /**
+ * System-prompt strings the gateway treats as evidence of a non-official
+ * client, and the rewriting that clears the check.
+ *
+ * WHY THIS EXISTS
+ *
+ * `code 11128 Illegal API invocation from an unapproved channel` has a SECOND
+ * trigger, separate from the conversation-identity headers below: the gateway
+ * matches the CONTENT of system messages against a list of strings that identify
+ * other agents' clients. The first-party DSH system-prompt plugin injects
+ * `You are an AI agent powered by DeepSeek Harness.` as the opening line of
+ * every conversation, so every request from an unmodified install is rejected —
+ * regardless of which account in the pool is used, which is why the reported
+ * symptom was a 400 on the first account with no retry.
+ *
+ * Boundary, measured against the live domestic gateway (429 = accepted,
+ * 400/11128 = blocked):
+ *   - the match is a literal substring, BUT only near the START of a system
+ *     message: the sentence blocked a longer prompt when it was the first line,
+ *     and passed when one plain line was prepended to it ("trailing text after
+ *     it" above is the same finding from the other side).
+ *   - it is case-insensitive (`you are an ai agent powered by deepseek harness`
+ *     is blocked too).
+ *   - only `role: "system"` is inspected: the same sentence in a `user` or
+ *     `tool` message passes, and it is blocked in a second system message too.
+ *   - `deepseek harness` alone, or `powered by deepseek` alone, passes — the
+ *     whole phrase is what matches.
+ *   - replacing `powered by` with `running on` passes, which is the rewrite
+ *     below: it keeps the meaning for the model and shares no substring with
+ *     the fingerprint.
+ *
+ * A prepended blank line would equally defeat a start-anchored check, but it
+ * would leave the banned string in the body: the list is server-side and may
+ * lose its anchor tomorrow. Rewriting the phrase is what the report's repro
+ * verified, so that is what this does.
+ *
+ * The list is an ARRAY because these fingerprints are appended to over time; a
+ * future rejection should be one more row here, not a new code path.
+ */
+const BANNED_SYSTEM_PHRASES: readonly (readonly [RegExp, string])[] = Object.freeze([
+  [/powered by DeepSeek Harness/gi, 'running on DeepSeek Harness'],
+] as const)
+
+/**
+ * Rewrite fingerprinted system content, leaving everything else byte-identical.
+ *
+ * System content arrives as either a plain string or an array of content blocks
+ * (an OpenAI-compatible body allows both), so both shapes are handled — fixing
+ * only the string form would miss every request that carries an image or a
+ * cache-control block.
+ *
+ * Returns the SAME reference when nothing matched: a long conversation's system
+ * prompt can be large, and paying for a deep copy to change nothing is waste.
+ * Only matched `text` blocks are rebuilt; image and cache blocks pass through
+ * untouched so the request shape survives.
+ */
+export function sanitizeSystemContent(content: unknown): unknown {
+  if (typeof content === 'string') return sanitizeSystemText(content)
+  if (!Array.isArray(content)) return content
+  let changed = false
+  const next = content.map((block: unknown) => {
+    if (typeof block !== 'object' || block === null || Array.isArray(block)) return block
+    const record = block as Record<string, unknown>
+    const text = record['text']
+    if (typeof text !== 'string') return block
+    const cleaned = sanitizeSystemText(text)
+    if (cleaned === text) return block
+    changed = true
+    return { ...record, text: cleaned }
+  })
+  return changed ? next : content
+}
+
+/**
+ * Apply every banned-phrase rewrite to one string.
+ *
+ * The RegExp is rebuilt per call on purpose: a shared `g`-flagged instance
+ * carries `lastIndex` between calls, so the second request in a conversation
+ * could skip a match the first one caught.
+ */
+function sanitizeSystemText(text: string): string {
+  let out = text
+  for (const [pattern, replacement] of BANNED_SYSTEM_PHRASES) {
+    out = out.replace(new RegExp(pattern.source, pattern.flags), replacement)
+  }
+  return out
+}
+
+/**
  * The conversation-identity headers the gateway's channel check demands.
  *
  * WHY THIS EXISTS
@@ -1199,7 +1287,15 @@ export class WorkBuddyUpstreamClient {
    * Normalize an OpenAI chat-completions body for the WorkBuddy upstream:
    * force `stream: true` (the upstream rejects non-streaming), convert the
    * DSH `developer` role into `system` (upstream rejects `developer` with
-   * business code 11128), and flatten `tool_choice` into its string form.
+   * business code 11128), rewrite system content the gateway fingerprints as a
+   * non-official client (also 11128), and flatten `tool_choice` into its string
+   * form.
+   *
+   * This is the REGION-BLIND half. Everything here is measured good on both
+   * gateways, so it runs before the region is known — the pool lane picks its
+   * account after this call. The two region-only rules live in
+   * {@link prepareChatBodyFor} instead; see its comment for why they cannot be
+   * folded in here.
    */
   prepareChatBody(raw: string): string {
     let body: unknown
@@ -1228,6 +1324,11 @@ export class WorkBuddyUpstreamClient {
         if (typeof value !== 'object' || value === null || Array.isArray(value)) continue
         const message = value as Record<string, unknown>
         if (message['role'] === 'developer') message['role'] = 'system'
+        // The gateway scans system CONTENT for other clients' fingerprints;
+        // see BANNED_SYSTEM_PHRASES for the measured boundary.
+        if (message['role'] === 'system') {
+          message['content'] = sanitizeSystemContent(message['content'])
+        }
       }
     }
     const choice = obj['tool_choice']
@@ -1261,6 +1362,63 @@ export class WorkBuddyUpstreamClient {
   }
 
   /**
+   * The region-only half of body normalisation, applied once the account is
+   * known.
+   *
+   * WHY IT IS SEPARATE
+   *
+   * The pool lane calls {@link prepareChatBody} BEFORE it picks an account —
+   * the body has to be ready for whichever account wins. So anything that
+   * depends on the region cannot live there. Two rules do:
+   *
+   * 1. **International requires a leading `system`.** Measured: a body whose
+   *    first message is `user` answers `400 / 11128 "first message is not
+   *    system prompt"` on `www.workbuddy.ai`, while the identical body is
+   *    accepted on the domestic gateway. Same code, different cause — the
+   *    domestic gateway uses 11128 for the `developer` role and for the
+   *    content fingerprint, which is why nothing may branch on the code alone.
+   *    A placeholder assistant prompt is prepended, never merged: every
+   *    caller-supplied message keeps its position and wording.
+   *
+   * 2. **Neither gateway accepts `reasoning_effort: "off"`.** The adapter pins
+   *    `thinkingLevelMap.off` to the literal `'off'` so the level stays
+   *    selectable, and pi-ai emits that value for any request carrying no
+   *    explicit level — so "Default" and "Off" produce the same body.
+   *    Measured: the international GPT family answers `400 / 11133`
+   *    (`extError.param === 'reasoning.effort'`), and the domestic gateway
+   *    rejects it on models that declare `onlyReasoning`. Omission is the only
+   *    spelling measured good everywhere; a literal `'none'` is NOT a safe
+   *    substitute (accepted by the GPT-5.6 family, rejected by others).
+   *
+   * Both rules are no-ops on a body that already complies, so this is safe to
+   * run over an already-prepared body.
+   */
+  prepareChatBodyFor(raw: string, region: WorkBuddyRegion): string {
+    const prepared = this.prepareChatBody(raw)
+    let body: unknown
+    try {
+      body = JSON.parse(prepared)
+    } catch {
+      return prepared
+    }
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) return prepared
+    const obj = body as Record<string, unknown>
+    // Rule 2: the adapter's `off` never reaches the wire, on either region.
+    if (obj['reasoning_effort'] === 'off') delete obj['reasoning_effort']
+    // Rule 1: international demands the channel opening with a system turn.
+    if (region === 'global') {
+      const messages = obj['messages']
+      if (Array.isArray(messages)) {
+        const first = messages[0]
+        const leadingSystem = typeof first === 'object' && first !== null && !Array.isArray(first)
+          && (first as Record<string, unknown>)['role'] === 'system'
+        if (!leadingSystem) messages.unshift({ role: 'system', content: 'You are a helpful assistant.' })
+      }
+    }
+    return JSON.stringify(obj)
+  }
+
+  /**
    * Parse a raw OpenAI chat body without normalising it.
    *
    * The compactor needs the message array as objects, while `chatStream` only
@@ -1277,9 +1435,21 @@ export class WorkBuddyUpstreamClient {
     return body as Record<string, unknown>
   }
 
-  /** Re-serialise `base` with a rewritten `messages` array, still normalised. */
-  buildChatBody(base: Record<string, unknown>, messages: readonly ChatMessage[]): string {
-    return this.prepareChatBody(JSON.stringify({ ...base, messages }))
+  /**
+   * Re-serialise `base` with a rewritten `messages` array, still normalised.
+   *
+   * `region` is optional so the composite lanes (aggregate / free) can keep
+   * calling it without one; when supplied, the region-only rules of
+   * {@link prepareChatBodyFor} ride along. Both in-repo callers are the
+   * compaction paths, which always know their shim's region.
+   */
+  buildChatBody(
+    base: Record<string, unknown>,
+    messages: readonly ChatMessage[],
+    region?: WorkBuddyRegion,
+  ): string {
+    const raw = JSON.stringify({ ...base, messages })
+    return region === undefined ? this.prepareChatBody(raw) : this.prepareChatBodyFor(raw, region)
   }
 
   /**

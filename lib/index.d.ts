@@ -469,9 +469,50 @@ export declare class WorkBuddyUpstreamClient {
    * Normalize an OpenAI chat-completions body for the WorkBuddy upstream:
    * force `stream: true` (the upstream rejects non-streaming), convert the
    * DSH `developer` role into `system` (upstream rejects `developer` with
-   * business code 11128), and flatten `tool_choice` into its string form.
+   * business code 11128), rewrite system content the gateway fingerprints as a
+   * non-official client (also 11128), and flatten `tool_choice` into its string
+   * form.
+   *
+   * This is the REGION-BLIND half. Everything here is measured good on both
+   * gateways, so it runs before the region is known — the pool lane picks its
+   * account after this call. The two region-only rules live in
+   * {@link prepareChatBodyFor} instead; see its comment for why they cannot be
+   * folded in here.
    */
   prepareChatBody(raw: string): string;
+  /**
+   * The region-only half of body normalisation, applied once the account is
+   * known.
+   *
+   * WHY IT IS SEPARATE
+   *
+   * The pool lane calls {@link prepareChatBody} BEFORE it picks an account —
+   * the body has to be ready for whichever account wins. So anything that
+   * depends on the region cannot live there. Two rules do:
+   *
+   * 1. **International requires a leading `system`.** Measured: a body whose
+   *    first message is `user` answers `400 / 11128 "first message is not
+   *    system prompt"` on `www.workbuddy.ai`, while the identical body is
+   *    accepted on the domestic gateway. Same code, different cause — the
+   *    domestic gateway uses 11128 for the `developer` role and for the
+   *    content fingerprint, which is why nothing may branch on the code alone.
+   *    A placeholder assistant prompt is prepended, never merged: every
+   *    caller-supplied message keeps its position and wording.
+   *
+   * 2. **Neither gateway accepts `reasoning_effort: "off"`.** The adapter pins
+   *    `thinkingLevelMap.off` to the literal `'off'` so the level stays
+   *    selectable, and pi-ai emits that value for any request carrying no
+   *    explicit level — so "Default" and "Off" produce the same body.
+   *    Measured: the international GPT family answers `400 / 11133`
+   *    (`extError.param === 'reasoning.effort'`), and the domestic gateway
+   *    rejects it on models that declare `onlyReasoning`. Omission is the only
+   *    spelling measured good everywhere; a literal `'none'` is NOT a safe
+   *    substitute (accepted by the GPT-5.6 family, rejected by others).
+   *
+   * Both rules are no-ops on a body that already complies, so this is safe to
+   * run over an already-prepared body.
+   */
+  prepareChatBodyFor(raw: string, region: WorkBuddyRegion): string;
   /**
    * Parse a raw OpenAI chat body without normalising it.
    *
@@ -479,8 +520,15 @@ export declare class WorkBuddyUpstreamClient {
    * accepts the serialised string form.
    */
   parseChatBody(raw: string): Record<string, unknown> | undefined;
-  /** Re-serialise `base` with a rewritten `messages` array, still normalised. */
-  buildChatBody(base: Record<string, unknown>, messages: readonly ChatMessage[]): string;
+  /**
+   * Re-serialise `base` with a rewritten `messages` array, still normalised.
+   *
+   * `region` is optional so the composite lanes (aggregate / free) can keep
+   * calling it without one; when supplied, the region-only rules of
+   * {@link prepareChatBodyFor} ride along. Both in-repo callers are the
+   * compaction paths, which always know their shim's region.
+   */
+  buildChatBody(base: Record<string, unknown>, messages: readonly ChatMessage[], region?: WorkBuddyRegion): string;
   /**
    * Run one NON-streaming completion and return the assistant text.
    *

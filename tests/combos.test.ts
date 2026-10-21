@@ -117,7 +117,10 @@ function clientWith(failing: Record<string, { kind: string; status: number; mess
   })
   return {
     client: {
+      // The shim now prepares bodies region-aware; a fake that only answers
+      // `prepareChatBody` would make every pool attempt throw.
       prepareChatBody: (raw: string) => raw,
+      prepareChatBodyFor: (raw: string) => raw,
       chatStream,
     } as unknown as WorkBuddyUpstreamClient,
     chatStream,
@@ -136,7 +139,10 @@ async function withShim<T>(
   await catalog.refresh()
   const shim = createWorkBuddyShim({
     pool: setup.pool ?? poolWith(async () => undefined),
-    client: setup.client ?? ({ prepareChatBody: (raw: string) => raw } as unknown as WorkBuddyUpstreamClient),
+    client: setup.client ?? ({
+      prepareChatBody: (raw: string) => raw,
+      prepareChatBodyFor: (raw: string) => raw,
+    } as unknown as WorkBuddyUpstreamClient),
     catalog: poolCatalog(),
     region: 'cn' as WorkBuddyRegion,
     aggregate: { catalog, readStore: () => setup.store },
