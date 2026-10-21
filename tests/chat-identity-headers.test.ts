@@ -15,6 +15,7 @@
  * desktop app has never been shown to send them on. Both directions are wrong,
  * so both are pinned.
  */
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   WorkBuddyUpstreamClient,
@@ -212,5 +213,66 @@ describe('non-chat endpoints stay free of identity headers', () => {
     expect(seen).toHaveLength(1)
     expect(seen[0].headers['X-IDE-Type']).toBe('WorkBuddy')
     expect(opened === undefined || typeof opened === 'object').toBe(true)
+  })
+})
+
+/**
+ * The vendored channel pack, pinned against the shipped bundle.
+ *
+ * `pack.js` is a build artifact of another repository, so it cannot be imported
+ * and driven here; a source assertion is the only thing that survives the next
+ * pack refresh. It fails loudly when the vendor update drops the patch, which is
+ * the failure mode worth catching — the pool lane fixes all three in code, and a
+ * silent revert here would put the 11128 back for every channel account.
+ */
+describe('the vendored channel pack carries the same three fixes', () => {
+  const pack = readFileSync(new URL('../vendor/channel-pack/pack.js', import.meta.url), 'utf8')
+
+  it('sends the three conversation headers on its chat completions', () => {
+    for (const name of ['X-Conversation-ID', 'X-Conversation-Request-ID', 'X-Conversation-Message-ID']) {
+      expect(pack, name).toContain(`headers.set("${name}"`)
+    }
+  })
+
+  it('converts developer to system between serialization and the system prepend', () => {
+    // Scoped by boundaries, not by a fixed window and not by `indexOf` over the
+    // whole file: the bundle ships several adapters with this same shape (the
+    // serialization call appears twice and the system prepend three times), so a
+    // first-match search lands in some other adapter and proves nothing. Take the
+    // BuddyAdapter serialization, then the FIRST prepend after it, and require the
+    // conversion between those two.
+    const serialized = pack.indexOf('serializeMessages2(options.messages, imageUrls)')
+    expect(serialized).toBeGreaterThan(-1)
+    const prepended = pack.indexOf('messages.unshift({ role: "system", content: options.system })', serialized)
+    expect(prepended).toBeGreaterThan(serialized)
+    const window = pack.slice(serialized, prepended)
+    expect(window).toContain('if (message.role === "developer") message.role = "system"')
+  })
+
+  it('converts the role in place, without merging or reordering', () => {
+    // The patch is a role swap inside a loop over the existing array. Anything
+    // that filters, sorts or splices would move a mid-conversation rule.
+    const serialized = pack.indexOf('serializeMessages2(options.messages, imageUrls)')
+    const at = pack.indexOf('if (message.role === "developer") message.role = "system"', serialized)
+    const block = pack.slice(at - 120, at + 60)
+    expect(block).toContain('for (const message of messages)')
+    expect(block).not.toMatch(/messages\.(filter|sort|splice|reverse)\(/u)
+  })
+
+  it('rewrites both fingerprints after the system prepend', () => {
+    // Bounded the same way, and the order is the point: the host's system text
+    // is PREPENDED, so a rewrite placed before the unshift would run on the
+    // history only and let the fingerprint through untouched.
+    const serialized = pack.indexOf('serializeMessages2(options.messages, imageUrls)')
+    const prepended = pack.indexOf('messages.unshift({ role: "system", content: options.system })', serialized)
+    const fetched = pack.indexOf('this.product.endpoint}/v2/chat/completions', serialized)
+    expect(prepended).toBeGreaterThan(serialized)
+    expect(fetched).toBeGreaterThan(prepended)
+    const window = pack.slice(prepended, fetched)
+    // The gateway's match is a case-insensitive substring, so the phrase itself
+    // has to go — a leading newline only defeats the start-anchored one.
+    expect(window).toContain('"running on DeepSeek Harness"')
+    expect(window).toContain('"DeepSeek Harness web interface"')
+    expect(window).toContain('message.role === "assistant"')
   })
 })
