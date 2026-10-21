@@ -16,7 +16,11 @@
  * so both are pinned.
  */
 import { describe, expect, it } from 'vitest'
-import { WorkBuddyUpstreamClient, type WorkBuddyCredential } from '../src/upstream.ts'
+import {
+  WorkBuddyUpstreamClient,
+  conversationIdentityOf,
+  type WorkBuddyCredential,
+} from '../src/upstream.ts'
 
 /** A minimal credential; the headers under test do not depend on its details. */
 function credential(): WorkBuddyCredential {
@@ -76,6 +80,114 @@ describe('chat completions carry the desktop client identity', () => {
       expect(seen[0].headers['X-User-Id']).toBe('u1')
     })
   }
+})
+
+/**
+ * The conversation-identity triple the channel check demands.
+ *
+ * `www.workbuddy.ai` rejects a chat completion missing ANY of `X-Conversation-ID`,
+ * `X-Conversation-Request-ID` or `X-Conversation-Message-ID` with business code
+ * 11128. This was verified by elimination against live credentials, which is why
+ * the assertions below pin all three by name rather than "some session headers".
+ *
+ * The stable/per-request split is pinned too: the upstream reads the triple as
+ * one session, so regenerating the stable half per request would look like a new
+ * conversation on every turn, while reusing the per-request half would look like
+ * a duplicate submission.
+ */
+describe('chat completions carry the conversation identity the channel check wants', () => {
+  const STABLE = ['X-Conversation-ID', 'X-Conversation-Request-ID', 'acp-connection-id'] as const
+  const PER_REQUEST = ['X-Conversation-Message-ID', 'X-Request-ID'] as const
+
+  for (const path of chatPaths()) {
+    it(`${path.name} sends all three stable conversation ids`, async () => {
+      const { seen, options } = recordingFetch()
+      const client = new WorkBuddyUpstreamClient(options)
+      await path.run(client)
+      for (const header of STABLE) {
+        const value = seen[0].headers[header]
+        expect(value, header).toBeTypeOf('string')
+        expect(value, header).not.toBe('')
+      }
+      expect(seen[0].headers['X-Conversation-Message-ID']).toBeTypeOf('string')
+    })
+
+    it(`${path.name} keeps the stable ids stable across calls in one conversation`, async () => {
+      const { seen, options } = recordingFetch()
+      const client = new WorkBuddyUpstreamClient(options)
+      // Same conversation key on both calls: what `conversationKeyOf` produces
+      // for two turns of one chat.
+      await client.chatStream(credential(), '{}', undefined, 'same-conversation')
+      await client.chatStream(credential(), '{}', undefined, 'same-conversation')
+      for (const header of STABLE) {
+        expect(seen[1].headers[header], header).toBe(seen[0].headers[header])
+      }
+    })
+
+    it(`${path.name} mints a fresh message and request id every call`, async () => {
+      const { seen, options } = recordingFetch()
+      const client = new WorkBuddyUpstreamClient(options)
+      await client.chatStream(credential(), '{}', undefined, 'same-conversation')
+      await client.chatStream(credential(), '{}', undefined, 'same-conversation')
+      for (const header of PER_REQUEST) {
+        expect(seen[1].headers[header], header).not.toBe(seen[0].headers[header])
+      }
+    })
+
+    it(`${path.name} gives different conversations different identities`, async () => {
+      const { seen, options } = recordingFetch()
+      const client = new WorkBuddyUpstreamClient(options)
+      await client.chatStream(credential(), '{}', undefined, 'conversation-a')
+      await client.chatStream(credential(), '{}', undefined, 'conversation-b')
+      expect(seen[1].headers['X-Conversation-ID']).not.toBe(seen[0].headers['X-Conversation-ID'])
+    })
+
+    it(`${path.name} still sends an identity when the caller has no key`, async () => {
+      // A one-shot compaction can run outside any conversation. Presence is all
+      // the gateway checks, so falling back to a random seed is safe — and much
+      // safer than omitting the headers and eating a 11128.
+      const { seen, options } = recordingFetch()
+      const client = new WorkBuddyUpstreamClient(options)
+      await client.chatStream(credential(), '{}')
+      expect(seen[0].headers['X-Conversation-ID']).toBeTypeOf('string')
+      expect(seen[0].headers['X-Conversation-ID']).not.toBe('')
+    })
+  }
+
+  it('the desktop chat-conversation headers ride along', async () => {
+    const { seen, options } = recordingFetch()
+    const client = new WorkBuddyUpstreamClient(options)
+    await client.chatStream(credential(), '{}')
+    // The same set `Yr()` in the shipped app's daemon-bootstrap sets.
+    expect(seen[0].headers['X-Agent-Intent']).toBe('craft')
+    expect(seen[0].headers['X-Agent-Purpose']).toBe('conversation')
+    expect(seen[0].headers['X-Private-Data']).toBe('true')
+    expect(seen[0].headers['x-codebuddy-request']).toBe('1')
+  })
+})
+
+describe('conversationIdentityOf derives rather than stores', () => {
+  it('is deterministic for one key and distinct across keys', () => {
+    const a = conversationIdentityOf('abc')
+    const b = conversationIdentityOf('abc')
+    const c = conversationIdentityOf('abd')
+    expect(a).toEqual(b)
+    expect(a.conversationId).not.toBe(c.conversationId)
+    expect(a.conversationRequestId).not.toBe(a.conversationId)
+    expect(a.acpConnectionId).not.toBe(a.conversationRequestId)
+  })
+
+  it('shapes the ids like UUIDs so downstream parsers keep working', () => {
+    const { conversationId } = conversationIdentityOf('abc')
+    expect(conversationId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+  })
+
+  it('accepts a missing key by seeding randomly, and says so per call', () => {
+    const first = conversationIdentityOf(undefined)
+    const second = conversationIdentityOf(undefined)
+    // Different seeds, so different ids: two one-shot calls are two sessions.
+    expect(first.conversationId).not.toBe(second.conversationId)
+  })
 })
 
 describe('non-chat endpoints stay free of identity headers', () => {

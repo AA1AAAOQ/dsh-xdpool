@@ -489,9 +489,9 @@ export declare class WorkBuddyUpstreamClient {
    * single string. Throws on any failure: the compactor then falls back to
    * plain truncation rather than failing the user's turn.
    */
-  completeChat(credential: WorkBuddyCredential, prepared: string, signal?: AbortSignal): Promise<string>;
+  completeChat(credential: WorkBuddyCredential, prepared: string, signal?: AbortSignal, conversationKey?: string): Promise<string>;
   /** Forward one chat completion. Never throws for upstream failures. */
-  chatStream(credential: WorkBuddyCredential, prepared: string, signal?: AbortSignal): Promise<ChatStreamResult>;
+  chatStream(credential: WorkBuddyCredential, prepared: string, signal?: AbortSignal, conversationKey?: string): Promise<ChatStreamResult>;
   /** POST the token-refresh endpoint; the caller merges the outcome. */
   refreshToken(credential: WorkBuddyCredential): Promise<WorkBuddyRefreshOutcome>;
   /**

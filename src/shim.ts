@@ -625,6 +625,11 @@ function withBareModelId(raw: string, modelId: string): string {
     }
     const attempts: string[] = []
     let last: { kind: string; status: number; message: string } | undefined
+    // The chain path had no conversation identity at all, which meant a combo
+    // turn reached the gateway with no session headers and was refused with
+    // 11128 in exactly the same way the single-model path was. Derived from the
+    // same body, so every member of the chain files under one conversation.
+    const conversationKey = conversationKeyOf(raw)
     for (const member of members) {
       if (signal.aborted) return
       attempts.push(member.modelId)
@@ -646,7 +651,7 @@ function withBareModelId(raw: string, modelId: string): string {
           continue
         }
         const prepared = client.prepareChatBody(raw)
-        const result = await client.chatStream(account.credential, prepared, signal)
+        const result = await client.chatStream(account.credential, prepared, signal, conversationKey)
         if (result.ok) {
           const turnId = randomBytes(8).toString('hex')
           await serveSuccessfulStream(
@@ -906,7 +911,7 @@ function withBareModelId(raw: string, modelId: string): string {
         return
       }
       tried.push(account.label)
-      const result = await client.chatStream(account.credential, prepared, controller.signal)
+      const result = await client.chatStream(account.credential, prepared, controller.signal, conversationKey)
       if (result.ok) {
         // Success is filed by the stream forwarder, the only place that knows
         // when the stream really ended and what it cost.
@@ -1307,7 +1312,12 @@ async function recoverFromContextOverrun(options: RecoverOptions): Promise<Recov
               { ...parsed, stream: true, max_tokens: Math.max(256, Math.floor(budget / 2)) },
               request,
             )
-            return await client.completeChat(summariser.credential, body, signal ?? controller.signal)
+            return await client.completeChat(
+              summariser.credential,
+              body,
+              signal ?? controller.signal,
+              conversationKeyOf(raw),
+            )
           },
         },
         controller.signal,
@@ -1334,7 +1344,12 @@ async function recoverFromContextOverrun(options: RecoverOptions): Promise<Recov
     const account = await pool.acquire(modelId, region)
     if (account === undefined) return { ok: false, detail: 'no account available after compaction' }
     tried.push(account.label)
-    const result = await client.chatStream(account.credential, retryBody, controller.signal)
+    const result = await client.chatStream(
+      account.credential,
+      retryBody,
+      controller.signal,
+      conversationKeyOf(raw),
+    )
     if (!result.ok) {
       // A refusal is filed like any other failed physical call. The success
       // below deliberately is NOT: that one is filed by the forwarder when the

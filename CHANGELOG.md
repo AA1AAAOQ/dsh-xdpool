@@ -1,6 +1,31 @@
 # Changelog
 本项目的所有重要变更都会记录在此文件。
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+## 2.4.0 — 会话身份头、清单不再冻结、中文路由可存
+> 这一版收的是「用着用着就报错」的那一类问题：调用被网关判成非法渠道（11128）、国际版模型清单永远停在启动那一刻、中文名字的路由点了保存却没存下、上下文选择一选就弹回去。
+### 会话身份头：修掉 400 / 11128「Illegal API invocation from an unapproved channel」
+网关对「这一轮对话属于谁」有一组身份头，缺一个就整轮拒绝，报 `11128 Illegal API invocation from an unapproved channel`，看起来像密钥失效，其实是新会话没自报身份。补齐官方客户端的契约：
+- **会话稳定三头**（同一会话内不变）：`X-Conversation-ID`、`X-Conversation-Request-ID`、`acp-connection-id`。
+- **每请求两头**（逐次随机）：`X-Conversation-Message-ID`、`X-Request-ID`。
+- 另附 `X-Agent-Intent`、`X-Agent-Purpose`、`x-codebuddy-request`、`X-Private-Data`、`X-Product` 与 W3C/B3 追踪族。
+
+实测口径：三个稳定头缺任一个即 400 11128，齐全即 200；值本身不校验（非 UUID 字符串也过）。池车道（WorkBuddy 国内/国际）与扫码渠道的 `send` 两条路径都已接上。
+顺带修掉同源的一处：`role: "developer"` 的消息在国内网关同样触发 11128，现统一上送为 `system`。
+### 国际版模型清单：不再冻结在启动那一刻
+`createProvider` 的 `models` 是在创建 provider 时快照下来的数组，而原来的 `invalidate()` 只重排了 profile、复用了同一个 provider 对象，宿主按对象身份记忆化 `current()`，于是**新拿到的模型清单永远送不到选择器**——表现是「重新获取模型」点了没反应、国际版清单停在开机那一刻。现在每次 `invalidate()` 重建 provider 与 profile 两个对象，并通过 adapter handle 的 `replace()` 重新登记路由，由宿主自己发出 `llm/adapters-updated`。
+（附带核查：国际版本来就有独立的 `modelSelectionGlobal` 键，与国内白名单分开读写，这一处无需改动。）
+### 中文路由名现在存得下
+链名 slug 原来是 `[^a-z0-9]+ → '-'`，中文名整串被压成空 id，规范化时被当作无效条目静默丢弃——于是「保存成功」但什么都没存。改为 Unicode 感知的 slug（`\p{L}`/`\p{N}`），拉丁名形态完全不变，已存的路由 id 继续可解析。
+### 上下文大小：选中态不再一选就弹回
+渠道卡把「从未保存过预算」当成了「已收窄到 200K」显示，用户点「完整」清空预算后该行又算回 200K，选中态立刻跳回第一项。现在未保存过预算就显示完整窗口；清空预算时同时保留 `nativeContextWindow`，radio 组不会在指针底下消失。
+### 思考档位：不再只认一档
+pack 兜底表把十几个模型的 `reasoningEfforts` 写成了单档（`["medium"]` / `["high"]`），于是国际版 `Deepseek-V4.1-Flash` 只能选 High。逐模型实测（两网关、五档全跑）后按真实能力补齐：凡是能调通的模型五档都接受、且各档 `reasoning_content` 长度不同。`gpt-5.3-codex` 五档皆 200 但 reasoning 恒空——档位合法而不可观测，已经在表里注明；`gemini-3.5-flash` 与 `primary-model` 的 400 是账号套餐权限（`model [X] is not allowed for user type [personal]`），与档位无关，未动。
+### 重复账号：同一个人不再显示成两个
+桌面端凭据同时带数字 `uin` 与 UUID `uid`，扫码渠道只带 `uid`，而账号 id 是按 `uin` 优先哈希的——同一个人走两条登录路径就整出两个池条目，各自带一部分模型。现在按 `uid` 建次级索引合并到同一个池条目，既不改哈希（否则全部冷却、失效标记、忽略名单、持久化快照一次性作废），也与凭据到达顺序无关。
+### 「重新检测账号」不再静默失败
+`listAllAccounts` 漏了 `await`，拿到的是一个 Promise，随后的 `.filter` 抛 `is not a function` 并被外层 try/catch 吞掉，表现是扫码账号全部并进池、重新检测永远没结果。
+### 其他
+- 测试：新增会话身份头与中文路由名的回归用例，全套 68 文件 910 用例。
 ## 2.3.0 — 扫码渠道接入账号池，免密车道修复，数据看板有了真数
 > 这一版收掉三件大事：扫码登录的账号真正归入账号池并按渠道展示；免费模型车道跟上上游的新校验、不再动辄 403；数据看板不再是一排零。
 ### 账号池：扫码渠道按渠道入池、逐模型可控

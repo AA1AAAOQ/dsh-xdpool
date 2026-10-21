@@ -26,6 +26,7 @@ import {
   XDPOOL_PROVIDER,
   EXTRA_LANE_NAMES,
   createWorkBuddyAdapter,
+  type AdapterHandle,
   type WorkBuddyAdapter,
 } from './adapter.ts'
 import { AggregateCatalog, probeAggregateProvider, type AggregateModelRow } from './aggregate.ts'
@@ -1630,10 +1631,16 @@ function canonicalJson(value: unknown): string {
             extraRows: () => freeCatalog.current(),
           }),
         } as const
-        let releaseAdapterCn: (() => void) | undefined
-        let releaseAdapterGlobal: (() => void) | undefined
-        let releaseAdapterAggregate: (() => void) | undefined
-        let releaseAdapterFree: (() => void) | undefined
+        // The disposer the host hands back from `registerAdapter` also carries
+        // `replace(routes)`. That is the ONLY way a plugin can make the host
+        // publish `llm/adapters-updated`: the event is emitted from the host's
+        // own `commitRoutes`, which no plugin can reach. Re-registering under
+        // the same identities is the documented shape of "these routes are now
+        // served by a rebuilt adapter".
+        let releaseAdapterCn: AdapterHandle | undefined
+        let releaseAdapterGlobal: AdapterHandle | undefined
+        let releaseAdapterAggregate: AdapterHandle | undefined
+        let releaseAdapterFree: AdapterHandle | undefined
         let releaseDirectory: (() => void) | undefined
         // Adapters first, in a try of their own, and ONLY THEN the directory.
         //
@@ -1748,6 +1755,29 @@ function canonicalJson(value: unknown): string {
           adaptersByRegion.global.invalidate()
           adaptersByRegion.aggregate.invalidate()
           adaptersByRegion.free.invalidate()
+          // `invalidate()` only swaps the adapter's own snapshot. The host keeps
+          // a second snapshot keyed by the identity of our `profiles` map, and
+          // it is the host's copy the picker reads — so rebuilding here without
+          // re-committing the routes leaves the visible list untouched. Asking
+          // the handle to replace its (unchanged) route set is what makes the
+          // host drop that cache and publish `llm/adapters-updated`, which is
+          // also what refreshes every open client view.
+          for (const [handle, routes] of [
+            [releaseAdapterCn, [POOL_PROVIDER_BY_REGION.cn]],
+            [releaseAdapterGlobal, [POOL_PROVIDER_BY_REGION.global]],
+            [releaseAdapterAggregate, [XDPOOL_AGGREGATE_PROVIDER]],
+            [releaseAdapterFree, [XDPOOL_FREE_PROVIDER]],
+          ] as const) {
+            if (handle === undefined) continue
+            try {
+              handle.replace([...routes])
+            } catch (error: unknown) {
+              // A released registration throws REGISTRATION_DISPOSED. Reload
+              // during teardown is ordinary, so this must not take the settings
+              // apply down with it.
+              ctx.logger.warn('dsh-xdpool: could not re-announce adapter routes', error)
+            }
+          }
         }
         // A stored provider (key added, provider switched off, model list pinned)
         // rewrites the aggregate roster. Without this the picker's three-region

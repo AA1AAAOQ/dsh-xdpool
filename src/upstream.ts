@@ -417,6 +417,96 @@ const CHAT_IDENTITY_HEADERS: Readonly<Record<string, string>> = Object.freeze({
   'X-IDE-Version': '5.5.6',
 })
 
+/**
+ * The conversation-identity headers the gateway's channel check demands.
+ *
+ * WHY THIS EXISTS
+ *
+ * `www.workbuddy.ai` turned "channel verification" from a soft check into a
+ * hard one. A `POST /v2/chat/completions` missing ANY of `X-Conversation-ID`,
+ * `X-Conversation-Request-ID` or `X-Conversation-Message-ID` is rejected with
+ * business code 11128 (`msg: "request illegal"` on the international gateway,
+ * `msg: "conversation id missing"` in the earlier wording). Verified by
+ * elimination against real credentials: delete any one of the three and the
+ * call 400s; send all three and it 200s with normal SSE. Every other header the
+ * desktop sends (`acp-connection-id`, `X-Request-ID`, `X-Agent-Intent`,
+ * `X-Private-Data`, the W3C/B3 tracing family) can be dropped without effect,
+ * so only these three are load-bearing.
+ *
+ * The values are NOT validated — plain non-UUID strings pass — so the gateway
+ * is checking for presence and consistency, not for a signature. That lets us
+ * derive them from the conversation instead of registering state with upstream.
+ *
+ * 11128 IS MULTIPLEXED. The domestic gateway returns the same code with
+ * `msg: "Illegal API invocation from an unapproved channel"` for a different
+ * cause entirely: a `developer`-role message. `prepareChatBody()` already
+ * rewrites that role; see its comment. Never branch on the business code alone.
+ */
+const CONVERSATION_STABLE_SALT = 'conversation'
+
+/**
+ * The three stable conversation ids for one logical conversation.
+ *
+ * Stable across every call and every account in a conversation, because the
+ * upstream treats the triple as one session: regenerating them per request
+ * would read as a new conversation on each turn. Derived rather than stored so
+ * the identity survives a restart and needs no registry — the same reasoning
+ * `deriveDeviceId` uses for the device id.
+ *
+ * Falls back to a random seed when the caller has no key (a one-shot compaction
+ * outside any conversation), which is safe because presence is all that is
+ * checked.
+ */
+export function conversationIdentityOf(
+  conversationKey: string | undefined,
+  seed: () => string = randomUUID,
+): { conversationId: string; conversationRequestId: string; acpConnectionId: string } {
+  const base = conversationKey === undefined || conversationKey === ''
+    ? seed()
+    : conversationKey
+  const hash = (suffix: string): string =>
+    createHash('sha256')
+      .update(`${CONVERSATION_STABLE_SALT}:${suffix}:${base}`)
+      .digest('hex')
+  // Shaped like UUIDs so anything downstream that parses them keeps working.
+  const asUuid = (hex: string): string =>
+    `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`
+  return {
+    conversationId: asUuid(hash('id')),
+    conversationRequestId: asUuid(hash('request')),
+    acpConnectionId: asUuid(hash('acp')),
+  }
+}
+
+/**
+ * Full header set for one chat completion.
+ *
+ * `chatHeaders()` stays untouched on purpose: it is shared with the
+ * points-automation endpoints, which have never been shown to carry
+ * conversation identity, and adding it there would change how that traffic is
+ * attributed. The per-request ids are fresh UUIDs every call; only the triple
+ * from `conversationIdentityOf` is stable.
+ */
+export function chatCompletionHeaders(
+  credential: WorkBuddyCredential,
+  conversationKey?: string,
+): Record<string, string> {
+  const identity = conversationIdentityOf(conversationKey)
+  return {
+    ...chatHeaders(credential),
+    ...CHAT_IDENTITY_HEADERS,
+    'X-Conversation-ID': identity.conversationId,
+    'X-Conversation-Request-ID': identity.conversationRequestId,
+    'acp-connection-id': identity.acpConnectionId,
+    'X-Conversation-Message-ID': randomUUID(),
+    'X-Request-ID': randomUUID(),
+    'X-Agent-Intent': 'craft',
+    'X-Agent-Purpose': 'conversation',
+    'X-Private-Data': 'true',
+    'x-codebuddy-request': '1',
+  }
+}
+
 /** Refresh-endpoint headers; X-Refresh-Token appears here and nowhere else. */
 function refreshHeaders(credential: WorkBuddyCredential): Record<string, string> {
   const headers: Record<string, string> = {
@@ -1204,10 +1294,11 @@ export class WorkBuddyUpstreamClient {
     credential: WorkBuddyCredential,
     prepared: string,
     signal?: AbortSignal,
+    conversationKey?: string,
   ): Promise<string> {
     const response = await this.fetchImpl(`${chatBase(credential)}/v2/chat/completions`, {
       method: 'POST',
-      headers: { ...chatHeaders(credential), ...CHAT_IDENTITY_HEADERS },
+      headers: chatCompletionHeaders(credential, conversationKey),
       body: prepared,
       ...signal === undefined ? {} : { signal },
     })
@@ -1224,12 +1315,13 @@ export class WorkBuddyUpstreamClient {
     credential: WorkBuddyCredential,
     prepared: string,
     signal?: AbortSignal,
+    conversationKey?: string,
   ): Promise<ChatStreamResult> {
     let response: Response
     try {
       response = await this.fetchImpl(`${chatBase(credential)}/v2/chat/completions`, {
         method: 'POST',
-        headers: { ...chatHeaders(credential), ...CHAT_IDENTITY_HEADERS },
+        headers: chatCompletionHeaders(credential, conversationKey),
         body: prepared,
         ...signal === undefined ? {} : { signal },
       })
