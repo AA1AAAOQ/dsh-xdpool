@@ -440,8 +440,11 @@ const CHAT_IDENTITY_HEADERS: Readonly<Record<string, string>> = Object.freeze({
  *     it" above is the same finding from the other side).
  *   - it is case-insensitive (`you are an ai agent powered by deepseek harness`
  *     is blocked too).
- *   - only `role: "system"` is inspected: the same sentence in a `user` or
- *     `tool` message passes, and it is blocked in a second system message too.
+ *   - the scanned roles are `system` and `assistant`: the same sentence in a
+ *     `user` or `tool` message passes, and it is blocked in a second system
+ *     message too. 2.4.1 recorded this as system-only; re-measured
+ *     2026-10-21, an `assistant` message carrying the sentence 400s as well,
+ *     so `prepareChatBody` rewrites both roles.
  *   - `deepseek harness` alone, or `powered by deepseek` alone, passes — the
  *     whole phrase is what matches.
  *   - replacing `powered by` with `running on` passes, which is the rewrite
@@ -453,17 +456,42 @@ const CHAT_IDENTITY_HEADERS: Readonly<Record<string, string>> = Object.freeze({
  * lose its anchor tomorrow. Rewriting the phrase is what the report's repro
  * verified, so that is what this does.
  *
+ * A SECOND FINGERPRINT (measured against the live domestic gateway 2026-10-21)
+ *
+ * Once the sentence above was rewritten, requests still 400/11128'd, and the
+ * blocker turned out to be another region of the same DSH system prompt: the
+ * runtime-context sentence pair
+ *
+ *   You are interacting with the user through the DeepSeek Harness Web GUI
+ *   whose URL the runtime context names. When the user refers to "this page",
+ *   "this GUI", or "this app" without naming another target, they mean this GUI.
+ *
+ * The pair is load-bearing: either sentence alone 200s, and so does the pair
+ * with any small edit inside it — so this is a second CONTENT fingerprint, not
+ * a prompt-length rule and not another header rule. Renaming the product's
+ * "Web GUI" to "web interface" is the smallest edit that keeps the meaning for
+ * the model and clears the check; it was verified at 200 against both a main
+ * agent system prompt and a subagent system prompt, on the same account that
+ * reproduced the 400.
+ *
+ * The same window in an `assistant` message also answers 400, and 200 after
+ * this rewrite; `user` and `tool` messages are not scanned. That is why the
+ * rewrite is applied to assistant history too — one past reply carrying a
+ * fingerprint would otherwise fail every later request in the conversation.
+ *
  * The list is an ARRAY because these fingerprints are appended to over time; a
  * future rejection should be one more row here, not a new code path.
  */
 const BANNED_SYSTEM_PHRASES: readonly (readonly [RegExp, string])[] = Object.freeze([
   [/powered by DeepSeek Harness/gi, 'running on DeepSeek Harness'],
+  [/DeepSeek Harness Web GUI/gi, 'DeepSeek Harness web interface'],
 ] as const)
 
 /**
- * Rewrite fingerprinted system content, leaving everything else byte-identical.
+ * Rewrite fingerprinted system/assistant content, leaving everything else
+ * byte-identical.
  *
- * System content arrives as either a plain string or an array of content blocks
+ * Message content arrives as either a plain string or an array of content blocks
  * (an OpenAI-compatible body allows both), so both shapes are handled — fixing
  * only the string form would miss every request that carries an image or a
  * cache-control block.
@@ -1287,9 +1315,9 @@ export class WorkBuddyUpstreamClient {
    * Normalize an OpenAI chat-completions body for the WorkBuddy upstream:
    * force `stream: true` (the upstream rejects non-streaming), convert the
    * DSH `developer` role into `system` (upstream rejects `developer` with
-   * business code 11128), rewrite system content the gateway fingerprints as a
-   * non-official client (also 11128), and flatten `tool_choice` into its string
-   * form.
+   * business code 11128), rewrite fingerprinted system/assistant content the
+   * gateway reads as a non-official client (also 11128), and flatten
+   * `tool_choice` into its string form.
    *
    * This is the REGION-BLIND half. Everything here is measured good on both
    * gateways, so it runs before the region is known — the pool lane picks its
@@ -1324,9 +1352,11 @@ export class WorkBuddyUpstreamClient {
         if (typeof value !== 'object' || value === null || Array.isArray(value)) continue
         const message = value as Record<string, unknown>
         if (message['role'] === 'developer') message['role'] = 'system'
-        // The gateway scans system CONTENT for other clients' fingerprints;
-        // see BANNED_SYSTEM_PHRASES for the measured boundary.
-        if (message['role'] === 'system') {
+        // The gateway scans system and assistant CONTENT for other clients'
+        // fingerprints; see BANNED_SYSTEM_PHRASES for the measured boundary.
+        // Assistant history is included because one past reply carrying a
+        // fingerprint makes every later request 400.
+        if (message['role'] === 'system' || message['role'] === 'assistant') {
           message['content'] = sanitizeSystemContent(message['content'])
         }
       }

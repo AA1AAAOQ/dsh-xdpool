@@ -10,9 +10,10 @@ import { sanitizeSystemContent, WorkBuddyUpstreamClient } from '../src/upstream.
   that sentence at the top of every conversation, so an unmodified install is
   rejected on every account.
 
-  Measured boundary (live gateway): literal substring, case-insensitive, only
-  near the start of a system message, only `role: "system"`. These tests pin the
-  rewrite, not the gateway: if the list grows, the array grows.
+  Measured boundary (live gateway): literal substring, case-insensitive, near
+  the start of a message, and the scanned roles are `system` + `assistant`
+  (`user` / `tool` pass). These tests pin the rewrite, not the gateway: if the
+  list grows, the array grows.
 */
 const BANNED = 'You are an AI agent powered by DeepSeek Harness.'
 const SAFE = 'You are an AI agent running on DeepSeek Harness.'
@@ -113,5 +114,89 @@ describe('the system-prompt fingerprint the gateway blocks', () => {
     const body = JSON.parse(client.prepareChatBody(raw)) as { messages: { content: string }[] }
     expect(body.messages[0]?.content).toBe(BANNED)
     expect(body.messages[1]?.content).toBe(BANNED)
+  })
+
+  it('rewrites the same sentence when an assistant reply carries it', () => {
+    // The gateway scans assistant history too. A reply that quotes the system
+    // prompt must not poison every later turn of the conversation.
+    const client = new WorkBuddyUpstreamClient({ fetchImpl: () => Promise.reject(new Error('unused')) })
+    const raw = JSON.stringify({
+      messages: [
+        { role: 'system', content: 'You are a helpful assistant.' },
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', content: BANNED },
+      ],
+    })
+    const body = JSON.parse(client.prepareChatBody(raw)) as { messages: { content: string }[] }
+    expect(body.messages[2]?.content).toBe(SAFE)
+  })
+})
+
+/*
+  A second system-message fingerprint, measured after the first rewrite shipped:
+  the DSH runtime-context sentence pair below still answered
+  `400 / 11128 Illegal API invocation from an unapproved channel` on every
+  account. Either sentence alone passes, and every small edit inside the pair
+  passes too — so the gateway matches the pair's content, not the prompt length
+  and not another request header. The rewrite below changes only the product's
+  "Web GUI" spelling; the rest of the pair must stay byte-identical.
+*/
+const BANNED_RUNTIME_CONTEXT =
+  'You are interacting with the user through the DeepSeek Harness Web GUI whose URL the runtime context names. ' +
+  'When the user refers to "this page", "this GUI", or "this app" without naming another target, they mean this GUI.'
+const SAFE_RUNTIME_CONTEXT =
+  'You are interacting with the user through the DeepSeek Harness web interface whose URL the runtime context names. ' +
+  'When the user refers to "this page", "this GUI", or "this app" without naming another target, they mean this GUI.'
+
+describe('the runtime-context fingerprint the gateway blocks', () => {
+  it('rewrites "Web GUI" and keeps the rest of the pair byte-identical', () => {
+    expect(sanitizeSystemContent(BANNED_RUNTIME_CONTEXT)).toBe(SAFE_RUNTIME_CONTEXT)
+  })
+
+  it('rewrites it case-insensitively and every occurrence', () => {
+    const lowered = sanitizeSystemContent(BANNED_RUNTIME_CONTEXT.toLowerCase()) as string
+    expect(lowered).not.toMatch(/deepseek harness web gui/i)
+    expect(lowered).toContain('DeepSeek Harness web interface')
+    expect(sanitizeSystemContent('DeepSeek Harness Web GUI A DeepSeek Harness Web GUI B'))
+      .toBe('DeepSeek Harness web interface A DeepSeek Harness web interface B')
+  })
+
+  it('leaves an innocent Web GUI mention alone', () => {
+    // Only the "DeepSeek Harness" prefix is the fingerprint; a generic Web GUI
+    // mention is not, and rewriting it would corrupt unrelated prompts.
+    const clean = 'The Web GUI follows the system theme.'
+    expect(sanitizeSystemContent(clean)).toBe(clean)
+  })
+
+  it('rewrites the pair in system and assistant messages, not in user text', () => {
+    const client = new WorkBuddyUpstreamClient({ fetchImpl: () => Promise.reject(new Error('unused')) })
+    const raw = JSON.stringify({
+      model: 'deepseek-v4.1-flash',
+      messages: [
+        { role: 'system', content: [{ type: 'text', text: BANNED_RUNTIME_CONTEXT }] },
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', content: BANNED_RUNTIME_CONTEXT },
+        { role: 'user', content: BANNED_RUNTIME_CONTEXT },
+      ],
+      stream: false,
+    })
+    const body = JSON.parse(client.prepareChatBody(raw)) as {
+      messages: { role: string; content: unknown }[]
+    }
+    expect(body.messages[0]?.content).toEqual([{ type: 'text', text: SAFE_RUNTIME_CONTEXT }])
+    expect(body.messages[1]?.content).toBe('hi')
+    expect(body.messages[2]?.content).toBe(SAFE_RUNTIME_CONTEXT)
+    // The user's own text must survive untouched.
+    expect(body.messages[3]?.content).toBe(BANNED_RUNTIME_CONTEXT)
+    expect(JSON.stringify(body.messages[0])).not.toContain('DeepSeek Harness Web GUI')
+    expect(JSON.stringify(body.messages[2])).not.toContain('DeepSeek Harness Web GUI')
+  })
+
+  it('applies both fingerprints to one prompt', () => {
+    const merged = sanitizeSystemContent(`${BANNED}\n\n${BANNED_RUNTIME_CONTEXT}`) as string
+    expect(merged).toContain(SAFE)
+    expect(merged).toContain(SAFE_RUNTIME_CONTEXT)
+    expect(merged).not.toMatch(/powered by DeepSeek Harness/i)
+    expect(merged).not.toContain('DeepSeek Harness Web GUI')
   })
 })
