@@ -33166,6 +33166,38 @@ var CodeArtsAdapter = class extends LlmAdapter {
       headers.set("Chat-Id", this.chatId);
       headers.set("Session-Id", this.sessionId);
       headers.set("lang", "en");
+      // [xdpool-local] billion-context（bili）在 DSH 内做上下文压缩，而压缩必须重写请求体；
+      // 本请求的签名覆盖请求体（SDK-HMAC-SHA256），重写即失效。bili 手里没有可重签的凭证，
+      // 于是按它的 compress-or-refuse 契约**本地 403 拒绝转发**，而 pack 侧只看到 403
+      // （httpErrorCode 对 403 无条件返回 "AUTH"），最终被 lib/index.js 的
+      // SESSION_DEAD_MARKERS 归类成「API 密钥无效」—— 用户看到凭证失效，实际凭证完全有效。
+      // 把签名三要素交给 bili，它就能自己重签，上下文压缩得以保留。
+      //
+      // 这两个头不参与华为签名（bili 的 SIGNED_HEADER_NAMES 只有 authorization /
+      // x-sdk-date / x-sdk-content-sha256 / x-security-token / maas_type），且是在
+      // signRequestHuawei 算完签名之后才设进去的，所以不影响上游校验。
+      //
+      // 安全前提（已实测确认）：bili 在构造上游请求时**剥离**这两个头并用自己的凭证重签 ——
+      // dist/index.js 的转发头复制循环里显式跳过 APIG_RESIGN_HEADER /
+      // APIG_RESIGN_CREDENTIAL_HEADER，所以 secret_access_key 不会到达上游。
+      //
+      // 默认为什么仍是关：billion-context 只在 optionalDependencies 里，未安装时这两个头
+      // 会直达上游；且 bili 的进程内 native client 自己就会构造这两个头（resignExtra），
+      // 那条路径加不加都不影响它。开关留给「xdpool 直接对接 bili 代理路径」的场合。
+      if (this.options.codeartsResignHeaders === true) {
+        headers.set("x-bili-resign", "sdk-hmac-sha256");
+        headers.set(
+          "x-bili-resign-credential",
+          Buffer.from(
+            JSON.stringify({
+              ak: credential.access_key_id,
+              sk: credential.secret_access_key,
+              token: credential.security_token ?? ""
+            }),
+            "utf8"
+          ).toString("base64")
+        );
+      }
       response = await this.fetchImpl(url, {
         method: "POST",
         headers,

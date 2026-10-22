@@ -1,6 +1,60 @@
 # Changelog
 本项目的所有重要变更都会记录在此文件。
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+## 2.4.3 — 渠道包补上 11128、粘性绑定跨重启、网关白名单、目录 TTL，外加 CodeArts 重签开关
+
+> 2.4.1 与 2.4.2 修的是**池车道**（`src/upstream.ts`）；这一版把同一套 11128 规则补进**渠道车道**自己那份 channel pack，并顺带解决三件独立的事：会话粘性绑定不该止于进程边界、网关页面的勾选该是真开关、远端模型目录该会过期。四个 PR 来自社区（[@GIGIGIGIbaby](https://github.com/GIGIGIGIbaby)），复核与发布由维护者完成。另附一个默认关闭的 CodeArts 重签开关（见末节）。
+
+### 渠道账号也吃 400 / 11128（PR [#63](https://github.com/XDTrees/dsh-xdpool/pull/63)）
+
+`workbuddy` 渠道在 `channels.ts` 的 `POOL_OWNED_CHANNELS` 列表里，但它**不走** `src/upstream.ts` —— 它由 channel pack 自己的 WorkBuddy 适配器应答。2.4.1 的两道内容指纹、2.4.2 的 role 转换与三个会话身份头都只加在了池车道，于是渠道账号继续吃到 2.4.2 已经替别人修好的那个 `400 / 11128`：
+
+| 项 | 渠道适配器改前 | 改后 |
+|---|---|---|
+| 首条消息 role | `developer` | `system`（就地转换） |
+| `powered by DeepSeek Harness` | 原样发出 | `running on DeepSeek Harness` |
+| `DeepSeek Harness Web GUI` | 原样发出 | `DeepSeek Harness web interface` |
+| `X-Conversation-ID` / `-Request-ID` / `-Message-ID` | 一个都不带 | 三个都带 |
+
+三处编辑各自标了 `[xdpool-local]`，配套的 `tests/chat-identity-headers.test.ts` 直接对**已发布的 bundle** 做源断言（pack.js 是外部构建产物、无法 `import`，所以只能在字节层 pin 住）—— 下次 pack 刷新若把这三处冲掉，测试会变红，而不是静默回退。
+
+### 会话粘性绑定跨过进程边界（PR [#64](https://github.com/XDTrees/dsh-xdpool/pull/64)）
+
+卡片承诺「一个会话一个账号」，但这个承诺原先止于进程边界：绑定存在一个 `Map` 里，每次重启都重新挑选，于是同一个会话一天里可能被三个账号各服务一遍，每次都按完整 prompt 计费。现在这张表写进插件状态目录（只存哈希到账号 id，不含任何消息内容），构造时加载，写入合并成一次原子 rename，并沿用与内存版相同的 LRU 上限。
+
+测试特意把会话绑到一个「默认挑选不会选中」的账号 —— 新建的空池本来就会同意未绑定会话的选择，所以「两个池答案一致」在禁用加载时也能通过；实测把加载去掉会让其中三个用例变红。
+
+### 网关页面的勾选不再是纯展示（PR [#65](https://github.com/XDTrees/dsh-xdpool/pull/65)）
+
+Gateway 页的模型勾选框与 LAN 共享列表此前只是**展示过滤器**：`/v1/models` 会隐藏没勾的模型，但请求路径照单全收。一台还留着旧模型 id 的手机、或照文档猜一个 id 的第二编辑器，就能继续拿卡片上写着「关」的模型花用户的钱。
+
+现在强制发生在**调用方实际发出的那个 id 上**，且在任何车道剥前缀或改写 body **之前**，覆盖每条车道：pool、aggregate、free、combo，以及登录渠道。列表与闸门读同一份集合——这正是让卡片上的勾选有意义的原因。
+
+### 远端模型目录会过期（PR [#66](https://github.com/XDTrees/dsh-xdpool/pull/66)）
+
+bundle 里每个适配器都把 `remoteModels` 缓存到进程结束，于是厂商改名或调整倍率要等重启才反映到卡片上——而**改名通常就是改价**，因为倍率是名字的一部分。现在由一道 TTL 闸门决定缓存能否应答，时长十分钟，可用 `DSH_XDPOOL_CATALOG_TTL_MS` 覆盖以便测试。
+
+闸门刻意**不清缓存**：加载器只在成功时覆盖，所以刷新失败会继续沿用最后一份已知良好的目录，而不是退化成一堆裸 id；网关侧 30s 的冷却又限住了重试速率。同样无需重建 lib —— `channels.ts` 在运行期按路径加载 `pack.js`。
+
+### 可选：CodeArts 请求带重签头（默认关闭，`[xdpool-local]`）
+
+在 CodeArts 的 chat 请求上追加两个头：
+
+```
+x-bili-resign: sdk-hmac-sha256
+x-bili-resign-credential: base64({"ak":"…","sk":"…","token":"…"})
+```
+
+用途是让 billion-context 用这对凭证**重签**一条它接管的 SDK-HMAC-SHA256 请求：该方案的签名覆盖请求体，压缩改写会让签名失效，而 bili 拿不到重签凭证时会按 compress-or-refuse 契约**本地拒发**（`bili_resign_unavailable`，表现为 403，再被误读成「密钥无效」）。带上这对头，bili 就能重算签名，压缩能力得以保留（billion-context 的 #1884 逃生口）。
+
+**为什么默认关闭**：`billion-context` 只在 `optionalDependencies` 里，未安装时这两个头会**直达上游**，而它们携带的是 AK/SK；另外 bili 的进程内 native client 自己会构造这两个头（`resignExtra`），xdpool 加不加都不影响它。开关留给「xdpool 直接对接 bili 代理路径」或将来需要显式携带凭证的场合 —— 启用方式是在 pool 构造时传 `codeartsResignHeaders: true`（当前没有对应的用户级配置项）。
+
+配套 `tests/codearts-resign-headers.test.ts` 用源断言 pin 住四件事：两个头名齐全、字段名与 bili `decodeApigCredential` 读取的 `ak`/`sk`/`token` 一致、插入位置在 `signRequestHuawei` 之后、以及默认关闭。
+
+### 其他
+
+- 新增测试：渠道包 11128 规则源断言、粘性绑定跨重启（含「去掉加载即变红」的对照）、网关白名单与列表一致性、目录 TTL。
+
 ## 2.4.2 — 第二道内容指纹：`Web GUI` 那句，以及 assistant 历史
 > 2.4.1 之后仍有 11128。这一版补上第二道内容指纹，并把改写范围扩到 assistant 历史。修复来自社区 PR [#62](https://github.com/XDTrees/dsh-xdpool/pull/62)（[@jmglsi](https://github.com/jmglsi)），实测复核与发布由维护者完成。
 ### 同一条提示词里还有第二道指纹
