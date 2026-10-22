@@ -5,7 +5,7 @@
  *
  * @module dsh-xdpool/index
  */
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
@@ -188,6 +188,7 @@ import { regionOf, WorkBuddyUpstreamClient, type WorkBuddyRegion } from './upstr
 import {
   ignoreAccount,
   ignoredIdsPath,
+  pluginDataDir,
   readIgnoredAccountsSync,
   unignoreAccount,
 } from './ignored.ts'
@@ -595,7 +596,15 @@ export function createCore(logger?: { warn(...args: unknown[]): void; info?(...a
   // CURRENT sign-in's credential file on disk, every account gathered by
   // switching sign-ins evaporated on restart. The store seeds `scan()` from
   // `~/.dsh/.xdpool/accounts.json` and writes the merged list back.
-  const pool = new WorkBuddyAccountPool({ ...logger === undefined ? {} : { logger }, client, persistent: true })
+  // The sticky bindings are written beside the plugin's other state so
+  // "one account per conversation" survives a restart instead of being a promise
+  // that ends at the process boundary.
+  const pool = new WorkBuddyAccountPool({
+    ...logger === undefined ? {} : { logger },
+    client,
+    persistent: true,
+    affinityPath: join(pluginDataDir(), 'sticky-affinity.json'),
+  })
   const catalogs = {
     cn: new WorkBuddyCatalog('cn'),
     global: new WorkBuddyCatalog('global'),

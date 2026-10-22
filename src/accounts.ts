@@ -11,9 +11,10 @@
  */
 
 import { createHash } from 'node:crypto'
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { readFile, readdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { regionOf, type WorkBuddyRegion } from './upstream.ts'
 import { accountStorePath, isStateFile, loadStoredAccounts, saveStoredAccounts, snapshotDirPath } from './account-store.ts'
 import {
@@ -563,6 +564,15 @@ export type AccountDistribution = 'priority' | 'round-robin' | 'balanced' | 'sti
 const STICKY_AFFINITY_LIMIT = 200
 
 export interface AccountPoolOptions {
+  /**
+   * File the `sticky` bindings are remembered in, or undefined for memory only.
+   *
+   * The card promises one account per conversation, and that promise used to end
+   * at the process boundary: every restart re-picked, so one session could be
+   * served by three different accounts in a day and pay full prompt cost each
+   * time. The caller passes the plugin's own state path; tests pass a temp file.
+   */
+  affinityPath?: string
   /** Logger for discovery and rotation events. */
   logger?: { info?(...args: unknown[]): void; warn(...args: unknown[]): void; error?(...args: unknown[]): void }
   /** Override the directories scanned (tests). */
@@ -709,6 +719,9 @@ export class WorkBuddyAccountPool {
    * the LRU order: re-binding deletes then re-inserts.
    */
   private readonly affinity = new Map<string, string>()
+  /** Where the bindings above are persisted; undefined keeps them in memory. */
+  private readonly affinityPath: string | undefined
+  private affinitySaveTimer: ReturnType<typeof setTimeout> | undefined
   private lastScanAtMs = 0
   /**
    * The account id the user pinned, or undefined for none.
@@ -821,6 +834,8 @@ export class WorkBuddyAccountPool {
     this.distribution = options.distribution ?? 'priority'
     this.persistent = options.persistent ?? false
     this.storePath = accountStorePath()
+    this.affinityPath = options.affinityPath
+    if (this.affinityPath !== undefined) this.loadAffinity()
   }
 
   /**
@@ -1189,6 +1204,53 @@ export class WorkBuddyAccountPool {
       if (oldest === undefined) break
       this.affinity.delete(oldest)
     }
+    this.scheduleAffinitySave()
+  }
+
+  /**
+   * Restore bindings written by a previous process.
+   *
+   * Tolerant like the other state files: a malformed document or one bad entry
+   * must not take the pool down, and an account id that no longer exists is
+   * simply never matched (the next acquire re-picks and rebinds).
+   */
+  private loadAffinity(): void {
+    if (this.affinityPath === undefined) return
+    try {
+      const raw = JSON.parse(readFileSync(this.affinityPath, 'utf8')) as { bindings?: unknown }
+      const bindings = raw.bindings
+      if (typeof bindings !== 'object' || bindings === null || Array.isArray(bindings)) return
+      for (const [key, value] of Object.entries(bindings as Record<string, unknown>)) {
+        if (key === '' || typeof value !== 'string' || value === '') continue
+        this.affinity.set(key, value)
+      }
+      while (this.affinity.size > STICKY_AFFINITY_LIMIT) {
+        const oldest = this.affinity.keys().next().value
+        if (oldest === undefined) break
+        this.affinity.delete(oldest)
+      }
+    } catch { /* first run, or an unreadable file: start empty */ }
+  }
+
+  /** Write the bindings back, coalescing a burst into one atomic rename. */
+  private scheduleAffinitySave(): void {
+    if (this.affinityPath === undefined || this.affinitySaveTimer !== undefined) return
+    this.affinitySaveTimer = setTimeout(() => {
+      this.affinitySaveTimer = undefined
+      const path = this.affinityPath
+      if (path === undefined) return
+      try {
+        mkdirSync(dirname(path), { recursive: true })
+        writeFileSync(
+          `${path}.tmp`,
+          `${JSON.stringify({ version: 1, bindings: Object.fromEntries(this.affinity) }, null, 2)}
+`,
+          'utf8',
+        )
+        renameSync(`${path}.tmp`, path)
+      } catch { /* a lost binding costs one re-pick, never a request */ }
+    }, 500)
+    this.affinitySaveTimer.unref?.()
   }
 
   /**
