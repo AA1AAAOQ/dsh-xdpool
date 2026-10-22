@@ -1785,6 +1785,69 @@ interface PoolWebRelayPatch {
   host?: string;
   port?: number;
   key?: string;
+  /**
+   * The models to share with LAN clients, by gateway id.
+   *
+   * An empty array is an answer, not an absence: it means the user unticked
+   * everything, and the gateway then refuses every model. Only "never set"
+   * leaves the gateway open.
+   */
+  models?: string[];
+}
+/**
+ * What {@link POOL_RELAY_PATH} answers with.
+ *
+ * `listening` is separate from `enabled` because "you turned it on and it could
+ * not bind" is a state the user has to be able to see. Collapsing the two would
+ * tell them to switch on something that is already on.
+ *
+ * `key` is the RELAY key, in full, on purpose: the card has to show it so it can
+ * be pasted into another device. It is the key the plugin minted for LAN
+ * clients — the shim's own per-process secret is never returned by any route.
+ *
+ * The type lives here rather than beside the listener because the client card
+ * renders it, and importing the listener's module would drag `node:http` into a
+ * browser bundle.
+ */
+interface PoolWebRelayStatus {
+  enabled: boolean;
+  listening: boolean;
+  host: string;
+  port: number;
+  /** Where a client should point; '' until something is listening. */
+  endpoint: string;
+  key: string;
+  /** Why nothing is bound; '' when there is nothing to explain. */
+  error: string;
+  /**
+   * Every model the gateway could serve, with the name a human reads.
+   *
+   * Built from the shim's own roster, so the picker cannot offer a model the
+   * gateway would then refuse. The name is here because the OpenAI `/v1/models`
+   * schema has no such field: `qfmodel` is what a client sends, and
+   * `Qwen3.8-Flash · 免费` is what the user knows it as, and only this card can
+   * show both together.
+   *
+   * REQUIRED, and required on the POST answer too: the card treats a write
+   * response as the new state, so a save that answered without the roster emptied
+   * the picker until the next poll. Declaring it optional let the write path
+   * return the bare listener status and typecheck clean.
+   */
+  candidates: readonly PoolWebGatewayModel[];
+  /**
+   * The shared list in force. `undefined` means the user has never chosen, which
+   * the card must render as "everything is shared" rather than an empty picker.
+   */
+  shared?: readonly string[];
+}
+/** One row of the gateway's model picker. */
+interface PoolWebGatewayModel {
+  /** What a client sends, and what the allowlist stores. */
+  id: string;
+  /** The display name from the lane that serves it. */
+  name: string;
+  /** The lane or channel it belongs to; what the picker groups under. */
+  source: string;
 }
 /**
  * What a key probe answered.
@@ -2473,6 +2536,21 @@ interface RelaySetting {
   port?: number;
   /** URL-safe shared secret LAN clients authenticate with. */
   key?: string;
+  /**
+   * Which models the gateway may serve, by gateway id (`buddy:hy3`,
+   * `qoder:qfmodel`, `free:…`, `provider/model`).
+   *
+   * Absent and empty are DIFFERENT answers and the distinction is load-bearing:
+   * absent means "no selection has ever been made, serve everything", so
+   * upgrading does not silently break a gateway a device is already pointed at;
+   * empty means "the user unticked everything", and is honoured as such.
+   *
+   * This is an allowlist enforced on the request, not just on the listing. A
+   * relay key is one value shared by every device on the LAN, so "hidden from
+   * /v1/models" would leave every other lane reachable to anything that guessed
+   * an id — including the login channels, whose quota is this account's.
+   */
+  models?: string[];
 }
 //#endregion
 //#region src/aggregate.d.ts
@@ -2739,6 +2817,40 @@ declare class UsageRecorder {
   private days;
 }
 //#endregion
+//#region src/channel-lane.d.ts
+/** One model as the gateway lists and routes it. */
+interface ChannelLaneRow {
+  /** The composite id a client sends: `<channel>:<model>`. */
+  id: string;
+  channel: string;
+  modelId: string;
+  name: string;
+}
+/** One translated event, so the caller decides how to frame it as SSE. */
+type ChannelLaneEvent = {
+  kind: 'delta';
+  delta: Record<string, unknown>;
+} | {
+  kind: 'usage';
+  usage: Record<string, number>;
+} | {
+  kind: 'done';
+  finishReason: string;
+};
+interface ChannelLane {
+  rows: () => Promise<readonly ChannelLaneRow[]>;
+  resolve: (id: string) => {
+    channel: string;
+    modelId: string;
+  } | undefined;
+  turn: (input: {
+    channel: string;
+    modelId: string;
+    body: Record<string, unknown>;
+    signal: AbortSignal;
+  }) => AsyncGenerator<ChannelLaneEvent>;
+}
+//#endregion
 //#region src/shim.d.ts
 interface ShimLogger {
   info?(...args: unknown[]): void;
@@ -2749,7 +2861,28 @@ interface WorkBuddyShim {
   ready: Promise<void>;
   baseUrl(): string;
   token(): string;
+  /**
+   * Everything the gateway could serve, with display names.
+   *
+   * The card's model picker reads this; `/v1/models` maps the same entries down
+   * to ids. One source so the card cannot offer a model the gateway then refuses.
+   */
+  roster(): Promise<readonly GatewayModelEntry[]>;
   close(): Promise<void>;
+}
+/**
+ * One gateway-visible model: the id a client sends, the name a human reads, and
+ * the lane it belongs to.
+ *
+ * Both are needed because they disagree in exactly the places that matter. A
+ * qoder model is `qfmodel` on the wire and `Qwen3.8-Flash · 免费` in every
+ * interface the user has met it in, and the OpenAI `/v1/models` schema has no
+ * field for the second — so the name can only ever be shown here, on the card.
+ */
+interface GatewayModelEntry {
+  id: string;
+  name: string;
+  source: string;
 }
 /**
  * Everything the aggregate lane needs to answer one request.
@@ -2774,9 +2907,18 @@ interface ExtraLaneOptions {
   free: ExtraLaneSource;
 }
 interface ExtraLaneSource {
+  /**
+   * The rows this lane offers.
+   *
+   * `name` is the human-facing display name the free catalog already keeps (a
+   * raw upstream id is deliberately never shown to a picker); it is optional
+   * here because the lane's own contract only ever needed the ids, and the
+   * gateway's model picker is the first consumer that wants the label too.
+   */
   current: () => readonly {
     modelId: string;
     id: string;
+    name?: string;
   }[];
   /**
    * Run one turn, handing back the frames to write.
@@ -2831,6 +2973,29 @@ interface WorkBuddyShimOptions {
    * give the user two names for one lane.
    */
   extra?: ExtraLaneOptions;
+  /**
+   * The fifth lane: the 扫码登录 channels, reached through the host's own LLM
+   * seam rather than a socket this plugin owns.
+   *
+   * CN-shim-only for the aggregate lane's reason — a second copy under the
+   * global provider id would list every channel twice — and the relay is wired to
+   * this shim, so this is also the only shim the LAN gateway can see.
+   */
+  channels?: ChannelLane;
+  /**
+   * The gateway allowlist, re-read per request.
+   *
+   * `undefined` means "no selection has been made: serve everything to LAN
+   * clients too", so upgrading cannot silently break a device already pointed at
+   * the relay. An empty array is the opposite answer — the user unticked
+   * everything — and is enforced as such.
+   *
+   * Only consulted for requests carrying {@link RELAY_HOP_HEADER}, which is the
+   * relay's own marker. The host's adapter reaches this same process without it,
+   * so the models DSH offers in its picker are never narrowed by a list meant
+   * for other machines.
+   */
+  lanModels?: () => readonly string[] | undefined;
 }
 export declare function createWorkBuddyShim(options: WorkBuddyShimOptions): WorkBuddyShim;
 //#endregion
@@ -3640,27 +3805,6 @@ export declare function readPreferredIdSync(path?: string): string | undefined;
  */
 export declare function writePreferredId(accountId: string | undefined, path?: string): Promise<void>;
 //#endregion
-//#region src/relay.d.ts
-interface PoolRelayStatus {
-  enabled: boolean;
-  /** Whether a listener is actually bound right now. */
-  listening: boolean;
-  host: string;
-  port: number;
-  /** Where a client should point; '' until something is listening. */
-  endpoint: string;
-  /**
-   * The relay key in full.
-   *
-   * Returned on purpose: the card has to show it once so the user can copy it
-   * into the other device. This is the key WE minted for LAN clients, not the
-   * shim secret, and it grants nothing beyond reaching the pool.
-   */
-  key: string;
-  /** Why nothing is bound; '' when there is nothing to explain. */
-  error: string;
-}
-//#endregion
 //#region src/web-status.d.ts
 /** Constructor dependencies — a narrow slice of the pool runtime. */
 interface PoolStatusRouteOptions {
@@ -3858,9 +4002,9 @@ interface PoolStatusRouteOptions {
    * the plugin minted for LAN clients. The shim's own per-process secret is never
    * exposed by any route.
    */
-  relayDocument?: () => Promise<PoolRelayStatus>;
+  relayDocument?: () => Promise<PoolWebRelayStatus>;
   /** Apply a relay patch, re-evaluate the listener, and answer with the new state. */
-  saveRelay?: (patch: PoolWebRelayPatch) => Promise<PoolRelayStatus>;
+  saveRelay?: (patch: PoolWebRelayPatch) => Promise<PoolWebRelayStatus>;
 }
 /**
  * Assemble the card's status document. Per-account credits and check-in state
