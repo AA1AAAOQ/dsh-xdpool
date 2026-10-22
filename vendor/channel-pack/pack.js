@@ -30936,6 +30936,31 @@ function resolveHideWithoutAccountFlag(raw) {
 
 // vendor/channel-pack/src/remote-catalog-gate.ts
 var REMOTE_CATALOG_COOLDOWN_MS = 3e4;
+// [xdpool-local] How long a successfully fetched model catalog is trusted.
+//
+// Each adapter below caches its catalog for the life of the process ("if
+// remoteModels is set, return"), so a vendor renaming a model or changing its
+// multiplier only reached the card after a restart. The rename is often a price
+// change (the multiplier is part of `name`), which makes a restart-only refresh
+// a bad way to learn what a model costs. Ten minutes, overridable for testing.
+var REMOTE_CATALOG_TTL_MS = 6e5;
+var REMOTE_CATALOG_STAMP = new WeakMap();
+function remoteModelsStale(owner) {
+  if (owner.remoteModels === void 0) return true;
+  var override = Number(process.env.DSH_XDPOOL_CATALOG_TTL_MS ?? "");
+  var ttl = Number.isFinite(override) && override >= 0 ? override : REMOTE_CATALOG_TTL_MS;
+  var now = Date.now();
+  var stamp = REMOTE_CATALOG_STAMP.get(owner);
+  if (stamp === void 0 || now - stamp < ttl) {
+    if (stamp === void 0) REMOTE_CATALOG_STAMP.set(owner, now);
+    return false;
+  }
+  // Do NOT clear the cache: the loader below only overwrites on success, so a
+  // failed refresh keeps serving the last known good catalog instead of falling
+  // back to bare ids. The gate's 30s cooldown bounds the retry rate.
+  REMOTE_CATALOG_STAMP.set(owner, now);
+  return true;
+}
 var RemoteCatalogGate = class {
   inFlight;
   retryAt;
@@ -32985,7 +33010,7 @@ var CodeArtsAdapter = class extends LlmAdapter {
    */
   async ensureRemoteModels() {
     const fetchRemote = this.options.fetchRemoteModels;
-    if (this.remoteModels !== void 0 || fetchRemote === void 0) return;
+    if (fetchRemote === void 0 || !remoteModelsStale(this)) return;
     await this.catalogGate.run(async () => {
       const models = await fetchRemote();
       if (models.length === 0) return false;
@@ -34977,7 +35002,7 @@ var BuddyAdapter = class _BuddyAdapter extends LlmAdapter2 {
   }
   async ensureRemoteModels() {
     const fetchRemote = this.options.fetchRemoteModels;
-    if (this.remoteModels !== void 0 || fetchRemote === void 0) return;
+    if (fetchRemote === void 0 || !remoteModelsStale(this)) return;
     await this.catalogGate.run(async () => {
       const models = await fetchRemote();
       if (models.length === 0) return false;
@@ -36521,7 +36546,7 @@ var LobsteraiAdapter = class extends LlmAdapter3 {
    */
   async ensureRemoteModels() {
     const fetchRemote = this.options.fetchRemoteModels;
-    if (this.remoteModels !== void 0 || fetchRemote === void 0) return;
+    if (fetchRemote === void 0 || !remoteModelsStale(this)) return;
     await this.catalogGate.run(async () => {
       const models = await fetchRemote();
       if (models.length === 0) return false;
@@ -40247,7 +40272,7 @@ var TraeAdapter = class extends LlmAdapter5 {
   /** 懒加载远端模型目录（仅拉取一次）。 */
   async ensureRemoteModels() {
     const fetchRemote = this.options.fetchRemoteModels;
-    if (this.remoteModels !== void 0 || fetchRemote === void 0) return;
+    if (fetchRemote === void 0 || !remoteModelsStale(this)) return;
     await this.catalogGate.run(async () => {
       const models = await fetchRemote();
       if (models.length === 0) return false;
@@ -41749,7 +41774,7 @@ var ClineAdapter = class extends LlmAdapter6 {
    * 不去重会打出多份重复的远端请求（两个端点各一次，乘以并发数）。
    */
   async ensureRemoteModels() {
-    if (this.remoteModels !== void 0) return;
+    if (!remoteModelsStale(this)) return;
     await this.catalogGate.run(async () => {
       try {
         const credential = await this.options.resolveCredential();
@@ -42416,7 +42441,7 @@ var LoomyAdapter = class extends LlmAdapter7 {
    * 并用 {@link RemoteCatalogGate} 的冷却挡住「每模型重试一次」的放大。
    */
   async loadModels() {
-    if (this.remoteModels !== void 0) return this.remoteModels;
+    if (!remoteModelsStale(this)) return this.remoteModels;
     const fetchRemote = this.options.fetchRemoteModels;
     if (fetchRemote !== void 0) {
       await this.catalogGate.run(async () => {
@@ -42872,7 +42897,7 @@ var RaccoonAdapter = class extends LlmAdapter8 {
    * 并用 {@link RemoteCatalogGate} 的冷却挡住「每模型重试一次」的放大。
    */
   async loadModels() {
-    if (this.remoteModels !== void 0) return this.remoteModels;
+    if (!remoteModelsStale(this)) return this.remoteModels;
     const fetchRemote = this.options.fetchRemoteModels;
     if (fetchRemote !== void 0) {
       await this.catalogGate.run(async () => {
@@ -54611,7 +54636,7 @@ var ZcodeAdapter = class extends LlmAdapter9 {
    * 并用 {@link RemoteCatalogGate} 的冷却挡住「每模型重试一次」的放大。
    */
   async loadModels() {
-    if (this.remoteModels !== void 0) return this.remoteModels;
+    if (!remoteModelsStale(this)) return this.remoteModels;
     const fetchRemote = this.options.fetchRemoteModels;
     if (fetchRemote !== void 0) {
       await this.catalogGate.run(async () => {
@@ -66187,7 +66212,7 @@ var MinimaxAdapter = class extends LlmAdapter11 {
    * 并用 {@link RemoteCatalogGate} 的冷却挡住「每模型重试一次」的放大。
    */
   async loadModels() {
-    if (this.remoteModels !== void 0) return this.remoteModels;
+    if (!remoteModelsStale(this)) return this.remoteModels;
     const fetchRemote = this.options.fetchRemoteModels;
     if (fetchRemote !== void 0) {
       await this.catalogGate.run(async () => {
