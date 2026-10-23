@@ -317,24 +317,50 @@ function isLiveAuthFile(path: string): boolean {
 }
 
 /**
+ * True for a credential this plugin minted from the channel-pack sign-in flow.
+ *
+ * `packCredentialToWorkBuddy` stamps `channel-pack:<provider>:<ref>` here, so the
+ * prefix is the only thing distinguishing a scanned credential from a file the
+ * desktop app wrote. Nothing about it is a path on disk — there is no file to
+ * stat and no mtime to read.
+ */
+function isChannelPackSource(path: string): boolean {
+  return path.startsWith('channel-pack:')
+}
+
+/**
  * Which of two credentials for the same account the pool should keep.
  *
  * Ordering, highest first:
  *
  * 1. the live file the desktop app is signed in with;
- * 2. the credential the upstream issued most recently (`lastRefreshAtMs`);
- * 3. the longer stored expiry, as a fallback for documents that carry no issue
+ * 2. a credential minted by our own channel-pack sign-in;
+ * 3. the credential the upstream issued most recently (`lastRefreshAtMs`);
+ * 4. the longer stored expiry, as a fallback for documents that carry no issue
  *    time (the plugin's own refreshed copy, older builds).
  *
  * The stored expiry alone is NOT a freshness signal: the upstream does not
  * rewrite it when it revokes a token, so a long-dead backup can claim to expire
  * later than the token that actually works. Selecting on it made every upstream
  * call return 401 while a perfectly good credential sat in the same directory.
+ *
+ * Rank 2 exists because a scanned credential loses both of the lower tests by
+ * construction: it is not the live filename, and the sign-in flow records no
+ * `lastRefreshAtMs`. Ranking it below a leftover snapshot meant a user who had
+ * just scanned a fresh sign-in still saw "sign-in was rejected", because the
+ * abandoned file kept winning the comparison and the dead mark was never
+ * cleared. The live file stays on top: that is the session the running desktop
+ * app is genuinely using right now, and it is newer than anything we mint.
  */
 function compareFreshness(a: WorkBuddyCredential, b: WorkBuddyCredential): number {
-  const aLive = isLiveAuthFile(a.sourcePath) ? 1 : 0
-  const bLive = isLiveAuthFile(b.sourcePath) ? 1 : 0
-  if (aLive !== bLive) return bLive - aLive
+  const rankOf = (credential: WorkBuddyCredential): number => {
+    if (isLiveAuthFile(credential.sourcePath)) return 2
+    if (isChannelPackSource(credential.sourcePath)) return 1
+    return 0
+  }
+  const aRank = rankOf(a)
+  const bRank = rankOf(b)
+  if (aRank !== bRank) return bRank - aRank
 
   const aIssued = a.lastRefreshAtMs ?? 0
   const bIssued = b.lastRefreshAtMs ?? 0

@@ -1460,4 +1460,37 @@ export const SHARED_CARD_CSS = `
 ):active:not(:disabled){transform:none}
 }
 
+/* ── Docked entry beside the settings control ────────────────────────────────
+   The sidebar button and the overlay are two separate registrations with no
+   shared ancestor, so neither can carry the shell's own custom properties: the
+   easing curves are re-declared here rather than inherited. Everything below is
+   scoped to .dsm-xdpool-dock so it cannot reach into the host's sidebar. */
+.dsm-xdpool-dock{--ease-instrument:cubic-bezier(.16,1,.3,1);position:relative;z-index:1;display:flex;align-items:center;gap:8px;width:100%;min-width:0;padding:6px 8px;border:1px solid transparent;border-radius:9px;background:transparent;color:var(--dsw-alias-label-secondary,#c6c9d0);font:inherit;font-size:12px;line-height:17px;font-weight:560;text-align:left;cursor:pointer;overflow:hidden;transition:color .2s var(--ease-instrument),background .2s var(--ease-instrument),border-color .2s var(--ease-instrument)}
+.dsm-xdpool-dock:hover{color:var(--dsw-alias-label-primary,#e8e8ea);background:color-mix(in srgb, var(--dsw-alias-label-primary,#e8e8ea) 7%, transparent);border-color:color-mix(in srgb, var(--dsw-alias-border-l2,#ffffff1f) 70%, transparent)}
+.dsm-xdpool-dock-on{color:var(--dsw-alias-label-primary,#e8e8ea);background:color-mix(in srgb, var(--dsw-alias-state-business-primary,#5686fe) 14%, transparent);border-color:color-mix(in srgb, var(--dsw-alias-state-business-primary,#5686fe) 40%, transparent)}
+/* The sweep is the same gesture the card's own buttons make, so the dock reads
+   as part of the plugin rather than a host control. */
+.dsm-xdpool-dock::after{content:"";position:absolute;top:0;bottom:0;left:-60%;width:42%;pointer-events:none;background:linear-gradient(100deg,transparent,rgb(255 255 255 / 12%),transparent);transform:skewX(-18deg);transition:left .5s var(--ease-instrument)}
+.dsm-xdpool-dock:hover::after{left:118%}
+.dsm-xdpool-dockicon{flex:none;width:16px;height:16px;background-color:currentColor;-webkit-mask-image:var(--dsm-xdpool-dock-glyph);mask-image:var(--dsm-xdpool-dock-glyph);-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:center;mask-position:center;-webkit-mask-size:16px 16px;mask-size:16px 16px}
+.dsm-xdpool-docklabel{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* No dark backdrop: the panel is a companion to the conversation, not a modal,
+   and dimming the whole host for a settings card reads as a page navigation.
+   Clicking outside still closes it — the scrim covers the viewport and is
+   transparent, so only the click is caught. */
+.dsm-xdpool-dockscrim{position:fixed;inset:0;z-index:60;display:flex;align-items:stretch;justify-content:flex-end;background:transparent}
+.dsm-xdpool-dockpanel{--ease-instrument:cubic-bezier(.16,1,.3,1);display:flex;flex-direction:column;width:min(760px, 92vw);margin:14px;border:1px solid color-mix(in srgb, var(--dsw-alias-border-l2,#ffffff1f) 82%, transparent);border-radius:16px;background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#141517) 96%, transparent);box-shadow:0 20px 60px rgb(0 0 0 / 45%);overflow:hidden;animation:dsm-xdpool-dock-in .3s var(--ease-instrument)}
+@keyframes dsm-xdpool-dock-in{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:none}}
+.dsm-xdpool-dockhead{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid color-mix(in srgb, var(--dsw-alias-border-l1,#ffffff14) 80%, transparent)}
+.dsm-xdpool-docktitle{flex:1 1 auto;font-size:12px;line-height:17px;font-weight:640;color:var(--dsw-alias-label-primary,#e8e8ea)}
+.dsm-xdpool-dockclose{appearance:none;flex:none;width:22px;height:22px;padding:0;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--dsw-alias-label-tertiary,#8a90a0);font:inherit;font-size:15px;line-height:1;cursor:pointer;transition:color .16s ease,background .16s ease}
+.dsm-xdpool-dockclose:hover{color:var(--dsw-alias-label-primary,#e8e8ea);background:color-mix(in srgb, var(--dsw-alias-label-primary,#e8e8ea) 9%, transparent)}
+/* The card inside the panel was built for the settings dialog's width; scroll
+   the panel body, never the card, so its own sticky header keeps working. */
+.dsm-xdpool-dockbody{flex:1 1 auto;min-height:0;overflow:auto;padding:14px}
+@media (prefers-reduced-motion:reduce){
+.dsm-xdpool-dock::after{display:none}
+.dsm-xdpool-dockpanel{animation:none}
+}
+
 `.trim()

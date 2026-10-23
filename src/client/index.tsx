@@ -34,6 +34,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 // section registration is narrowed locally at its call site.
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { PoolCard } from './PoolCard.tsx'
+import { DockedPanel, SidebarEntry } from './dock.tsx'
 import { POOL_NAV_ICON_MASK_URL } from './nav-icon.ts'
 import { installPackRpc } from './channel-rpc.ts'
 import type { PoolCardInjected } from './PoolCard.tsx'
@@ -152,6 +153,34 @@ export function apply(ctx: WorkBuddyClientContext): void {
     // artwork over the gear — the same technique dshmarket uses, and the only
     // route available to a third-party page.
     installNavIcon(ctx, () => t('row.navLabel'))
+
+    // A docked entry beside the settings control, so the pool does not require
+    // opening Settings first. The host's sidebar slot hands registrants only
+    // `{ wide }` — there is no navigation seat — so the button toggles an overlay
+    // that renders this same card. Registered inside its own try: an older host
+    // line without `shell.overlay` must cost the dock, not the whole page.
+    try {
+      ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
+        name: 'sidebar.footer.action',
+        id: 'xdpool-dock',
+        // After the first-party rows (which sit at 10) and clear of the other
+        // community plugins at 50, so the ordering stays predictable.
+        order: 60,
+        label: 'XD Pool',
+      }, SidebarEntry))
+
+      ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+        name: 'shell.overlay',
+        id: 'xdpool-dock-panel',
+        order: 60,
+      }, () => (
+        <DockedPanel>
+          <PoolCard {...(settingsScope === undefined ? { t } : { t, settingsScope })} />
+        </DockedPanel>
+      )))
+    } catch (error: unknown) {
+      console.error('[dsh-xdpool] docked entry unavailable (settings page unaffected):', error)
+    }
   } catch (error: unknown) {
     // Degrade silently on the page: the pool provider still serves models.
     // Developers see the full cause in the browser console; users see no banner.

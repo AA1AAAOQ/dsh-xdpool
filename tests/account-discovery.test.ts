@@ -223,4 +223,95 @@ describe('scan sign-ins join the same pool', () => {
     p.applyExternalSource(undefined)
     return expect(p.scan()).resolves.toHaveLength(1)
   })
+
+  /**
+   * The reported bug (2026-10-23): two accounts were rejected by the upstream,
+   * the user re-signed in through the channel page, and the card kept saying the
+   * sign-in was rejected.
+   *
+   * Root cause: `compareFreshness` ranked purely on `lastRefreshAtMs`, which a
+   * scanned credential never has (the pack does not record one), so `?? 0` put a
+   * brand-new sign-in BELOW an abandoned snapshot from three weeks earlier. The
+   * pool kept serving the stale token, the upstream kept answering "sign-in
+   * rejected", and the dead mark never cleared because `isFresher` said the
+   * credential had not changed.
+   */
+  describe('a fresh sign-in outranks an abandoned snapshot', () => {
+    /** A timestamped desktop file — a snapshot, not the live sign-in. */
+    function snapshotFile(dir: string, name: string, issued: number): void {
+      writeFileSync(
+        join(dir, 'workbuddy-desktop.2026-10-08T08-54-41-646Z.3944.5745f846.info'),
+        JSON.stringify({
+          auth: {
+            accessToken: `stale-${name}`,
+            refreshToken: `refresh-${name}`,
+            expiresAt: Date.now() + 86_400_000 * 9,
+            lastRefreshTime: issued,
+            domain: 'www.workbuddy.cn',
+          },
+          account: { uid: `uid-${name}`, uin: `uin-${name}`, nickname: name },
+        }),
+      )
+    }
+
+    it('keeps the scanned credential, not the older snapshot', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'wbpool-fresh-scan-'))
+      // Issued 2026-10-08 and abandoned since; still nominally unexpired, which
+      // is exactly why the old expiry-based rule kept it.
+      snapshotFile(dir, 'same-person', 1_791_449_649_044)
+      const p = pool(dir)
+      p.applyExternalSource(async () => [scanCredential('same-person')])
+      const accounts = await p.scan()
+
+      expect(accounts).toHaveLength(1)
+      expect(accounts[0]?.credential.accessToken).toBe('scan-same-person')
+      expect(accounts[0]?.credential.sourcePath).toContain('channel-pack:')
+    })
+
+    it('still prefers the live file when the app is signed in', async () => {
+      // The live file is the one credential a running app is demonstrably using,
+      // so it stays ahead of a scan: flipping that order would break the case
+      // the pool was built for (desktop rotations).
+      const dir = mkdtempSync(join(tmpdir(), 'wbpool-live-wins-'))
+      writeFileSync(join(dir, 'workbuddy-desktop.info'), plainCredential('live-person'))
+      const p = pool(dir)
+      p.applyExternalSource(async () => [scanCredential('live-person', 'uin-live-person')])
+      const accounts = await p.scan()
+
+      expect(accounts).toHaveLength(1)
+      expect(accounts[0]?.credential.accessToken).toBe('token-live-person')
+    })
+
+    it('clears the rejected mark once a scan replaces the credential', async () => {
+      // The end-to-end shape of the report: the pool had marked the account
+      // dead, the user scanned again, and the mark has to go — otherwise the
+      // card keeps saying "sign-in rejected" no matter how often they retry.
+      const dir = mkdtempSync(join(tmpdir(), 'wbpool-revive-scan-'))
+      snapshotFile(dir, 'revived', 1_791_449_649_044)
+      const p = pool(dir)
+      await p.scan()
+      const id = workbuddyAccountId(scanCredential('revived', 'uin-revived'))
+      p.penalizeCredentialDead(id, Date.now() + 3_600_000)
+      expect(p.deadCredentials().length).toBe(1)
+
+      // A different access token is what a real sign-in produces.
+      p.applyExternalSource(async () => [scanCredential('revived', 'uin-revived')])
+      await p.scan()
+
+      expect(p.deadCredentials()).toHaveLength(0)
+      expect(p.list('cn')[0]?.credential.accessToken).toBe('scan-revived')
+    })
+  })
+
+  it('keeps two people who share a nickname apart', async () => {
+    // 2026-10-23: two distinct accounts are both called 青楫渡. Identity is the
+    // credential, never the display name — keying on the nickname is what made
+    // the channel pack's dedupe delete the second person's sign-in.
+    const dir = mkdtempSync(join(tmpdir(), 'wbpool-same-name-'))
+    const p = pool(dir)
+    p.applyExternalSource(async () => [scanCredential('青楫渡', 'uin-a'), scanCredential('青楫渡', 'uin-b')])
+    const accounts = await p.scan()
+    expect(accounts).toHaveLength(2)
+    expect(new Set(accounts.map(account => account.id)).size).toBe(2)
+  })
 })

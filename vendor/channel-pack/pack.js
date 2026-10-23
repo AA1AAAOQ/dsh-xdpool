@@ -68043,50 +68043,86 @@ function apply(ctx, config = {}) {
   //   非空（用户勾选的模型已被移出黑名单），不会重复静音。
   let channelPackModelAdaptersRef;
   const rawAddAccount = pool.addAccount.bind(pool);
-  // ── 本地适配（dsh-xdpool）：清掉同渠道同昵称的重复账号 ──
+  // ── 本地适配（dsh-xdpool）：清掉同一账号的重复条目 ──
   // 需求（2026-10-16）：用户在扫码登录页反复点「添加账号」，上游 `addAccount`
-  // 是纯追加（无任何去重），于是同一渠道攒出多条同号账号，账号池页一张卡里
-  // 显示 3-4 个一模一样的人。判定键取 (provider, nickname)：同一渠道里昵称
-  // 相同即视为同一个账号（上游所有渠道在凭据落定后都用 `updateAccount` 把
-  // nickname 改成真实显示名，所以昵称才是稳定身份，id 每次都是新随机值）。
+  // 是纯追加（无任何去重），于是同一账号攒出多条，账号池页一张卡里显示
+  // 3-4 个一模一样的人。
   //
-  // ⚠️ 保留哪一条不能只看 createdAt newest。反复点「添加账号」时，**新加的
-  // 那条是登录还没走完的半成品**（expiresAt 缺失），而**旧的那条是完整可用
-  // 的旧凭据**（zcode 的凭据甚至不带过期时间）。按 newest 保留会留下半成品、
-  // 删掉能用的 —— 这正是本机 zcode 的实际形态（10-16 15:15 的三条无
-  // expiresAt，16:15 新加的那条也无 expiresAt，而其它渠道都有）。所以判定
-  // 优先级改成「可用性」：
-  //   ① expiresAt 为空视为长期凭据、可用；有值时必须晚于「现在」才算可用；
-  //   ② 双方都可用 → 留旧的（先登录的那条，凭据久经使用）；
-  //      旧的已过期而新的可用 → 换新；其余 → 留旧。
-  const channelAccountIsUsable = (account, now) => {
+  // ⚠️ 判定键必须是上游身份（凭据里的 `user_id`），不能是昵称。
+  //   2026-10-23 实测教训：按 (provider, nickname) 分组会把**两位不同的人**
+  //   误判成同一个 —— 本机有两个账号昵称都叫「青楫渡」（uid 29890334 与
+  //   8e606182），结果扫进来的第二个被当成重复条目删掉。
+  //   同一份代码还有第二个更严重的后果：新扫进来的凭据只要遇到一条
+  //   「还没过期」的旧条目就会被删（旧规则「双方都可用 → 留旧的」），
+  //   用户重新扫码后账号池毫无变化，卡片继续显示「登录已被拒绝」。
+  //
+  // 保留哪一条：优先「真实条目」而非登录半成品（半成品的 nickname 还是
+  // 随机 id，因为上游要到 `updateAccount` 才写入真实显示名），再优先
+  // 未过期的，最后取最新创建的那条 —— 用户刚完成的那次登录才是他此刻
+  // 在用的凭据。
+  const channelAccountUsable = (account, now) => {
     const expiresAt = Number(account.expiresAt);
     if (!Number.isFinite(expiresAt) || expiresAt <= 0) return true;
     return expiresAt > now;
+  };
+  const channelAccountIsPlaceholder = (account) =>
+    typeof account.nickname !== "string" || account.nickname === "" || account.nickname === account.id;
+  const channelAccountCreatedAt = (account) => {
+    const createdAt = Number(account.createdAt);
+    return Number.isFinite(createdAt) ? createdAt : 0;
+  };
+  /** True when `candidate` should survive and `incumbent` should be dropped. */
+  const channelAccountBeats = (candidate, incumbent, now) => {
+    const candidatePlaceholder = channelAccountIsPlaceholder(candidate);
+    const incumbentPlaceholder = channelAccountIsPlaceholder(incumbent);
+    if (candidatePlaceholder !== incumbentPlaceholder) return incumbentPlaceholder;
+    const candidateUsable = channelAccountUsable(candidate, now);
+    const incumbentUsable = channelAccountUsable(incumbent, now);
+    if (candidateUsable !== incumbentUsable) return candidateUsable;
+    return channelAccountCreatedAt(candidate) > channelAccountCreatedAt(incumbent);
+  };
+  /**
+   * Resolve the upstream identity a row belongs to.
+   *
+   * Returns undefined when the credential cannot be read: an unresolvable row
+   * cannot be proven to be a duplicate of anything, and deleting it would trade
+   * one bug for a worse one.
+   */
+  const channelAccountIdentity = async (account) => {
+    const refName = typeof account.credentialRef === "string" ? account.credentialRef : "";
+    if (refName === "") return void 0;
+    try {
+      const credential = await pool.resolveCredentialByRef(refName);
+      if (credential === void 0 || credential === null || typeof credential !== "object") return void 0;
+      const userId = credential.user_id;
+      return typeof userId === "string" && userId !== "" ? userId : void 0;
+    } catch {
+      return void 0;
+    }
   };
   const dedupeChannelAccounts = async () => {
     try {
       const all = await pool.listAllAccounts();
       const now = Date.now();
-      const groups = new Map();
+      const groups = /* @__PURE__ */ new Map();
       for (const account of all) {
-        const nickname = typeof account.nickname === "string" ? account.nickname : "";
-        // 昵称为空的条目无从判断是否重复（登录尚未落定的中间态），一律保留。
-        if (account.provider === "" || nickname === "") continue;
-        const key = `${account.provider}\u0000${nickname}`;
+        const provider = typeof account.provider === "string" ? account.provider : "";
+        if (provider === "") continue;
+        const identity = await channelAccountIdentity(account);
+        // 认不出身份的条目一律保留：宁可留一条重复，也不能删掉别人的账号。
+        if (identity === void 0) continue;
+        const key = `${provider}\u0000${identity}`;
         const kept = groups.get(key);
-        if (kept === undefined) {
+        if (kept === void 0) {
           groups.set(key, account);
           continue;
         }
-        const keptUsable = channelAccountIsUsable(kept, now);
-        const accountUsable = channelAccountIsUsable(account, now);
-        const replace = !keptUsable && accountUsable;
+        const replace = channelAccountBeats(account, kept, now);
         const drop = replace ? kept : account;
         if (replace) groups.set(key, account);
         await pool.removeAccount(drop.id);
         ctx.logger.info(
-          `[channel-pack] ${drop.provider} 重复账号 ${drop.nickname}（${drop.id}）：已清理，保留 ${(replace ? account : kept).id}`
+          `[channel-pack] ${drop.provider} 重复账号 ${drop.nickname ?? drop.id}（${drop.id}）：已清理，保留 ${(replace ? account : kept).id}`
         );
       }
     } catch (error) {
@@ -68095,6 +68131,7 @@ function apply(ctx, config = {}) {
       );
     }
   };
+
   // 启动时先扫一遍：用户升级前攒下的重复只能靠这一次清掉。
   void Promise.resolve().then(() => dedupeChannelAccounts());
   // ── 本地适配（dsh-xdpool）：启动时补静音「黑名单为空但已有账号」的渠道 ──
