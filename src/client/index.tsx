@@ -34,7 +34,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 // section registration is narrowed locally at its call site.
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { PoolCard } from './PoolCard.tsx'
-import { DockedPanel, SidebarEntry } from './dock.tsx'
+import { PanelIcon } from './panel-icon.tsx'
 import { POOL_NAV_ICON_MASK_URL } from './nav-icon.ts'
 import { installPackRpc } from './channel-rpc.ts'
 import type { PoolCardInjected } from './PoolCard.tsx'
@@ -154,32 +154,38 @@ export function apply(ctx: WorkBuddyClientContext): void {
     // route available to a third-party page.
     installNavIcon(ctx, () => t('row.navLabel'))
 
-    // A docked entry beside the settings control, so the pool does not require
-    // opening Settings first. The host's sidebar slot hands registrants only
-    // `{ wide }` — there is no navigation seat — so the button toggles an overlay
-    // that renders this same card. Registered inside its own try: an older host
-    // line without `shell.overlay` must cost the dock, not the whole page.
+    // A navigation row of our own, above the workspace list, so the pool does
+    // not require opening Settings first. Two registrations make one page: the
+    // row in `sidebar.panellist` (which is what draws a panel row and, on click,
+    // tells the layout which panel id to show) and the page in `main`, selected
+    // by `key`. An overlay was tried first and rejected: a floating panel over
+    // the conversation is not the same thing as a place, and the host already
+    // has a slot for places.
     try {
-      ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
-        name: 'sidebar.footer.action',
-        id: 'xdpool-dock',
-        // After the first-party rows (which sit at 10) and clear of the other
-        // community plugins at 50, so the ordering stays predictable.
-        order: 60,
-        label: 'XD Pool',
-      }, SidebarEntry))
+      ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
+        name: 'sidebar.panellist',
+        id: 'xdpool',
+        // First-party rows are 0 (Plugins) and schedules, community ones sit at
+        // 30+, so 20 keeps the pool with the other top-level destinations.
+        order: 20,
+        // A thunk, like the settings section: the row label follows a locale
+        // change without re-registering.
+        label: () => t('row.navLabel'),
+      }, PanelIcon))
 
-      ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-        name: 'shell.overlay',
-        id: 'xdpool-dock-panel',
-        order: 60,
-      }, () => (
-        <DockedPanel>
-          <PoolCard {...(settingsScope === undefined ? { t } : { t, settingsScope })} />
-        </DockedPanel>
-      )))
+      // `main` picks its entry by `key === activePanelId`, so the key has to be
+      // the same id the row selects. The card is the same component the settings
+      // section renders — `settingsScope` resolves off the config-forms mirror,
+      // not off the slot, so the page keeps its write access.
+      ctx.slots.inject('main', () => ctx.slots.register({
+        name: 'main',
+        key: 'xdpool',
+        inject: (): Partial<PoolCardInjected> => settingsScope === undefined
+          ? { t }
+          : { t, settingsScope },
+      }, PoolCard))
     } catch (error: unknown) {
-      console.error('[dsh-xdpool] docked entry unavailable (settings page unaffected):', error)
+      console.error('[dsh-xdpool] sidebar entry unavailable (settings page unaffected):', error)
     }
   } catch (error: unknown) {
     // Degrade silently on the page: the pool provider still serves models.
