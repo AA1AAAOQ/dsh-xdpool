@@ -1461,3 +1461,16 @@ export const SHARED_CARD_CSS = `
 }
 
 `.trim()
+/**
+ * Frame for hosting the pool in the main column instead of the settings dialog.
+ *
+ * `.centerCol` is `overflow:hidden`, so this element is the scrollport; without
+ * it the page clips at the fold. The horizontal inset is asymmetric on purpose —
+ * the sidebar sits on the left of this column, so the left edge needs less air
+ * than the right one to look centred.
+ */
+export const PAGE_CSS = `
+.dsm-xdpool-page{flex:1 1 auto;height:100%;min-height:0;overflow:auto;box-sizing:border-box;padding:20px 28px 34px}
+.dsm-xdpool-page > .dsm-xdpool-shell{margin:0 auto}
+@media (max-width:720px){.dsm-xdpool-page{padding:14px 16px 26px}}
+`.trim()

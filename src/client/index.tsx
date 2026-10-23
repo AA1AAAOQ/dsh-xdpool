@@ -35,6 +35,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { PoolCard } from './PoolCard.tsx'
 import { PanelIcon } from './panel-icon.tsx'
+import { PoolPage } from './page.tsx'
 import { POOL_NAV_ICON_MASK_URL } from './nav-icon.ts'
 import { installPackRpc } from './channel-rpc.ts'
 import type { PoolCardInjected } from './PoolCard.tsx'
@@ -177,13 +178,18 @@ export function apply(ctx: WorkBuddyClientContext): void {
       // the same id the row selects. The card is the same component the settings
       // section renders — `settingsScope` resolves off the config-forms mirror,
       // not off the slot, so the page keeps its write access.
+      //
+      // Wrapped in `PoolPage`, not registered bare: `.centerCol` is
+      // `overflow:hidden`, so the page would clip at the fold with no way to
+      // reach the rest. `PoolPage` supplies the scrollport and the padding the
+      // settings dialog used to supply.
       ctx.slots.inject('main', () => ctx.slots.register({
         name: 'main',
         key: 'xdpool',
         inject: (): Partial<PoolCardInjected> => settingsScope === undefined
           ? { t }
           : { t, settingsScope },
-      }, PoolCard))
+      }, PoolPage))
     } catch (error: unknown) {
       console.error('[dsh-xdpool] sidebar entry unavailable (settings page unaffected):', error)
     }
