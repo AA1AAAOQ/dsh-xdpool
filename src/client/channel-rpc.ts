@@ -40,12 +40,35 @@ let packRpcBridge: PackRpcBridge | undefined
 
 /** Capture the client ctx's connection service for {@link callPack}. */
 export function installPackRpc(ctx: unknown): void {
-  // Each step gets its own try. The host hands the client ctx a Proxy that
-  // THROWS on direct property access to an undeclared service
-  // (cordis-client-runner's dynamic ctx), and that throw also reports the run
-  // as failed — so one shared try/catch would let a rejected `ctx.connection`
-  // skip the exempt `ctx.get()` below and silently leave the bridge unset.
-  // `?.` does not help: it guards null/undefined, not a throwing getter.
+  // Keep the ctx even when the connection service is not resolvable yet.
+  // `apply()` runs once, at plugin start, and the shell's connection service is
+  // provided by a sibling fiber that may not have settled by then — reading it
+  // too early yields undefined, and with a one-shot capture the bridge would
+  // stay unset for the rest of the session. Every `callPack` after that would
+  // fall back to a bare `fetch('/api/channel-pack')`, which the host answers 401
+  // because only admitted clients may speak that route. The symptom is not an
+  // error but an empty pool, so it is resolved lazily and retried per call.
+  packRpcContext = ctx
+  packRpcBridge = resolvePackRpcBridge()
+}
+
+/** The client ctx captured by {@link installPackRpc}, for late resolution. */
+let packRpcContext: unknown
+
+/**
+ * Read `connection.rpc.call` off the captured ctx, or `undefined` if the
+ * service is still absent.
+ *
+ * Each step gets its own try. The host hands the client ctx a Proxy that
+ * THROWS on direct property access to an undeclared service
+ * (cordis-client-runner's dynamic ctx), and that throw also reports the run as
+ * failed — so one shared try/catch would let a rejected `ctx.connection` skip
+ * the exempt `ctx.get()` below and silently leave the bridge unset. `?.` does
+ * not help: it guards null/undefined, not a throwing getter.
+ */
+function resolvePackRpcBridge(): PackRpcBridge | undefined {
+  const ctx = packRpcContext
+  if (ctx === undefined || ctx === null) return undefined
   let connection: unknown
   try {
     connection = (ctx as { connection?: unknown }).connection
@@ -61,8 +84,8 @@ export function installPackRpc(ctx: unknown): void {
   }
   try {
     const call = (connection as { rpc?: { call?: unknown } })?.rpc?.call
-    if (typeof call !== 'function') return
-    packRpcBridge = {
+    if (typeof call !== 'function') return undefined
+    return {
       // `guardedService` applies with `Reflect.apply(value, target, args)`, so
       // binding against the proxy (rather than the ctx) is what keeps this
       // independent of the host's `this` expectations.
@@ -78,7 +101,7 @@ export function installPackRpc(ctx: unknown): void {
       },
     }
   } catch {
-    packRpcBridge = undefined
+    return undefined
   }
 }
 

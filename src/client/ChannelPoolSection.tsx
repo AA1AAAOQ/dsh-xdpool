@@ -226,9 +226,10 @@ export function ChannelPoolSection({ t }: { readonly t?: Translate | undefined }
       // *which* providers hold accounts is one `provider.status` round trip:
       // it counts every named provider in a single answer, so the pool pays
       // two extra calls only for channels that actually have an account.
-      const statuses = providerStatusesFrom(await callPack('provider.status', {
+      const statusAnswer = await callPack('provider.status', {
         providers: channels.map(channel => channel.id),
-      }))
+      })
+      const statuses = providerStatusesFrom(statusAnswer)
       const scanProviders = channels
         .map(channel => channel.id)
         .filter(id => (statuses.get(id)?.accountsTotal ?? 0) > 0)
@@ -288,25 +289,49 @@ export function ChannelPoolSection({ t }: { readonly t?: Translate | undefined }
         ] as const
       }))
       const byProvider = new Map(perProvider)
-      // Now that the ids are known, ask the host what each one is. A channel the
-      // host cannot describe simply gets an empty map and keeps its thin rows.
-      const idsByProvider: Record<string, readonly string[]> = {}
-      for (const [provider, entry] of perProvider) {
-        if (entry.models.length > 0) idsByProvider[provider] = entry.models.map(model => model.id)
-      }
-      const facts = await fetchChannelModels(scanProviders, idsByProvider)
-        .catch((): ReadonlyMap<string, readonly PoolWebChannelModel[]> => new Map())
       const next = channels
         .filter(channel => byProvider.has(channel.id))
         .map(channel => ({
           channel,
           ...byProvider.get(channel.id)!,
-          facts: new Map((facts.get(channel.id) ?? []).map(model => [model.id, model])),
+          facts: new Map<string, PoolWebChannelModel>(),
           status: statuses.get(channel.id),
         }))
       if (!mountedRef.current) return
+
+      // Two phases, because the two halves answer at very different speeds.
+      // `provider.status` and `account.list` come back in tens of milliseconds,
+      // while the fact sweep (`/channels/models`, which resolves every model
+      // against the host's adapters) measured 16.5 seconds on a cold host. Doing
+      // that before `setEntries` kept every card blank for the whole sweep, which
+      // reads as "the pool did not load at all". So the cards land first and the
+      // facts are merged in when they arrive.
       setEntries(next)
       setError(undefined)
+
+      if (next.length === 0) {
+        // Nothing to enrich, and the empty page would otherwise be silent. A
+        // statuses answer that named providers but counted zero accounts is a
+        // real "no sign-ins"; an answer that came back refused is not, and must
+        // say so or the reader cannot tell the two apart.
+        if (!statusAnswer.ok) {
+          setError(statusAnswer.error?.message ?? 'provider.status refused')
+        }
+        return
+      }
+
+      const idsByProvider: Record<string, readonly string[]> = {}
+      for (const [provider, entry] of perProvider) {
+        if (entry.models.length > 0) idsByProvider[provider] = entry.models.map(model => model.id)
+      }
+      const facts = await fetchChannelModels(next.map(entry => entry.channel.id), idsByProvider)
+        .catch((): ReadonlyMap<string, readonly PoolWebChannelModel[]> => new Map())
+      if (!mountedRef.current) return
+      if (facts.size === 0) return
+      setEntries(previous => previous.map(entry => ({
+        ...entry,
+        facts: new Map((facts.get(entry.channel.id) ?? []).map(model => [model.id, model])),
+      })))
     } catch (cause) {
       if (!mountedRef.current) return
       setError(cause instanceof Error ? cause.message : String(cause))

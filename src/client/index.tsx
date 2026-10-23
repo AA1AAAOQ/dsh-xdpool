@@ -128,8 +128,10 @@ export function apply(ctx: WorkBuddyClientContext): void {
     const settingsScope = resolveSettingsScope(softGet)
 
     // The pack's management RPC rides the shell's connection admission (a raw
-    // fetch of /api/channel-pack is 401'd by the host). Capture the bridge once,
-    // here, where the apply closure's ctx is alive.
+    // fetch of /api/channel-pack is 401'd by the host). Capture the ctx here,
+    // where the apply closure's ctx is alive; channel-rpc resolves the service
+    // lazily on every call, because the sibling fiber that provides
+    // `connection` is not guaranteed to have settled by the time this runs.
     installPackRpc(ctx)
 
     ctx.slots.inject('settings.section', () => ctx.slots.register({
