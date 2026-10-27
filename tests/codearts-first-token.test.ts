@@ -140,6 +140,78 @@ describe('the queue retry stops paying a fixed ten seconds', () => {
   })
 })
 
+describe('a full concurrency quota is not queueing, so it is not retried', () => {
+  /**
+   * The actual cause of the 65-second wait, which the catalogue fix did not touch.
+   *
+   * Measured against the live endpoint with a real credential:
+   *
+   *   with `maas_type: benefit` -> HTTP 200, `InferHub.4004.200 benefit not found`
+   *   without it                -> HTTP 400, `TM.00001041`
+   *
+   * and TM.00001041's own message is `并发会话数已达上限(3个)，请关闭部分会话后重试。`
+   *
+   * `isQueueError` treated that as queueing, so the retry loop ran and each round
+   * paid `delay(QUEUE_RETRY_DELAY_MS = 10s)`. The observed gaps — 23.1s, 44.4s,
+   * 55.1s, 65.0s — are 2, 4, 5 and 6 such rounds. Waiting cannot help: the three
+   * occupied slots belong to this same process's unfinished sessions, so retrying
+   * asks for a slot that nothing is going to free.
+   */
+  it('classifies TM.00001041 as a concurrency limit', () => {
+    expect(pack).toContain('function isConcurrencyLimitError(body)')
+    expect(pack).toContain('body.includes("TM.00001041")')
+    expect(pack).toContain('并发会话数已达上限')
+  })
+
+  it('throws before reaching the retry delay, on the HTTP path', () => {
+    const window = codeArtsWindow()
+    expect(window).toContain('if (isConcurrencyLimitError(errorText))')
+    expect(window).toContain('"CONCURRENCY_LIMIT"')
+    // The throw must come BEFORE `queueAttempts += 1` / `await delay(...)`, or the
+    // 10s is paid first and only then reported.
+    const thrown = window.indexOf('if (isConcurrencyLimitError(errorText))')
+    const wait = window.indexOf('await delay(queueRetryDelay, options.signal)')
+    expect(thrown).toBeGreaterThan(-1)
+    expect(wait).toBeGreaterThan(thrown)
+  })
+
+  it('throws before reaching the retry delay, on the in-stream path', () => {
+    // The same failure also arrives as HTTP 200 with an embedded error event.
+    const window = codeArtsWindow()
+    expect(window).toContain('isConcurrencyLimitError(message2) || data.error_code === "TM.00001041"')
+    const thrown = window.indexOf('isConcurrencyLimitError(message2)')
+    const queueThrow = window.indexOf('throw new SseQueueRetryError(data.error_code, message2)')
+    expect(thrown).toBeGreaterThan(-1)
+    expect(queueThrow).toBeGreaterThan(thrown)
+  })
+
+  it('says what the user can actually do about it', () => {
+    // A retry loop's failure reads as "the model is busy". This one has to name the
+    // cause and the two real options, or the user retries forever.
+    const window = codeArtsWindow()
+    expect(window).toContain('\\u5E76\\u53D1\\u4F1A\\u8BDD\\u6570\\u5DF2\\u8FBE\\u4E0A\\u9650')
+    expect(window).toContain('\\u5207\\u6362\\u5230\\u53E6\\u4E00\\u4E2A CodeArts \\u8D26\\u53F7')
+  })
+
+  it('releases the response body instead of only unlocking it', () => {
+    // The leak that fills the quota in the first place: the generator throws on an
+    // embedded error, `for await` stops early, and the old `finally` only called
+    // `releaseLock()`. An unconsumed body keeps the upstream request alive, which
+    // is exactly what the per-account slot counts. Releasing the lock is not enough
+    // — it stops consuming but does not close, so the slot stays taken until the
+    // upstream times the request out.
+    //
+    // `pack.js` is CRLF, so no assertion here may span a line break.
+    const window = codeArtsWindow()
+    const finallyAt = window.indexOf('} finally {')
+    expect(finallyAt).toBeGreaterThan(-1)
+    const tail = window.slice(finallyAt, finallyAt + 900)
+    // The cancel must be real code, not only the comment explaining why.
+    const codeOnly = tail.split('\n').filter(line => !/^\s*(\*|\/\/)/.test(line)).join('\n')
+    expect(codeOnly).toContain('await reader.cancel();')
+  })
+})
+
 describe('every helper this patch calls actually exists', () => {
   /**
    * The regression this exists for, in full.
@@ -299,5 +371,30 @@ describe('tool-call arguments are emitted as they arrive', () => {
     const emitted: Record<string, unknown>[] = []
     for await (const delta of pump()) emitted.push(delta)
     expect(emitted).toHaveLength(0)
+  })
+
+  it('does not re-send a block that was already emitted whole', async () => {
+    // The bug this pins: `emitDsmlFeed` yields a parsed DSML call in one piece and
+    // the native `tool_calls` branch yields `block.text` on announce. Both then hit
+    // the pump with `streamed` unset, so the pump replayed the same arguments from
+    // offset 0 — the concatenation was
+    // `{"path":"a.txt"}{"path":"a.txt"}`, invalid JSON, tool unusable.
+    //
+    // A block that has already been sent must carry `streamed` equal to its length.
+    const { pump, state } = loadPump()
+    const whole = '{"path":"a.txt"}'
+    state.toolCalls.set(0, { index: 0, text: whole, name: 'write', callId: 'c1', announced: true, streamed: whole.length })
+    state.toolOrder.push(0)
+    const emitted: Record<string, unknown>[] = []
+    for await (const delta of pump()) emitted.push(delta)
+    expect(emitted).toHaveLength(0)
+  })
+
+  it('marks both whole-emission sites so the pump cannot replay them', () => {
+    // Source-level, because those two sites live inside `consumeSse`'s event loop
+    // and cannot be lifted out the way the pump can.
+    const window = codeArtsWindow()
+    expect(window).toContain('streamed: call.arguments.length')
+    expect(window).toContain('block.streamed = block.text.length')
   })
 })

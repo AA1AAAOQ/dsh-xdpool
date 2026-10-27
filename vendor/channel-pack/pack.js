@@ -32780,6 +32780,26 @@ function codeartsQuotaExhaustedMessage(model, resetAtMs, nowMs = Date.now()) {
 function isQueueError(status, body) {
   return status === 400 && (body.includes("TM.00001041") || /peak\s+usage|try\s+again\s+after|peak\s+hours/i.test(body) || /high\s+demand|too\s+many\s+requests/i.test(body));
 }
+/**
+ * [xdpool-local] `TM.00001041` 是**账号并发上限**，不是排队。
+ *
+ * 服务端原文：「并发会话数已达上限(3个)，请关闭部分会话后重试。」
+ * 它不是"稍后再来就能进"的那种排队（那种会带 `retryAfterSeconds` / `waitTime`），
+ * 而是这个 AK 手上已经有 3 个没结束的会话。等 10 秒再发一个**一模一样**的请求，
+ * 会话数不会自己变少 —— 唯一能改变它的是别处那些会话被关闭，或者本进程把它们
+ * 释放掉。
+ *
+ * 原实现把 TM.00001041 判进 `isQueueError`，于是走 `queueAttempts` 循环，每轮
+ * 固定 `delay(QUEUE_RETRY_DELAY_MS = 10s)`。实测一顿回答的首字延迟是
+ * 23.1s / 44.4s / 55.1s / 65.0s —— 正好是 2~6 轮 10 秒叠加（外加每轮前面那次
+ * benefit 探测）。用户看到的「每个字之前先转圈一分钟」就是这么来的。
+ *
+ * 正确处理：立刻失败，并把话说清楚（是并发上限、去关会话），把 10 秒留给真正的
+ * 排队（81111 / TPM / 429），那种重试才有意义。
+ */
+function isConcurrencyLimitError(body) {
+  return body.includes("TM.00001041") || /并发会话数已达上限|concurrent\s+session/i.test(body);
+}
 function isAuthError(status, body) {
   if (status === 401 || status === 403) return true;
   return body.includes("APIG.0602") || /invalid\s+token|token\s+expired|token\s+is\s+invalid/i.test(body);
@@ -33437,6 +33457,18 @@ var CodeArtsAdapter = class extends LlmAdapter {
             queueRetryDelay = probeDelayMs(probe, queueRetryDelay);
           }
         }
+        // [xdpool-local] 并发上限不重试 —— 见 `isConcurrencyLimitError` 的注释。
+        // 这一条必须在进入等待之前判：它是唯一一条「等下去只会更糟」的失败，
+        // 因为占着槽位的就是这个进程自己没释放的会话。
+        if (isConcurrencyLimitError(errorText)) {
+          throw new LlmError2(
+            `codearts: \u8BE5\u8D26\u53F7\u7684\u5E76\u53D1\u4F1A\u8BDD\u6570\u5DF2\u8FBE\u4E0A\u9650\uFF08\u901A\u5E38 3 \u4E2A\uFF09\uFF0C\u65E0\u6CD5\u518D\u53D1\u8D77\u65B0\u8BF7\u6C42\u3002`
+              + `\u8BF7\u5148\u5173\u6389\u5176\u5B83\u6B63\u5728\u8DD1\u7684\u5BF9\u8BDD\uFF0C\u6216\u5728 Channel Pack \u7684 CodeArts \u9762\u677F\u5207\u6362\u5230\u53E6\u4E00\u4E2A\u8D26\u53F7\u3002`
+              + `\uFF08\u4E0A\u6E38\u539F\u6587\uFF1A${errorText.slice(0, 200)}\uFF09`,
+            "CONCURRENCY_LIMIT",
+            { status: response.status },
+          );
+        }
       }
       queueAttempts += 1;
       if (queueAttempts > QUEUE_MAX_ATTEMPTS2) {
@@ -33524,7 +33556,15 @@ var CodeArtsAdapter = class extends LlmAdapter {
           text: call.arguments,
           name: call.name,
           callId: ToolCallId(`dsml-${crypto.randomUUID().replace(/-/g, "")}`),
-          announced: true
+          announced: true,
+          // [xdpool-local] DSML 调用是**整块**解析出来的（`parseDsmlToolCalls` 要等
+          // `</…tool_calls>` 闭合才认），所以这里已经把全部参数发出去了；记下游标，
+          // 让 `flushToolDeltas` 知道别重发第二遍。
+          //
+          // 少了这一行，同一段参数会被发两次：这里一次、flush 又一次（flush 从
+          // streamed=0 起算）。实测拼接结果是
+          // `{"path":"a.txt",...}{"path":"a.txt",...}` —— 非法 JSON，工具直接调不动。
+          streamed: call.arguments.length
         };
         toolCalls.set(wireIndex, block);
         toolOrder.push(block.index);
@@ -33621,6 +33661,16 @@ var CodeArtsAdapter = class extends LlmAdapter {
             if (isSseQuotaExhaustedErrorCode(data.error_code, message2)) {
               throw new SseQuotaExhaustedError(data.error_code, message2);
             }
+            // [xdpool-local] 并发上限（TM.00001041）不走重试：它是账号级配额，
+            // 等 10 秒再发同一个请求不会让槽位变空。见 `isConcurrencyLimitError`。
+            if (isConcurrencyLimitError(message2) || data.error_code === "TM.00001041") {
+              throw new LlmError2(
+                `codearts: \u8BE5\u8D26\u53F7\u7684\u5E76\u53D1\u4F1A\u8BDD\u6570\u5DF2\u8FBE\u4E0A\u9650\uFF1B\u8BF7\u5148\u5173\u6389\u5176\u5B83\u5BF9\u8BDD`
+                  + `\uFF0C\u6216\u5207\u6362\u5230\u53E6\u4E00\u4E2A CodeArts \u8D26\u53F7\u3002\uFF08\u4E0A\u6E38\u539F\u6587\uFF1A${message2.slice(0, 200)}\uFF09`,
+                "CONCURRENCY_LIMIT",
+                { status: 200 },
+              );
+            }
             if (isSseQueueErrorCode(data.error_code)) {
               throw new SseQueueRetryError(data.error_code, message2);
             }
@@ -33699,6 +33749,9 @@ var CodeArtsAdapter = class extends LlmAdapter {
             if (!block.announced) {
               if (!hasUsableToolName(block.name)) continue;
               block.announced = true;
+              // [xdpool-local] 首次宣告时已经把 `block.text` 整块发出去了，记下
+              // 游标，免得 `flushToolDeltas` 从 0 起算再发一遍（那会拼出非法 JSON）。
+              block.streamed = block.text.length;
               toolOrder.push(block.index);
               yield { type: "block-start", index: block.index, blockType: "tool-call" };
               yield {
@@ -33710,6 +33763,7 @@ var CodeArtsAdapter = class extends LlmAdapter {
               };
               continue;
             }
+            block.streamed = block.text.length;
             yield {
               type: "tool-call-delta",
               index: block.index,
@@ -33746,7 +33800,21 @@ var CodeArtsAdapter = class extends LlmAdapter {
         }
       }
     } finally {
-      reader.releaseLock();
+      // [xdpool-local] 必须 cancel，不能只 releaseLock。
+      //
+      // 这个生成器会在错误路径上抛出（最典型的是 `SseQueueRetryError`：HTTP 200 +
+      // 流内嵌 `InferHub.ModelArts.81111.429` / TM.00001041）。`for await` 提前
+      // 结束不会自动排空响应体，而原实现只 `releaseLock()` —— 那条 HTTP 响应就
+      // **一直挂着、既没读完也没被取消**，上游侧仍算这个会话没结束。CodeArts 的
+      // 并发配额是按账号算的（`TM.00001041`「并发会话数已达上限(3个)」），泄漏几次
+      // 之后该账号每一轮都先撞并发上限，只能靠重试循环硬等，首字于是永远卡在几十秒。
+      //
+      // 只 releaseLock 也留不住未读字节：锁一放开 reader 就不再消费，连接只能等
+      // 上游超时回收。所以这里显式 cancel；它对已 done 的流同样安全（幂等）。
+      try {
+        await reader.cancel();
+      } catch {
+      }
     }
     // 收尾一次：流结束前最后一片参数也要发出去，且此时块已封口。
     yield* flushToolDeltas();
