@@ -210,6 +210,23 @@ describe('a full concurrency quota is not queueing, so it is not retried', () =>
     const codeOnly = tail.split('\n').filter(line => !/^\s*(\*|\/\/)/.test(line)).join('\n')
     expect(codeOnly).toContain('await reader.cancel();')
   })
+
+  it('cancels in every channel adapter, not just CodeArts', () => {
+    // The quota is per account, and every adapter that abandons a response body
+    // leaks a slot the same way. `releaseLock()`-only cleanup must be gone
+    // everywhere. Measured against the live endpoint: after abandoning three
+    // streams, the slot came back in **1.7s** when cancelled and **49.6s** when
+    // merely left alone (a DELETE is accepted but does not terminate an in-flight
+    // generation, so it is not a substitute).
+    const cancels = pack.match(/await reader\.cancel\(\);/g) ?? []
+    expect(cancels.length).toBeGreaterThan(4)
+    // The shape that leaked: a `finally` whose only statement is `releaseLock()`.
+    const lines = pack.split('\n')
+    const releaseOnly = lines.filter(
+      (line, at) => line.trim() === '} finally {' && (lines[at + 1] ?? '').trim() === 'reader.releaseLock();',
+    )
+    expect(releaseOnly).toHaveLength(0)
+  })
 })
 
 describe('every helper this patch calls actually exists', () => {

@@ -36013,7 +36013,13 @@ var BuddyAdapter = class _BuddyAdapter extends LlmAdapter2 {
         }
       }
     } finally {
-      reader.releaseLock();
+      // [xdpool-local] cancel 而不是只 releaseLock：锁一放就不再消费，但响应体
+      // 没关闭，连接和上游侧的会话会一直挂着（CodeArts 那边实测：不 cancel 要等
+      // 49 秒才回收，cancel 后 1.7 秒）。
+      try {
+        await reader.cancel();
+      } catch {
+      }
     }
     let blockCount = 0;
     let emittedProse = "";
@@ -37331,7 +37337,13 @@ var LobsteraiAdapter = class extends LlmAdapter3 {
         }
       }
     } finally {
-      reader.releaseLock();
+      // [xdpool-local] cancel 而不是只 releaseLock：锁一放就不再消费，但响应体
+      // 没关闭，连接和上游侧的会话会一直挂着（CodeArts 那边实测：不 cancel 要等
+      // 49 秒才回收，cancel 后 1.7 秒）。
+      try {
+        await reader.cancel();
+      } catch {
+      }
     }
     let blockCount = 0;
     let emittedProse = "";
@@ -38745,7 +38757,13 @@ async function* consumeOpenAiSse(response, options, config) {
       }
     }
   } finally {
-    reader.releaseLock();
+    // [xdpool-local] cancel 而不是只 releaseLock：锁一放就不再消费，但响应体
+    // 没关闭，连接和上游侧的会话会一直挂着（CodeArts 那边实测：不 cancel 要等
+    // 49 秒才回收，cancel 后 1.7 秒）。
+    try {
+      await reader.cancel();
+    } catch {
+    }
   }
   let blockCount = 0;
   let emittedProse = "";
@@ -41190,7 +41208,13 @@ var TraeAdapter = class extends LlmAdapter5 {
         }
       }
     } finally {
-      reader.releaseLock();
+      // [xdpool-local] cancel 而不是只 releaseLock：锁一放就不再消费，但响应体
+      // 没关闭，连接和上游侧的会话会一直挂着（CodeArts 那边实测：不 cancel 要等
+      // 49 秒才回收，cancel 后 1.7 秒）。
+      try {
+        await reader.cancel();
+      } catch {
+      }
     }
     if (!sawAnyUpstreamEvent) {
       throw new LlmError8(
