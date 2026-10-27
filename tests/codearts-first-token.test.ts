@@ -116,6 +116,23 @@ describe('the catalogue fetch no longer runs in front of the first token', () =>
 })
 
 describe('the queue retry stops paying a fixed ten seconds', () => {
+  it('backs off instead of hammering a quota that a rejection also consumes', () => {
+    // Measured against the live endpoint: every request that comes back
+    // `TM.00001041` *also* occupies a slot, so a tight poll fills the 3-slot quota
+    // with its own attempts. Probing once a second produced 111 consecutive
+    // rejections across 131 seconds with no success; probing every 8s failed 8/8.
+    // The backoff therefore has to grow.
+    expect(pack).toContain('let queueRetryDelay = 1500;')
+    expect(pack).toContain('Math.min(20000, Math.round(queueRetryDelay * 1.8))')
+    // Growth must apply AFTER the wait, or the first retry already pays the grown
+    // value and the fast first window is lost.
+    const window = codeArtsWindow()
+    const waited = window.indexOf('await delay(queueRetryDelay, options.signal);')
+    const grown = window.indexOf('queueRetryDelay = Math.min(20000')
+    expect(waited).toBeGreaterThan(-1)
+    expect(grown).toBeGreaterThan(waited)
+  })
+
   it('uses the wait hint the server itself supplied', () => {
     // `probeDelayMs` is a module-level helper next to `delay`, not a member of the
     // adapter — it is shared by every channel that polls a queue.
@@ -226,6 +243,55 @@ describe('a full concurrency quota is not queueing, so it is not retried', () =>
       (line, at) => line.trim() === '} finally {' && (lines[at + 1] ?? '').trim() === 'reader.releaseLock();',
     )
     expect(releaseOnly).toHaveLength(0)
+  })
+})
+
+describe('a rejected benefit probe is not repeated every turn', () => {
+  /**
+   * The root cause of the whole report, and the one that no amount of retry
+   * tuning could have fixed.
+   *
+   * `deepseek-v4.1-flash` sits in `CODEARTS_BENEFIT_FALLBACK`, so every turn sent a
+   * `maas_type: benefit` request first, and the account had no benefit entitlement,
+   * so it answered `InferHub.4004.200`. The pack then dropped the header and
+   * retried — which worked. But `benefitHeaderDropped` was a **per-turn local**, so
+   * the next turn probed all over again.
+   *
+   * Why that is fatal rather than merely wasteful: a rejected request still takes a
+   * concurrency slot, and the free tier has exactly 3. Measured with a real
+   * credential, after letting the quota drain:
+   *
+   *   plain requests only        -> 2 successes, then TM.00001041
+   *   one benefit probe + plain  -> 1 success, then TM.00001041
+   *
+   * So the probe cost one of the remaining slots — a turn that should serve one
+   * generation was serving half of one. And recovery is slow: cancelled readers
+   * only start returning slots after ~90s.
+   */
+  it('remembers the rejection per account and model', () => {
+    expect(pack).toContain('var BENEFIT_UNSUPPORTED = /* @__PURE__ */ new Map();')
+    expect(pack).toContain('function benefitKeyOf(accountId, model)')
+    expect(pack).toContain('function benefitKnownUnsupported(accountId, model)')
+    expect(pack).toContain('function markBenefitUnsupported(accountId, model)')
+  })
+
+  it('reads that memory before deciding to send the probe', () => {
+    expect(codeArtsWindow()).toContain('if (isBenefitModel && benefitKnownUnsupported(currentAccountId, options.model)) {')
+  })
+
+  it('writes the conclusion on both failure paths', () => {
+    // The rejection arrives either as an in-stream error event (HTTP 200) or as an
+    // HTTP error body; a fix that covered only one would still leak a slot per turn
+    // for whichever path the gateway happened to use.
+    const window = codeArtsWindow()
+    const marks = window.split('markBenefitUnsupported(currentAccountId, options.model)').length - 1
+    expect(marks).toBeGreaterThanOrEqual(2)
+  })
+
+  it('keys the memory by account, so a re-login re-probes', () => {
+    // A new sign-in changes `access_key_id`; the capability is per account, so the
+    // key must include it or a fresh account would inherit a stale verdict.
+    expect(pack).toContain('return String(accountId || "") + "|" + String(model || "").toLowerCase();')
   })
 })
 

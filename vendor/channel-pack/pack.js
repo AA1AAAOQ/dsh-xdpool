@@ -32587,6 +32587,40 @@ var CHAT_API_BASE = "https://snap-access.cn-north-4.myhuaweicloud.com/api/v2";
 var PROVIDER = "codearts";
 var BENEFIT_NOT_FOUND_CODE = "BENEFIT_NOT_FOUND";
 var CODEARTS_BENEFIT_NOT_FOUND_ERROR_CODE = "InferHub.4004.200";
+/**
+ * [xdpool-local] 记住「这个账号没有 benefit 权限」，不要每轮重新试探。
+ *
+ * 为什么这条记忆直接决定首字延迟（实测 2026-10-27，真实 AK）：
+ *
+ *   CodeArts 免费账号的并发配额是 **3 个会话**，而**每一次 HTTP 请求都占一个**，
+ *   包括被上游拒绝的那些：
+ *     - `maas_type: benefit` 但账号没开通 -> 4004.200，**照样占槽**
+ *     - 丢掉该头重试的那一次真实推理 -> 再占一个
+ *   所以 `deepseek-v4.1-flash`（在 CODEARTS_BENEFIT_FALLBACK 里）每轮对话要烧
+ *   **2 个槽**，配额 3 意味着第二轮就开始撞 `TM.00001041`。
+ *
+ *   实测对照（等槽位清空后连发，间隔 2s）：
+ *     纯 plain              -> 连续成功 2 次后撞上限
+ *     先 1 次 benefit 再 plain -> 只能成功 1 次
+ *   差值正是那次 benefit 探测白占的槽。
+ *
+ *   更糟的是回收很慢：cancel 掉读流后，槽位要 ~90s 才开始回升（另测：我自己每秒
+ *   探测会把它彻底占死，131s 无空位）。所以「每轮多占一个槽」不是小浪费，
+ *   它是把可用轮次直接砍半。
+ *
+ * 记忆按「账号 + 模型」存在进程内：同一账号对同一模型的 benefit 能力不会变，
+ * 探一次就够。401/续期导致的重新登录会换 `access_key_id`，键随之变化，自然会重探。
+ */
+var BENEFIT_UNSUPPORTED = /* @__PURE__ */ new Map();
+function benefitKeyOf(accountId, model) {
+  return String(accountId || "") + "|" + String(model || "").toLowerCase();
+}
+function benefitKnownUnsupported(accountId, model) {
+  return BENEFIT_UNSUPPORTED.has(benefitKeyOf(accountId, model));
+}
+function markBenefitUnsupported(accountId, model) {
+  BENEFIT_UNSUPPORTED.set(benefitKeyOf(accountId, model), Date.now());
+}
 var DEFAULT_MODELS = [
   "GLM-5.2",
   "GLM-5.1",
@@ -33273,13 +33307,22 @@ var CodeArtsAdapter = class extends LlmAdapter {
     const url = `${CHAT_API_BASE}/chat/completions`;
     let response;
     let queueAttempts = 0;
-    // [xdpool-local] 排队重试的等待时长：默认 10s，服务端给出等待时长时按它走。
-    let queueRetryDelay = QUEUE_RETRY_DELAY_MS;
+    // [xdpool-local] 排队/并发上限的重试间隔：从 1.5s 起按 ×1.8 递增，封顶 20s。
+    // 服务端明确给了时长（retryAfterSeconds 等）时按它走。见循环尾部注释：
+    // 每次被拒的请求本身占一个并发槽，所以越密集的轮询越抢不到。
+    let queueRetryDelay = 1500;
     let authRefreshed = false;
     let benefitHeaderDropped = false;
     const rateLimitTried = /* @__PURE__ */ new Set();
     if (currentAccountId) rateLimitTried.add(currentAccountId);
     const isBenefitModel = isCodeArtsBenefitModel(options.model);
+    // [xdpool-local] 这个账号对这个模型是否已经**证实**没有 benefit 权限。
+    // 证实过就一次都不要再试 —— 那一次试探会白占一个并发槽（见 BENEFIT_UNSUPPORTED
+    // 的注释），而配额只有 3。`benefitHeaderDropped` 是本轮内的状态，这里要的是
+    // 跨轮记忆，否则每一轮都要重新浪费一个槽。
+    if (isBenefitModel && benefitKnownUnsupported(currentAccountId, options.model)) {
+      benefitHeaderDropped = true;
+    }
     for (; ; ) {
       const extraSignedHeaders = isBenefitModel && !benefitHeaderDropped ? { maas_type: "benefit" } : void 0;
       const signed = await signRequestHuawei(
@@ -33371,6 +33414,8 @@ var CodeArtsAdapter = class extends LlmAdapter {
           if (error instanceof SseQueueRetryError) {
           } else if (error instanceof LlmError2 && error.code === BENEFIT_NOT_FOUND_CODE && isBenefitModel && !benefitHeaderDropped) {
             benefitHeaderDropped = true;
+            // [xdpool-local] 记住这次结论，下一轮不再用同一个账号白试一遍。
+            markBenefitUnsupported(currentAccountId, options.model);
             continue;
           } else {
             throw error;
@@ -33378,6 +33423,13 @@ var CodeArtsAdapter = class extends LlmAdapter {
         }
       } else {
         const errorText = await response.text().catch(() => "");
+        // [xdpool-local] benefit 权限不足也可能以 HTTP 400 返回，而不是流内事件。
+        // 同样要记住结论：**这一请求已经占掉一个并发槽**，下一轮不该再白试一次。
+        if (isBenefitModel && !benefitHeaderDropped && errorText.includes(CODEARTS_BENEFIT_NOT_FOUND_ERROR_CODE)) {
+          benefitHeaderDropped = true;
+          markBenefitUnsupported(currentAccountId, options.model);
+          continue;
+        }
         if (isAuthError(response.status, errorText) && !authRefreshed) {
           authRefreshed = true;
           await this.options.refresh();
@@ -33481,9 +33533,17 @@ var CodeArtsAdapter = class extends LlmAdapter {
       }
       // [xdpool-local] 服务端给了等待时长就听它的（`queueDelayMs` 读
       // retryAfterSeconds / waitTime / retry_after_ms，上限 10s），没给才用
-      // 默认值。原实现是**无条件** `QUEUE_RETRY_DELAY_MS`：一个大文件写入中途
-      // 撞上一次排队，就固定赔进去 10 秒，而这 10 秒全在用户已经发出的那一轮里。
+      // 本轮的退避值。原实现是**无条件** `QUEUE_RETRY_DELAY_MS`（固定 10s）。
+      //
+      // 这里的退避**必须递增**，不能固定小间隔。实测（真实 AK，2026-10-27）：
+      //   - 槽位回收很慢：cancel 掉读流后要 ~90s 才开始回升
+      //   - 每秒探测一次会把它彻底占死：131 秒、111 次 TM.00001041 一个都没抢到
+      //   - 每 8 秒探测一次也失败（8 次全拦）
+      // 因为**每次被拒绝的请求本身也占一个槽**，轮询越快，自己占得越满。
+      // 所以间隔从 1.5s 起、每轮 ×1.8 递增，封顶 20s：既能在回收后的第一个窗口
+      // 抢到，又不会把配额喂满。
       await delay(queueRetryDelay, options.signal);
+      queueRetryDelay = Math.min(20000, Math.round(queueRetryDelay * 1.8));
     }
   }
   /**
