@@ -30945,18 +30945,31 @@ var REMOTE_CATALOG_COOLDOWN_MS = 3e4;
 // a bad way to learn what a model costs. Ten minutes, overridable for testing.
 var REMOTE_CATALOG_TTL_MS = 6e5;
 var REMOTE_CATALOG_STAMP = new WeakMap();
+/**
+ * [xdpool-local] 目录 TTL 的**唯一**读取点。
+ *
+ * `remoteModelsStale` 现在有两处要用它：一处对进程内 stamp，一处对磁盘缓存的
+ * 文件年龄。同一份环境变量抄两遍，就是两份口径开始漂移的起点。
+ * `DSH_XDPOOL_CATALOG_TTL_MS` 是可用数字时优先（0 合法，意为「每次都刷」）。
+ */
+function resolveCatalogTtlMs() {
+  var override = Number(process.env.DSH_XDPOOL_CATALOG_TTL_MS ?? "");
+  return Number.isFinite(override) && override >= 0 ? override : REMOTE_CATALOG_TTL_MS;
+}
 function remoteModelsStale(owner) {
   if (owner.remoteModels === void 0) return true;
-  // [xdpool-local] 从磁盘缓存恢复的目录自带「新鲜到什么时候」，直接按它判：
-  // 缓存里记的 `cachedAtMs` 是文件的 mtime，超过 TTL 仍照常去拉，保证厂商
-  // 改名/改价能被看到；但这一次拉取是后台的，不阻塞任何一轮回答。
-  const cachedAt = owner.remoteModels.cachedAtMs;
+  // [xdpool-local] 从磁盘缓存恢复的目录自带「新鲜到什么时候」，按文件 mtime 判：
+  // 超过 TTL 照常去拉，保证厂商改名/改价能被看到；但这一次拉取是后台的，
+  // 不阻塞任何一轮回答。
+  //
+  // ⚠ 只读这一个属性，不假设 `remoteModels` 一定是本进程抓来的数组：其它适配器
+  // （buddy / lobsterai / qoder …）共用这个函数，它们恢复出来的目录没有
+  // `cachedAtMs`，自然落回下面的进程内 stamp 分支。
+  var cachedAt = owner.remoteModels.cachedAtMs;
   if (typeof cachedAt === "number" && Number.isFinite(cachedAt)) {
-    var ttlCached = resolveCatalogTtl();
-    return Date.now() - cachedAt >= ttlCached;
+    return Date.now() - cachedAt >= resolveCatalogTtlMs();
   }
-  var override = Number(process.env.DSH_XDPOOL_CATALOG_TTL_MS ?? "");
-  var ttl = Number.isFinite(override) && override >= 0 ? override : REMOTE_CATALOG_TTL_MS;
+  var ttl = resolveCatalogTtlMs();
   var now = Date.now();
   var stamp = REMOTE_CATALOG_STAMP.get(owner);
   if (stamp === void 0 || now - stamp < ttl) {

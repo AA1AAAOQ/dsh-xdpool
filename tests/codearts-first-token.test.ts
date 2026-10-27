@@ -111,7 +111,7 @@ describe('the catalogue fetch no longer runs in front of the first token', () =>
     expect(pack).toContain('models.cachedAtMs = mtimeMs')
     // The freshness stamp travels with the rows, so `remoteModelsStale` can honour
     // the file's age instead of pretending a restored catalogue is brand new.
-    expect(pack).toContain('const cachedAt = owner.remoteModels.cachedAtMs')
+    expect(pack).toContain('owner.remoteModels.cachedAtMs')
   })
 })
 
@@ -137,6 +137,72 @@ describe('the queue retry stops paying a fixed ten seconds', () => {
     expect(codeArtsWindow()).toContain(
       'throw new LlmError2(`codearts: model request failed with HTTP ${response.status}`, code, { status: response.status })',
     )
+  })
+})
+
+describe('every helper this patch calls actually exists', () => {
+  /**
+   * The regression this exists for, in full.
+   *
+   * The first cut of this patch wrote `resolveCatalogTtl()` inside
+   * `remoteModelsStale` — a function that was never defined. `node --check` passed
+   * (it is syntactically perfect), the module even loaded, and the failure only
+   * appeared the moment a catalogue restored from disk carried `cachedAtMs`: that
+   * line threw `ReferenceError`, `ensureRemoteModels` was by then synchronous and
+   * on the `resolveModel` path, and the whole CodeArts channel went dead.
+   *
+   * So: every free function the patched regions call must have a definition
+   * somewhere in the bundle. This is a cheap, whole-bundle check that would have
+   * caught that bug before it ever reached the host.
+   */
+  function definedNames(source: string): Set<string> {
+    const names = new Set<string>()
+    for (const re of [
+      /\bfunction\s*\*?\s*([A-Za-z_$][\w$]*)\s*\(/g,
+      /\bclass\s+([A-Za-z_$][\w$]*)/g,
+      /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function|\()/g,
+      /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*[A-Za-z_$][\w$]*\s*=>/g,
+    ]) {
+      for (const match of source.matchAll(re)) names.add(match[1] as string)
+    }
+    for (const match of source.matchAll(/\bimport\s*\{([^}]+)\}\s*from/g)) {
+      for (const part of (match[1] as string).split(',')) {
+        const named = part.trim().split(/\s+as\s+/).pop()
+        if (named !== undefined && named !== '') names.add(named.trim())
+      }
+    }
+    for (const match of source.matchAll(/\bimport\s+([A-Za-z_$][\w$]*)\s+from/g)) {
+      names.add(match[1] as string)
+    }
+    return names
+  }
+
+  it('resolves the catalogue TTL through a function that is defined', () => {
+    expect(pack).toContain('function resolveCatalogTtlMs()')
+    expect(definedNames(pack).has('resolveCatalogTtlMs')).toBe(true)
+    // The undefined spelling must not survive anywhere, not even in the patched
+    // window that used to call it.
+    expect(pack.includes('resolveCatalogTtl()')).toBe(false)
+  })
+
+  it('defines every helper the patched regions name', () => {
+    const defined = definedNames(pack)
+    for (const helper of [
+      'loadModelsCache', 'saveModelsCache', 'modelsCachePath', 'cacheDir',
+      'resolveCatalogTtlMs', 'remoteModelsStale', 'probeDelayMs', 'queueDelayMs',
+      'flushToolDeltas', 'hasUsableToolName',
+    ]) {
+      expect(defined.has(helper)).toBe(true)
+    }
+  })
+
+  it('keeps the disk-cache freshness check from assuming a shape other adapters do not have', () => {
+    // `remoteModelsStale` is shared by all thirteen adapters. Reading `cachedAtMs`
+    // off a plain array yields undefined, which must fall through to the in-process
+    // stamp rather than throw.
+    const body = pack.slice(pack.indexOf('function remoteModelsStale(owner)'))
+    expect(body.slice(0, 700)).toContain('var cachedAt = owner.remoteModels.cachedAtMs')
+    expect(body.slice(0, 700)).toContain('typeof cachedAt === "number"')
   })
 })
 
