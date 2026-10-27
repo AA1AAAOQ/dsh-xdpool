@@ -30947,6 +30947,14 @@ var REMOTE_CATALOG_TTL_MS = 6e5;
 var REMOTE_CATALOG_STAMP = new WeakMap();
 function remoteModelsStale(owner) {
   if (owner.remoteModels === void 0) return true;
+  // [xdpool-local] 从磁盘缓存恢复的目录自带「新鲜到什么时候」，直接按它判：
+  // 缓存里记的 `cachedAtMs` 是文件的 mtime，超过 TTL 仍照常去拉，保证厂商
+  // 改名/改价能被看到；但这一次拉取是后台的，不阻塞任何一轮回答。
+  const cachedAt = owner.remoteModels.cachedAtMs;
+  if (typeof cachedAt === "number" && Number.isFinite(cachedAt)) {
+    var ttlCached = resolveCatalogTtl();
+    return Date.now() - cachedAt >= ttlCached;
+  }
   var override = Number(process.env.DSH_XDPOOL_CATALOG_TTL_MS ?? "");
   var ttl = Number.isFinite(override) && override >= 0 ? override : REMOTE_CATALOG_TTL_MS;
   var now = Date.now();
@@ -31096,7 +31104,7 @@ function queueDelayMs(info) {
 }
 
 // vendor/channel-pack/src/models.ts
-import { existsSync as existsSync3, mkdirSync as mkdirSync3, readFileSync as readFileSync3, renameSync as renameSync3, writeFileSync as writeFileSync3 } from "node:fs";
+import { existsSync as existsSync3, mkdirSync as mkdirSync3, readFileSync as readFileSync3, renameSync as renameSync3, statSync as statSync3, writeFileSync as writeFileSync3 } from "node:fs";
 
 // vendor/channel-pack/src/sign.ts
 async function sha256Hex(data) {
@@ -31277,6 +31285,48 @@ function saveModelsCache(models) {
     writeFileSync3(tmp, JSON.stringify(models), "utf-8");
     renameSync3(tmp, path2);
   } catch {
+  }
+}
+// [xdpool-local] 把磁盘上的目录缓存读回来。
+//
+// 原实现只写不读：`saveModelsCache` 每次成功拉取都落盘，`loadBenefitCache`
+// 有对应的读回函数，而 `codearts_models.json` **没有任何读取方**
+// （全项目 `loadModelsCache` 命中数为 0）。后果是每次进程重启，远端目录都从
+// 零开始拉：`ensureRemoteModels` 先 `remoteModelsStale` 返回 true，再走
+// `fetchRemoteModels → refreshModels → fetchCodeArtsRemoteModels`，两个 GET
+// 各自顶着 `FETCH_TIMEOUT_MS = 10s` 串行下发（opengw.developer.huaweicloud.com
+// 与 snap-access.cn-north-4.myhuaweicloud.com）。这段等待发生在**首次
+// `stream()` 之前**（`prepareCall → resolveModel → ensureRemoteModels`），
+// 并且抓在 `RemoteCatalogGate.inFlight` 上，所以同一时刻的每个新会话请求都会
+// 一起排队等它 —— 表现就是「点发送后第一个字之前一直转圈」。
+//
+// 读回之后，冷启动的第一轮拿的是上次的目录（同 `loadBenefitCache` 的语义），
+// 网络拉取退回后台刷新，不再卡在首字之前。
+function loadModelsCache() {
+  const path2 = modelsCachePath();
+  if (!path2) return void 0;
+  try {
+    if (!existsSync3(path2)) return void 0;
+    const text = readFileSync3(path2, "utf-8");
+    const rows = JSON.parse(text);
+    if (!Array.isArray(rows) || rows.length === 0) return void 0;
+    const models = rows.filter(
+      (row) => typeof row === "object" && row !== null && typeof row.id === "string" && row.id.length > 0
+    ).map((row) => ({ id: row.id, name: typeof row.name === "string" && row.name.length > 0 ? row.name : row.id }));
+    if (models.length === 0) return void 0;
+    // 顺带记下文件年龄：`ensureRemoteModels` 用它决定这份缓存还能不能当
+    // 「新鲜」用（`MODEL_REFRESH_INTERVAL_MS`，2h）。拿不到 mtime 就当作
+    // 未过期 —— 宁可这一轮用上一次的目录，也不要把用户顶在网络上等。
+    let mtimeMs = Number.NaN;
+    try {
+      mtimeMs = statSync3(path2).mtimeMs;
+    } catch {
+      mtimeMs = Number.NaN;
+    }
+    models.cachedAtMs = mtimeMs;
+    return models;
+  } catch {
+    return void 0;
   }
 }
 function setMemoryCache(models) {
@@ -32770,6 +32820,24 @@ function delay(ms, signal) {
     signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
+/**
+ * [xdpool-local] 排队再试之前该等多久。
+ *
+ * 服务端在排队响应里通常带 `retryAfterSeconds` / `waitTime` / `retry_after_ms`
+ * （`queueDelayMs` 读的就是这三个键，上限 10s）。听它的人一句话就走，不听的人
+ * 固定赔 10 秒 —— 而这段时间发生在用户已经发出去的那一轮里，所以它直接等于
+ * 「工具调用之后还要再等一会儿」的那一会儿。
+ *
+ * `queue` 里若还带了排队位次，就按位次缩到最小 1s：位次靠前没有理由等满 10s。
+ */
+function probeDelayMs(info, fallback) {
+  if (info === void 0) return fallback;
+  const hinted = typeof queueDelayMs === "function" ? queueDelayMs(info) : void 0;
+  if (hinted !== void 0) return Math.max(1e3, hinted);
+  const queueCount = Number(info.queueCount);
+  if (Number.isFinite(queueCount) && queueCount >= 0) return 1e3;
+  return fallback;
+}
 function errorMessage(error) {
   if (error instanceof Error) return error.message;
   try {
@@ -33007,15 +33075,39 @@ var CodeArtsAdapter = class extends LlmAdapter {
   /**
    * 懒加载远端模型目录。resolveModel 可能先于 listModels 被调用
    * （如直接进入会话），此时同样触发远端拉取。
+   *
+   * [xdpool-local] **不再 await**，并且先把磁盘缓存读回来。
+   *
+   * 原来这里是 `await this.catalogGate.run(...)`，而 `ensureRemoteModels` 被
+   * `listModels` 与 `resolveModel` 同时调用，后者又在 `prepareCall → stream`
+   * 的关键路径上（DSH 每个会话请求都会走一遍 `resolveModel`）。于是冷启动或
+   * 缓存过期后的第一次对话，会被两个串行的 10s 超时 GET 顶在**第一个 token
+   * 之前**：目录抓取是「这个渠道有哪些模型」的问题，与「这一轮该发什么请求」
+   * 无关，答不上来也不该阻塞回答。
+   *
+   * 现在的顺序是：
+   *   1. 内存里没有目录时，先读 `~/.cache/deveco/codearts_models.json`
+   *      （`loadModelsCache`；原实现只写不读），于是**第一次请求就有真实目录**；
+   *   2. 网络刷新改成后台进行（`void`，不 await），下一次目录查询自然看到新值。
+   *
+   * 静态回退仍留在 `listAllModels` 里：万一连磁盘缓存都没有，`await` 的消失
+   * 意味着这一轮用静态表先答，绝不会让用户盯着空白等 10 秒。
    */
-  async ensureRemoteModels() {
+  ensureRemoteModels() {
+    if (this.remoteModels === void 0) {
+      const cached = loadModelsCache();
+      if (cached !== void 0) this.remoteModels = cached;
+    }
     const fetchRemote = this.options.fetchRemoteModels;
     if (fetchRemote === void 0 || !remoteModelsStale(this)) return;
-    await this.catalogGate.run(async () => {
+    // 后台刷新必须有自己的 catch：脱离 await 之后，任何抛出都会变成未处理的
+    // rejection（Node 默认直接终止进程），而目录拉取失败本来就允许失败。
+    void this.catalogGate.run(async () => {
       const models = await fetchRemote();
       if (models.length === 0) return false;
       this.remoteModels = models;
       return true;
+    }).catch(() => {
     });
   }
   /**
@@ -33032,7 +33124,10 @@ var CodeArtsAdapter = class extends LlmAdapter {
   }
   async listModels(_provider) {
     if (!await providerCatalogVisible(this.options.accountPool, PROVIDER)) return [];
-    await this.ensureRemoteModels();
+    // [xdpool-local] 这里**不 await**：目录刷新已经改成后台（见
+    // `ensureRemoteModels`）。列表页要的是「现在有哪些模型」，磁盘缓存 + 静态表
+    // 已经能答，卡着 10s 等网络只会让设置页空转。
+    this.ensureRemoteModels();
     const visible = this.listAllModels();
     const disabled = this.options.accountPool?.disabledModelsFor(PROVIDER);
     const listed = disabled === void 0 || disabled.size === 0 ? visible : visible.filter((m) => !disabled.has(m.id));
@@ -33048,7 +33143,10 @@ var CodeArtsAdapter = class extends LlmAdapter {
     });
   }
   async resolveModel(provider, model, _signal) {
-    await this.ensureRemoteModels();
+    // [xdpool-local] `resolveModel` 在 `prepareCall → stream` 的关键路径上，每轮
+    // 都要跑一遍。这里同步触发后台刷新并立刻用当前目录作答，是「首字之前不再
+    // 等目录」这一刀的核心位置；`listModels` 同理。
+    this.ensureRemoteModels();
     const remoteModel = this.remoteModels?.find((m) => m.id === model);
     const name2 = remoteModel?.name ?? model;
     const contextWindow = contextWindowFor(model);
@@ -33142,6 +33240,8 @@ var CodeArtsAdapter = class extends LlmAdapter {
     const url = `${CHAT_API_BASE}/chat/completions`;
     let response;
     let queueAttempts = 0;
+    // [xdpool-local] 排队重试的等待时长：默认 10s，服务端给出等待时长时按它走。
+    let queueRetryDelay = QUEUE_RETRY_DELAY_MS;
     let authRefreshed = false;
     let benefitHeaderDropped = false;
     const rateLimitTried = /* @__PURE__ */ new Set();
@@ -33305,10 +33405,23 @@ var CodeArtsAdapter = class extends LlmAdapter {
           }
         }
         if (!isQueueError(response.status, errorText)) {
-          const probe = await this.queryQueueStatus(credential, options.model, options.signal);
-          if (probe === void 0 || probe.status === "working") {
-            const code = httpErrorCode(response.status, errorText);
-            throw new LlmError2(`codearts: model request failed with HTTP ${response.status}`, code, { status: response.status });
+          // [xdpool-local] huaweicloud 的 `X-Snap` 类限流响应本身就是权威排队信号，
+          // 再打一次 `queue/status` 只是把一轮回答再拖慢一个 RTT（实测该端点
+          // 395ms，且 `status` 常常就是 `working`，于是照样抛错）。探测留给
+          // **完全没有错误体**的那种 5xx：那时本地判断不了是排队还是真故障。
+          if (errorText.trim() === "" || response.status >= 500) {
+            const probe = await this.queryQueueStatus(credential, options.model, options.signal);
+            if (probe !== void 0 && (probe.status === "error" || probe.status === "queue_full")) {
+              throw new LlmError2(`codearts: ${probe.message || `queue status: ${probe.status}`}`, "QUEUE");
+            }
+            if (probe === void 0 || probe.status === "working") {
+              // 状态端点自己都说 `working`（服务可用、无排队）时，这个响应码就是
+              // 真实故障。原实现把这种情况也送回重试循环，于是每次白白多等一个
+              // `QUEUE_RETRY_DELAY_MS`，用户看到的是「偶尔整整多卡 10 秒」。
+              const code = httpErrorCode(response.status, errorText);
+              throw new LlmError2(`codearts: model request failed with HTTP ${response.status}`, code, { status: response.status });
+            }
+            queueRetryDelay = probeDelayMs(probe, queueRetryDelay);
           }
         }
       }
@@ -33321,7 +33434,11 @@ var CodeArtsAdapter = class extends LlmAdapter {
       if (status?.status === "error" || status?.status === "queue_full") {
         throw new LlmError2(`codearts: ${status.message || `queue status: ${status.status}`}`, "QUEUE");
       }
-      await delay(QUEUE_RETRY_DELAY_MS, options.signal);
+      // [xdpool-local] 服务端给了等待时长就听它的（`queueDelayMs` 读
+      // retryAfterSeconds / waitTime / retry_after_ms，上限 10s），没给才用
+      // 默认值。原实现是**无条件** `QUEUE_RETRY_DELAY_MS`：一个大文件写入中途
+      // 撞上一次排队，就固定赔进去 10 秒，而这 10 秒全在用户已经发出的那一轮里。
+      await delay(queueRetryDelay, options.signal);
     }
   }
   /**
@@ -33410,6 +33527,43 @@ var CodeArtsAdapter = class extends LlmAdapter {
     }
     const reader = response.body.getReader();
     const decoder2 = new TextDecoder();
+    // [xdpool-local] 流式工具调用：**块一块地发**，不再等整个调用收完。
+    //
+    // 原实现把工具调用的下发整个挂在 `block-end` 上（见下方 `for (const index of
+    // toolOrder)`），而 `block-end` 只在 `data: [DONE]` / 流结束之后才产出。于是
+    // 一个 40KB 的 `write` 参数（大文件正文）意味着：参数在 wire 上一片片到达，
+    // 调用方一个字都收不到，直到上游把最后一片吐完 —— 用户看到的就是「工具调用
+    // 出现之后还要再干等一段时间」。delta 接口本来就是为此存在的：
+    // `tool-call-delta` 一路带 `argumentsDelta`，harness 自己拼装，块封口时的一致性
+    // 仍由原位那句 `normalizeToolArguments` / `isTruncatedArguments` 保证。
+    //
+    // 流式只负责「把已到达的片段按块转出去」；封口仍在原位，所以非流式调用方
+    // （以及 `blocks` 里那份完整文本）拿到的结果与改动前完全一致。
+    let streamedToolIndex = 0;
+    async function* flushToolDeltas() {
+      // 逐个块看它自己的「已发出游标」，而不是把 `toolOrder` 的指针一路推到底：
+      // 同一个调用会分很多片陆续到达，推指针会在第一片之后就把这块跳过，后面的
+      // 参数全被吞掉（实测：4 片只发出 1 片）。游标挂在块上，重复调用天然幂等。
+      for (let cursor = 0; cursor < toolOrder.length; cursor += 1) {
+        const index = toolOrder[cursor];
+        const block = [...toolCalls.values()].find((candidate) => candidate.index === index);
+        if (block === void 0 || !block.announced || !hasUsableToolName(block.name)) continue;
+        const cut = block.streamed ?? 0;
+        const pending = block.text.slice(cut);
+        if (pending.length === 0) continue;
+        block.streamed = block.text.length;
+        // 首片同时携带 id 与 name（OpenAI 只在第一片给 name），后续片只给参数，
+        // 与原生 `tool_calls` 分支的形状保持一致。
+        yield {
+          type: "tool-call-delta",
+          index,
+          id: ToolCallId(block.callId || `call_${index}`),
+          ...cut === 0 ? { name: block.name } : {},
+          argumentsDelta: pending
+        };
+      }
+      streamedToolIndex = toolOrder.length;
+    }
     let firstTokenReceived = false;
     try {
       for (; ; ) {
@@ -33568,6 +33722,10 @@ var CodeArtsAdapter = class extends LlmAdapter {
             };
           }
         }
+        // [xdpool-local] 本块新到达的工具参数立刻转出去（见 `flushToolDeltas` 的
+        // 注释）。放在这里而不是每个 SSE 事件后：一个事件可能同时带来正文与工具
+        // 增量，等这一事件处理干净再发，输出顺序与 `field` 顺序一致。
+        yield* flushToolDeltas();
         if (loopDetected) {
           await reader.cancel().catch(() => {
           });
@@ -33577,6 +33735,8 @@ var CodeArtsAdapter = class extends LlmAdapter {
     } finally {
       reader.releaseLock();
     }
+    // 收尾一次：流结束前最后一片参数也要发出去，且此时块已封口。
+    yield* flushToolDeltas();
     {
       const f = dsmlContentExtractor.flush();
       if (f.text.length > 0 || f.reasoning.length > 0) yield* emitDsmlFeed(f.text, f.reasoning, []);

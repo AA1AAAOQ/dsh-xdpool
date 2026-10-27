@@ -1,6 +1,37 @@
 # Changelog
 本项目的所有重要变更都会记录在此文件。
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+## 2.4.7 — CodeArts 一轮要等 65 秒：目录探测挡在首字前，工具参数憋到流结束
+
+> 现象是「用 CodeArts 时第一次输出特别慢，工具调用出现之后还要再等挺久」。实测一份真实桌面会话（`session.v4.jsonl`，provider `codearts`，模型 `deepseek-v4.1-flash`）：六步里有三步在 `step/start` 到第一个 chunk 之间卡了 **65 秒**，另一步 55 秒；而流本身只跑 0.3–2.9 秒。也就是说慢的从来不是模型。
+
+### 那 65 秒卡在哪里：模型目录被等在首字之前
+
+`ensureRemoteModels()` 是 `async` 的，内部 `await this.catalogGate.run(...)`，而它的调用方 `resolveModel` 正是 DSH **每一轮**都会走的那条路径（`prepareCall → stream`）。冷启动或目录 TTL（10 分钟）过期后，这道闸门会串行发两个签名 GET，各自顶着 `FETCH_TIMEOUT_MS = 10s`：`opengw.developer.huaweicloud.com/api/v1/gateway/config` 与 `snap-access…/v1/model/builtin`。这段等待发生在**chat 请求发出之前**，且闸门按 `inFlight` 复用，于是同一时刻进入的所有会话都排在这一次抓取后面 —— 用户看到的就是「点发送后一直转圈」。
+
+更别扭的是磁盘缓存：`saveModelsCache()` 每次成功拉取都写 `~/.cache/deveco/codearts_models.json`，而 `loadModelsCache` 在整包里的命中数是 **0** —— 免费模型目录有对应的读回函数，模型目录没有。于是每次重启都重新付一遍网络代价，上一轮的结果一点没派上用场。
+
+顺带排除一个猜测：那 65 秒**不是**服务端排队。用真实凭据实测 `queue/status`（`deepseek-v4.1-flash`）返回 `{"status":"working","queue_length":0,"queue_position":0}`，395ms 即答。
+
+三处改动：
+
+- **目录探测不再阻塞首字**。`ensureRemoteModels()` 变成同步方法，先读磁盘缓存，再 `void` 后台刷新；`resolveModel` / `listModels` 的 `await` 一并去掉。后台那次 `run` 补了 `.catch()` —— 脱离 `await` 之后，未处理的 rejection 会直接终止宿主进程，而目录刷新本来就允许失败。
+- **磁盘缓存读回来了**。新增 `loadModelsCache()`，并把文件 mtime 挂在 `models.cachedAtMs` 上，让 `remoteModelsStale` 按文件年龄判断新鲜度（TTL 仍为 10 分钟，可用 `DSH_XDPOOL_CATALOG_TTL_MS` 覆盖），而不是把一份恢复来的旧目录当成刚拉的。
+- **排队重试不再无条件赔 10 秒**。原来无论上游说什么都是 `await delay(QUEUE_RETRY_DELAY_MS)`，且每次都先打一遍 `queue/status`。现在：服务端给了 `retryAfterSeconds` / `waitTime` / `retry_after_ms` 就按它走（`probeDelayMs`，下限 1s）；有错误体的 4xx/限流响应不再多打一次探测；只有**空响应体**或 5xx 才去问状态端点，而状态端点答 `working` 时会立刻按真实故障抛出，不再白白多等一轮。
+
+### 工具调用为什么在出现之后还要等
+
+`consumeSse` 里，wire 原生 `delta.tool_calls` 的分片是随到随发的，但 **DSML** 模式（`deepseek-v4-flash` / `deepseek-v4-pro`）的调用被 `emitDsmlFeed` 一次性整块吐出，而且所有调用的 `block-end` 一直憋到 `data: [DONE]`。于是一个带大文件正文的 `write`，用户要等到模型把整个答案写完才看见参数 —— 这正是「工具调用有返回后依旧需要等待较长时间」。
+
+新增 `flushToolDeltas()`：处理完每个 SSE 事件后，把**已到达**的参数按块增量发出去，首片带 `id` + `name`（OpenAI 只首片给 name），后续片只给 `argumentsDelta`；封口仍在原位，`normalizeToolArguments` / `isTruncatedArguments` 照旧兜住非流式调用方。游标挂在**块**上而不是推进 `toolOrder` 指针 —— 第一版写成推进指针，实测 4 片只发出 1 片（这条已经被测试钉住）。
+
+### 测试
+
+`tests/codearts-first-token.test.ts`（新增，12 项）：目录部分按源码窗口断言（与 `codearts-resign-headers.test.ts` 同一套做法，因为 `pack.js` 是另一仓库的打包产物，加载即触发 cordis 服务注册，无法 import 驱动）；增量下发的 `flushToolDeltas` 是自包含的，所以**真跑** —— 把函数从包体里抽出来喂 4 片数据，断言 4 片全发、拼接等于原文、幂等、未宣布的调用跳过。
+
+复现时踩到的两个坑记在这里，省下一个人再踩：`pack.js` 是 **CRLF**，按 `'    }'` 找函数结尾会静默匹配失败并吞掉后面的包体；抽函数时 `readFileSync` 在打包产物里叫 `readFileSync3`，harness 里少写一次别名，异常会被函数自己的 `catch` 吞掉、返回 `undefined`，看起来像补丁没用。
+
+---
 ## 2.4.6 — 扫码账号每次打开都空白：一份数据卡在两个细节里
 
 > 2.4.4/2.4.5 之后侧栏能进、能滚了，但扫码过的渠道在账号池里经常整片空白，重开也一样。磁盘上账号是齐的（`state.json` 里 15 条），所以问题全在读取链。
