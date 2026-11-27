@@ -42,7 +42,11 @@ describe('the vendored pack', () => {
   it('never sends the retired benefit header (issue #150)', () => {
     // `maas_type: benefit` lands the request on a lane the upstream retired; every CodeArts
     // turn failed with "The API does not exist" until it stopped being sent.
-    expect(pack).toContain('const extraSignedHeaders = void 0')
-    expect(pack).not.toContain('{ maas_type: "benefit" }')
+    //
+    // The slot is no longer `void 0`: tools/patch-pack-codearts-session.mjs fills it with
+    // the stable session headers (CodeArts2API §6), which is the fix for the 30-minute
+    // queue wait. What this test pins is the property that mattered then — no maas_type.
+    expect(pack).toContain('"x-ot-session-id": __codeartsSessionId')
+    expect(pack).not.toContain('maas_type: "benefit"')
   })
 })

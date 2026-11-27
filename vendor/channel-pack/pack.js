@@ -32994,8 +32994,10 @@ function buildDsmlSystemPrompt(tools) {
   ].join("\n");
 }
 var QUEUE_STATUS_BASE = "https://snap-access.cn-north-4.myhuaweicloud.com/api/v1/queue/status";
-var QUEUE_RETRY_DELAY_MS = 1e4;
-var QUEUE_MAX_ATTEMPTS2 = 180;
+// [xdpool-local] stable CodeArts upstream session id — a concurrency cap is not a 10-second queue ticket.
+var QUEUE_RETRY_DELAY_MS = 1e3;
+// [xdpool-local] stable CodeArts upstream session id — six attempts at 1s, not 180 attempts at 10s (30 minutes).
+var QUEUE_MAX_ATTEMPTS2 = 6;
 function resolveFirstTokenTimeoutMs() {
   return Number.parseInt(process.env.DSH_CODEARTS_SSE_FIRST_TOKEN_TIMEOUT_MS ?? "", 10) || 3e5;
 }
@@ -33561,7 +33563,24 @@ var CodeArtsAdapter = class extends LlmAdapter {
        * isolate was never isolated, and disabling the ids would have removed two working
        * models while leaving the real cause in place.
        */
-      const extraSignedHeaders = void 0;
+      /**
+       * [xdpool-local] stable CodeArts upstream session id — see tools/patch-pack-codearts-session.mjs.
+       *
+       * The upstream counts concurrent sessions per account by
+       * x-ot-session-id (three per account). Omitting it made every request a
+       * new session, so the fourth one onward answered TM.00001041 and the
+       * queue loop below spent ten seconds per poll on a cap, not on a queue.
+       *
+       * Derived exactly as CodeArts2API derives it: one stable value per
+       * credential, changing only when the credential (domain or AK) does.
+       */
+      const __codeartsSessionKey = `${credential.domain_id ?? ""}|${credential.access_key_id}`;
+      const __codeartsSessionId = "ses_"
+        + (await sha256Hex(new TextEncoder().encode(__codeartsSessionKey))).slice(0, 16);
+      const extraSignedHeaders = {
+        "x-ot-session-id": __codeartsSessionId,
+        "user-session-id": __codeartsSessionId
+      };
       const signed = await signRequestHuawei(
         credential.access_key_id,
         credential.secret_access_key,

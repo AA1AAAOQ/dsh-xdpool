@@ -25,6 +25,8 @@ import { registerMonkeycodeRoutes } from './monkeycode-routes.ts'
 import { monkeycodeCredentialFor } from './monkeycode-store.ts'
 import { MONKEYCODE_CN, MONKEYCODE_INTL } from './monkeycode-protocol.ts'
 import { BaizhiHostAdapter, BAIZHI_PROVIDER_ID } from './baizhi-host-adapter.ts'
+import { CodeartsHostAdapter } from './codearts-host-adapter.ts'
+import { CODEARTS_PROVIDER_ID } from './codearts-protocol.ts'
 import { registerBaizhiRoutes } from './baizhi-routes.ts'
 import { defaultBaizhiCredential } from './baizhi-store.ts'
 import { AutoclawHostAdapter } from './autoclaw-host-adapter.ts'
@@ -2280,7 +2282,42 @@ function canonicalJson(value: unknown): string {
   // installs its own effects on the scoped fiber, so mounting one after this
   // plugin has been torn down would leave it running with nothing to unhook it.
   let channels: MountedChannelPack = { state: () => ({ state: 'pending' }) }
+  /**
+   * The CodeArts route this plugin owns.
+   *
+   * Registered in the same injected fiber that mounts the pack, but *before*
+   * the mount: the pack reads the lane-ownership variable synchronously while
+   * registering its adapters, so the replacement has to exist by then. The
+   * adapter reads its account pool lazily on every request, which is what makes
+   * registering before the pack has provided `accountPool` safe.
+   */
+  let releaseAdapterCodearts: AdapterHandle | undefined
   ctx.inject(['credentials', 'commands'], (scoped) => {
+    /**
+     * Replace the pack's `codearts` adapter with the CodeArts2API-style one.
+     *
+     * Failure is contained: if the host already has a `codearts` route (a
+     * sibling copy of the pack mounted first), the pack's adapter is the one
+     * serving it and this registration throws. Logging and carrying on leaves
+     * the user with a working — if slower — provider instead of none.
+     */
+    if (releaseAdapterCodearts === undefined) {
+      try {
+        releaseAdapterCodearts = ctx.llm.registerAdapter(
+          [CODEARTS_PROVIDER_ID],
+          new CodeartsHostAdapter({
+            scope: () => scoped,
+            logger: ctx.logger,
+          }),
+        )
+        recordStartupNote(`codearts adapter registered on the replacement transport`)
+      } catch (error: unknown) {
+        ctx.logger.warn(
+          `[xdpool] codearts replacement adapter was not registered; the channel pack keeps serving the route (${describeError(error)})`,
+        )
+        recordStartupNote(`codearts adapter REJECTED: ${describeError(error)}`)
+      }
+    }
     // The `llm` gate is the plugin's own, already resolved before `apply` was
     // called — so only the two the pack adds are requested here. A composition
     // that never provides `commands` simply never runs this fiber, and the
@@ -2291,7 +2328,9 @@ function canonicalJson(value: unknown): string {
     // synchronous and installs its own effects on the fiber, so mounting after
     // teardown would leave thirteen adapters running with nothing to unhook them.
     const mount = async (): Promise<void> => {
-      const mounted = await mountChannelPack(scoped, ctx.logger)
+      const mounted = await mountChannelPack(scoped, ctx.logger, {
+        ownsLanes: releaseAdapterCodearts === undefined ? [] : [CODEARTS_PROVIDER_ID],
+      })
       if (stopped) return
       channels = mounted
     }
@@ -2585,6 +2624,7 @@ function canonicalJson(value: unknown): string {
           releaseAdapterBaizhi?.()
           releaseAdapterAutoclaw?.()
           releaseAdapterAutoclawCn?.()
+          releaseAdapterCodearts?.()
           return
         }
         try {
@@ -2720,6 +2760,7 @@ function canonicalJson(value: unknown): string {
           releaseAdapterDoubao?.()
           releaseAdapterMarvis?.()
           releaseAdapterAstudio?.()
+          releaseAdapterCodearts?.()
           releaseDirectory?.()
         }
         try {

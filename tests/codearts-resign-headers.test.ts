@@ -40,9 +40,11 @@ const pack = readFileSync(new URL('../vendor/channel-pack/pack.js', import.meta.
 
 /** The CodeArts adapter's chat loop, bounded by anchors unique to it. */
 function codeArtsChatWindow(): string {
-  // The anchor moved when the benefit header was retired (issue #150): the loop now sets
-  // `extraSignedHeaders` to undefined, so the line is found by the plain assignment.
-  const started = pack.indexOf('const extraSignedHeaders = void 0')
+  // The anchor moved twice: when the benefit header was retired (issue #150) the
+  // slot became `void 0`, and when the stable session id landed
+  // (tools/patch-pack-codearts-session.mjs) it became an object. Both are the
+  // same declaration position, immediately before the signer call.
+  const started = pack.indexOf('const extraSignedHeaders = {')
   expect(started).toBeGreaterThan(-1)
   const fetched = pack.indexOf('response = await this.fetchImpl(url, {', started)
   expect(fetched).toBeGreaterThan(started)

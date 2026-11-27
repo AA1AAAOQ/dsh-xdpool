@@ -263,7 +263,28 @@ export function channelPackFilesPresent(): boolean {
  * Returns a handle whose `state()` reports what happened. A silently absent
  * channel list is the one failure mode a user cannot diagnose for themselves.
  */
-export function mountChannelPack(ctx: unknown, logger?: ChannelPackLogger): MountedChannelPack {
+export interface MountChannelPackOptions {
+  /**
+   * Provider routes this plugin serves itself.
+   *
+   * The pack reads `DSH_XDPOOL_OWNS_POOL_LANES` at adapter-registration time and
+   * silently skips a lane listed there. That handoff is the only way to keep a
+   * route without editing the vendored bundle: `registerAdapter` throws on a
+   * duplicate, and whichever copy registers second would lose.
+   *
+   * `buddy` / `workbuddy` are added by this function when the pool holds those
+   * accounts; `codearts` is passed in by the caller once its replacement adapter
+   * has registered successfully, so a failed registration leaves the pack's own
+   * adapter in place rather than leaving the provider with nothing behind it.
+   */
+  ownsLanes?: readonly string[]
+}
+
+export function mountChannelPack(
+  ctx: unknown,
+  logger?: ChannelPackLogger,
+  options: MountChannelPackOptions = {},
+): MountedChannelPack {
   let state: ChannelPackState = { state: 'pending' }
   if (!channelPackFilesPresent()) {
     state = {
@@ -301,7 +322,25 @@ export function mountChannelPack(ctx: unknown, logger?: ChannelPackLogger): Moun
        * into either lane must still get the pack's own listing, since that is the only one that
        * can work there.
        */
-      if (poolHoldsAccounts()) process.env['DSH_XDPOOL_OWNS_POOL_LANES'] = 'buddy,workbuddy'
+      /**
+       * Which lanes this plugin serves itself.
+       *
+       * The pack reads the variable when it registers an adapter and stands
+       * aside for every id listed. `buddy` / `workbuddy` depend on the pool
+       * holding those accounts; a lane named by the caller (today only
+       * `codearts`) is already served by an adapter this plugin registered, so
+       * it is listed unconditionally. If the replacement had failed to register,
+       * the caller would not name it and the pack's adapter stays in charge.
+       */
+      const owns = new Set<string>()
+      if (poolHoldsAccounts()) {
+        owns.add('buddy')
+        owns.add('workbuddy')
+      }
+      for (const lane of options.ownsLanes ?? []) {
+        if (typeof lane === 'string' && lane !== '') owns.add(lane)
+      }
+      if (owns.size > 0) process.env['DSH_XDPOOL_OWNS_POOL_LANES'] = [...owns].join(',')
       else delete process.env['DSH_XDPOOL_OWNS_POOL_LANES']
       /**
        * The per-channel usage strategies, handed to the pack.

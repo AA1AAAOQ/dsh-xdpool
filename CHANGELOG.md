@@ -1,6 +1,50 @@
 # Changelog
 本项目的所有重要变更都会记录在此文件。
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+## 3.0.8 — CodeArts 换成 CodeArts2API 的直连逻辑：工具调用不再排队三十分钟
+
+### 症状与根因
+
+用户报告「用 CodeArts 提供商时，AI 一调工具就等很久，像是排队」。根因不是模型慢，而是
+渠道包把上游的 **并发会话上限** 当成了排队票据：
+
+- 上游按 `x-ot-session-id` 统计每个账号的并发会话（上限 3 个）。渠道包的适配器**从不发**
+  这个头，于是每次请求都被算成一个新会话；第三条之后撞上限，返回
+  `HTTP 400 + TM.00001041`。
+- 渠道包把 `TM.00001041` 判成「在排队」，每 10 秒去 `/api/v1/queue/status` 轮询一次，
+  最多轮询 180 次（30 分钟）。一次工具往返要发很多轮请求，于是每一轮都挂在这个等待里
+  —— 界面看到的就是「思考完没动静」。
+
+CodeArts2API（`docs/UPSTREAM.md` §6）记录了同一个事实与解药：`x-ot-session-id` 必须
+**按凭据推导并复用**（`ses_<sha256(domain_id|AK) 前 8 字节>`），并把 `TM.00001041`
+当成临时故障、以 1~3 秒退避重试，而不是排队等待。
+
+### 改动
+
+- 新增插件自有的 `codearts` 适配器（`src/codearts-*.ts`），直接复刻 CodeArts2API 的请求路径：
+  - 每个凭据一个稳定 `x-ot-session-id` / `user-session-id`；
+  - 华为云 `SDK-HMAC-SHA256` 签名逐字对齐（含尾斜杠与多一个空行两处坑，金标准测试来自
+    CodeArts2API 的 signer 测试向量）；
+  - 请求头带 IDE 身份、`model-id` / `model-name` 与请求体 `model` 完全一致；不发已下线的
+    `maas_type`；
+  - `TM.00001041` / 429 / 5xx 走 1s → 2s → 3s 退避；`TM.00001050` 积分耗尽按账号冷却到
+    次日 UTC+8 并换号；参数/上下文/模型名一类 4xx 立即失败、不换号；
+  - **完全不访问** `/api/v1/queue/status`。
+- 注册顺序保证替换生效：新适配器在 `mountChannelPack` **之前**注册，并把 `codearts` 放进
+  `DSH_XDPOOL_OWNS_POOL_LANES`，让渠道包跳过自己的 codearts 适配器。注册失败时不会把这一项
+  传给 pack，原有适配器继续服务，至少不会让渠道消失。
+- 登录、账号池、模型黑名单、积分与签到仍由渠道包负责：新适配器每次请求都通过 pack 提供的
+  `accountPool` 选号，并复用 `codeartsAuth` 的按凭据续期队列，不产生第二套账号表。
+- 模型目录沿用渠道包交叉核对过的 id 与上下文窗口，并补上此前漏掉的默认模型 `glm-5.3`。
+
+### 验证
+
+- `tests/codearts-signer.test.ts`：4 组 CodeArts2API 金标准签名向量 + 编码/排序用例。
+- `tests/codearts-adapter.test.ts`：稳定会话 id、`TM.00001041` 一秒退避且不碰队列端点、
+  请求类 400 单次失败、401 续期后重试、积分耗尽换号、半截工具对过滤。
+- `tests/codearts-provider-swap.test.ts`：注册顺序、lane 让位、释放，以及「新适配器不许再
+  出现 queue-status 轮询」的源码守卫。
+
 ## 3.0.7 — UI 错位修复、一键更新真正生效、代际守卫
 
 ### UI 错位：账号卡回到正确的列
